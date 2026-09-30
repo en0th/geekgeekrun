@@ -591,8 +591,9 @@
                     :autosize="{ minRows: 2 }"
                     max-h-6lh
                     @blur="
-                      formContent.posterHrTitleRegExpStr =
-                        formContent.posterHrTitleRegExpStr?.trim() ?? ''
+                      formContent.posterHrTitleRegExpStr = resolvePosterHrTitleRegExpStr(
+                        formContent.posterHrTitleRegExpStr
+                      )
                     "
                   />
                 </el-form-item>
@@ -645,6 +646,10 @@ import {
   normalizeCommaSplittedStr
 } from '../MainLayout/GeekAutoStartChatWithBoss/common'
 import { computed, ref } from 'vue'
+import {
+  DEFAULT_POSTER_HR_TITLE_REG_EXP_STR,
+  resolvePosterHrTitleRegExpStr
+} from '@geekgeekrun/geek-auto-start-chat-with-boss/poster-title-filter.mjs'
 import expectJobFilterTemplateList from '../MainLayout/GeekAutoStartChatWithBoss/expectJobFilterTemplateList'
 const { ipcRenderer } = window.electron
 const gtagRenderer = (name, params?: object) => {
@@ -662,7 +667,7 @@ const formContent = ref({
   expectJobTypeRegExpStr: '',
   expectJobDescRegExpStr: '',
   isPosterHrFilterEnabled: false,
-  posterHrTitleRegExpStr: '',
+  posterHrTitleRegExpStr: DEFAULT_POSTER_HR_TITLE_REG_EXP_STR,
   expectSalaryCalculateWay: SalaryCalculateWay.ANNUAL_PACKAGE,
   expectSalaryHigh: null,
   expectSalaryLow: null,
@@ -757,6 +762,10 @@ ipcRenderer.invoke('fetch-config-file-content').then((res) => {
       }
     }
   })
+  // configs from before this option existed have no rule; show the default that will apply
+  formContent.value.posterHrTitleRegExpStr = resolvePosterHrTitleRegExpStr(
+    formContent.value.posterHrTitleRegExpStr
+  )
 })
 </script>
 

@@ -1,10 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildPosterHrTitleRegExp, testIfPosterTitleSuit } from './poster-title-filter.mjs'
+import {
+  DEFAULT_POSTER_HR_TITLE_REG_EXP_STR,
+  buildPosterHrTitleRegExp,
+  resolvePosterHrTitleRegExpStr,
+  testIfPosterTitleSuit,
+} from '../poster-title-filter.mjs'
 
 const defaultConfig = {
   isPosterHrFilterEnabled: true,
-  posterHrTitleRegExpStr: 'HR|HRBP|HRG|Recruiter|Talent Acquisition|招聘|人事|人力|人资',
+  posterHrTitleRegExpStr: DEFAULT_POSTER_HR_TITLE_REG_EXP_STR,
 }
 
 test('buildPosterHrTitleRegExp returns null when filter is disabled', () => {
@@ -63,4 +68,21 @@ test('does not filter anything when feature is disabled', () => {
   }
   assert.equal(testIfPosterTitleSuit({ title: '技术总监' }, config), true)
   assert.equal(testIfPosterTitleSuit({}, config), true)
+})
+
+test('falls back to the default rule when the configured rule is empty', () => {
+  for (const posterHrTitleRegExpStr of [undefined, null, '', '   ']) {
+    assert.equal(resolvePosterHrTitleRegExpStr(posterHrTitleRegExpStr), DEFAULT_POSTER_HR_TITLE_REG_EXP_STR)
+    const config = { isPosterHrFilterEnabled: true, posterHrTitleRegExpStr }
+    assert.notEqual(buildPosterHrTitleRegExp(config), null)
+    assert.equal(testIfPosterTitleSuit({ title: '招聘专员' }, config), true)
+    assert.equal(testIfPosterTitleSuit({ title: '技术总监' }, config), false)
+  }
+})
+
+test('keeps a custom rule instead of the default', () => {
+  const config = { isPosterHrFilterEnabled: true, posterHrTitleRegExpStr: '  猎头  ' }
+  assert.equal(resolvePosterHrTitleRegExpStr(config.posterHrTitleRegExpStr), '猎头')
+  assert.equal(testIfPosterTitleSuit({ title: '资深猎头' }, config), true)
+  assert.equal(testIfPosterTitleSuit({ title: 'HR' }, config), false)
 })

@@ -39,7 +39,10 @@ import {
 import { parseSalary } from "@geekgeekrun/sqlite-plugin/dist/utils/parser.js"
 import { waitForSageTimeOrJustContinue } from './sage-time.mjs'
 import cityGroupData from './cityGroup.mjs'
-import { testIfPosterTitleSuit as testIfPosterTitleSuitByConfig } from './tests/poster-title-filter.mjs'
+import {
+  testIfPosterTitleSuit as testIfPosterTitleSuitByConfig,
+  resolvePosterHrTitleRegExpStr,
+} from './poster-title-filter.mjs'
 import { hasIntersection } from '@geekgeekrun/utils/number.mjs';
 const flattedCityList = []
 ;(cityGroupData?.zpData?.cityGroup ?? []).forEach(it => {
@@ -236,16 +239,6 @@ if (
   jobDetailRegExpMatchLogic = JobDetailRegExpMatchLogic.EVERY
 }
 const posterHrNotMatchStrategy = readConfigFile('boss.json').posterHrNotMatchStrategy ?? MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_LOCAL
-const posterHrTitleRegExp = (() => {
-  if (!isPosterHrFilterEnabled || !posterHrTitleRegExpStr?.trim()) {
-    return null
-  }
-  try {
-    return new RegExp(posterHrTitleRegExpStr, 'im')
-  } catch {
-    return null
-  }
-})()
 
 let {
   jobSourceList
@@ -1344,7 +1337,7 @@ async function toRecommendPage (hooks) {
                       blockJobNotSuit.add(targetJobData.jobInfo.encryptId)
                       const extInfo = {
                         posterTitle: targetJobData.bossInfo?.title ?? null,
-                        posterHrTitleRegExpStr,
+                        posterHrTitleRegExpStr: resolvePosterHrTitleRegExpStr(posterHrTitleRegExpStr),
                       }
                       if (posterHrNotMatchStrategy === MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_LOCAL || !await page.$('.job-detail-box .job-detail-operate .not-suitable')) {
                         try {

@@ -1589,8 +1589,9 @@
                         :autosize="{ minRows: 2 }"
                         max-h-6lh
                         @blur="
-                          formContent.posterHrTitleRegExpStr =
-                            formContent.posterHrTitleRegExpStr?.trim() ?? ''
+                          formContent.posterHrTitleRegExpStr = resolvePosterHrTitleRegExpStr(
+                            formContent.posterHrTitleRegExpStr
+                          )
                         "
                       />
                     </el-form-item>
@@ -1824,6 +1825,10 @@ import AnyCombineBossRecommendFilter from '@renderer/features/AnyCombineBossReco
 import StaticCombineBossRecommendFilter from '@renderer/features/StaticCombineBossRecommendFilter/index.vue'
 import { activeDescList } from '@geekgeekrun/geek-auto-start-chat-with-boss/constant.mjs'
 import {
+  DEFAULT_POSTER_HR_TITLE_REG_EXP_STR,
+  resolvePosterHrTitleRegExpStr
+} from '@geekgeekrun/geek-auto-start-chat-with-boss/poster-title-filter.mjs'
+import {
   calculateTotalCombinations,
   checkAnyCombineBossRecommendFilterHasCondition,
   formatStaticCombineFilters
@@ -1884,7 +1889,7 @@ const formContent = ref({
   expectJobTypeRegExpStr: '',
   expectJobDescRegExpStr: '',
   isPosterHrFilterEnabled: false,
-  posterHrTitleRegExpStr: '',
+  posterHrTitleRegExpStr: DEFAULT_POSTER_HR_TITLE_REG_EXP_STR,
   posterHrNotMatchStrategy: MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_LOCAL,
   jobNotMatchStrategy: MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_BOSS,
   jobNotActiveStrategy: MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_BOSS,
@@ -2006,7 +2011,10 @@ electron.ipcRenderer.invoke('fetch-config-file-content').then((res) => {
   formContent.value.expectJobTypeRegExpStr = res.config['boss.json'].expectJobTypeRegExpStr?.trim()
   formContent.value.expectJobDescRegExpStr = res.config['boss.json'].expectJobDescRegExpStr?.trim()
   formContent.value.isPosterHrFilterEnabled = res.config['boss.json']?.isPosterHrFilterEnabled ?? false
-  formContent.value.posterHrTitleRegExpStr = res.config['boss.json']?.posterHrTitleRegExpStr?.trim() ?? ''
+  // configs from before this option existed have no rule; show the default that will apply
+  formContent.value.posterHrTitleRegExpStr = resolvePosterHrTitleRegExpStr(
+    res.config['boss.json']?.posterHrTitleRegExpStr
+  )
   formContent.value.posterHrNotMatchStrategy = strategyOptionWhenCurrentJobNotMatch
     .map((it) => it.value)
     .includes(res.config['boss.json']?.posterHrNotMatchStrategy)
@@ -2101,8 +2109,9 @@ electron.ipcRenderer.invoke('fetch-config-file-content').then((res) => {
       res.config['common-job-condition-config.json']?.expectJobDescRegExpStr ?? '',
     isPosterHrFilterEnabled:
       res.config['common-job-condition-config.json']?.isPosterHrFilterEnabled ?? false,
-    posterHrTitleRegExpStr:
-      res.config['common-job-condition-config.json']?.posterHrTitleRegExpStr ?? '',
+    posterHrTitleRegExpStr: resolvePosterHrTitleRegExpStr(
+      res.config['common-job-condition-config.json']?.posterHrTitleRegExpStr
+    ),
     jobDetailRegExpMatchLogic:
       res.config['common-job-condition-config.json']?.jobDetailRegExpMatchLogic ??
       JobDetailRegExpMatchLogic.EVERY,
