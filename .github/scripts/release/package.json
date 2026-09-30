@@ -1,0 +1,9 @@
+{
+  "name": "geekgeekrun-release-scripts",
+  "private": true,
+  "type": "module",
+  "description": "Version bump and release notes generation for the Auto Release workflow",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.129.0"
+  }
+}

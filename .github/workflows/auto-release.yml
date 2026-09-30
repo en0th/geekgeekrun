@@ -1,0 +1,83 @@
+name: Auto Release
+
+# Every push to master that changes the app gets a new UI version:
+#   1. prepare: pick the next version, bump it, summarise the changes into release notes
+#   2. release: build all platforms and publish the release (release-ui.yml)
+#
+# Commit message markers:
+#   [skip release]                   no release for this push
+#   [release:major|minor|patch]      force the version bump level (default: minor when
+#                                    there are new features, otherwise patch)
+#
+# Repository settings:
+#   secret   ANTHROPIC_API_KEY       Claude API key used to write the release notes. Without it
+#                                    the release is created as a draft for manual editing.
+#   variable RELEASE_NOTES_MODEL     optional model override (default claude-opus-5-5)
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  prepare:
+    # the version commit pushed below must not start another release
+    if: ${{ !startsWith(github.event.head_commit.message, 'ui-v') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    # one version bump at a time; a newer queued run supersedes an older queued one and
+    # covers its commits too, since it works from the current tip of master
+    concurrency:
+      group: auto-release-prepare
+      cancel-in-progress: false
+    outputs:
+      skip: ${{ steps.prepare.outputs.skip }}
+      tag: ${{ steps.prepare.outputs.tag }}
+      draft: ${{ steps.prepare.outputs.draft }}
+      notes: ${{ steps.prepare.outputs.notes }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install release script dependencies
+        run: npm ci --prefix .github/scripts/release --no-audit --no-fund
+
+      - name: Decide version and write release notes
+        id: prepare
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          RELEASE_NOTES_MODEL: ${{ vars.RELEASE_NOTES_MODEL }}
+        run: node .github/scripts/release/prepare-release.mjs
+
+      - name: Commit version and push tag
+        if: steps.prepare.outputs.skip != 'true'
+        env:
+          TAG: ${{ steps.prepare.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages/ui/package.json packages/ui/src/common/build-info.json
+          git commit -m "$TAG"
+          git tag "$TAG"
+          git push --atomic origin HEAD:master "$TAG"
+
+  release:
+    needs: prepare
+    if: needs.prepare.outputs.skip != 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release-ui.yml
+    with:
+      tag: ${{ needs.prepare.outputs.tag }}
+      release_notes: ${{ needs.prepare.outputs.notes }}
+      draft: ${{ needs.prepare.outputs.draft == 'true' }}
+    secrets: inherit

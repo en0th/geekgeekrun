@@ -5,6 +5,21 @@ on:
     # Sequence of patterns matched against refs/tags
     tags:
       - "ui-v*" # Push events to matching v*, i.e. v1.0, v20.15.10
+  # called by auto-release.yml; tags pushed from a workflow with GITHUB_TOKEN don't trigger the push event
+  workflow_call:
+    inputs:
+      tag:
+        description: Tag to build and release, e.g. ui-v0.18.0
+        type: string
+        required: true
+      release_notes:
+        description: Release body in Markdown
+        type: string
+        required: true
+      draft:
+        description: Create the release as a draft
+        type: boolean
+        default: false
 
 jobs:
   build_on_windows:
@@ -13,20 +28,23 @@ jobs:
       VITE_APP_GTAG_API_SECRET: ${{ secrets.VITE_APP_GTAG_API_SECRET }}
       VITE_APP_GTAG_MEASUREMENT_ID: ${{ secrets.VITE_APP_GTAG_MEASUREMENT_ID }}
     runs-on: windows-2022
-    permissions: write-all
+    permissions:
+      contents: read
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
     # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
     - name: Checkout source
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.tag || github.ref }}
     
     - name: Install pnpm
       run: |
         npm i pnpm@8.15.9 -g
          
     - name: Patch pnpm
-      uses: actions/github-script@v3
+      uses: actions/github-script@v7
       with:
         script: |
           // https://github.com/pnpm/pnpm/issues/5638
@@ -69,13 +87,16 @@ jobs:
       VITE_APP_GTAG_API_SECRET: ${{ secrets.VITE_APP_GTAG_API_SECRET }}
       VITE_APP_GTAG_MEASUREMENT_ID: ${{ secrets.VITE_APP_GTAG_MEASUREMENT_ID }}
     runs-on: ${{ matrix.platform.os }}
-    permissions: write-all
+    permissions:
+      contents: read
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
     # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
     - name: Checkout source
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.tag || github.ref }}
     
     - name: Install dependencies
       run: |
@@ -102,13 +123,16 @@ jobs:
       VITE_APP_GTAG_API_SECRET: ${{ secrets.VITE_APP_GTAG_API_SECRET }}
       VITE_APP_GTAG_MEASUREMENT_ID: ${{ secrets.VITE_APP_GTAG_MEASUREMENT_ID }}
     runs-on: ubuntu-22.04
-    permissions: write-all
+    permissions:
+      contents: read
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
     # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
     - name: Checkout source
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.tag || github.ref }}
     
     - name: Install dependencies
       run: |
@@ -132,7 +156,8 @@ jobs:
 
   release:
     runs-on: ubuntu-latest
-    permissions: write-all
+    permissions:
+      contents: write
     needs: 
       - build_on_linux
       - build_on_macos
@@ -154,8 +179,9 @@ jobs:
         with:
           repo: geekgeekrun
           prerelease: true
+          draft: ${{ inputs.draft || false }}
           allowUpdates: true
           artifacts: geekgeekrun-ui@${{ github.sha }}/*
-          tag: ${{ github.ref }}
+          tag: ${{ inputs.tag || github.ref }}
           token: ${{ secrets.GITHUB_TOKEN }}
-          body: TODO New Release.
+          body: ${{ inputs.release_notes || 'TODO New Release.' }}
