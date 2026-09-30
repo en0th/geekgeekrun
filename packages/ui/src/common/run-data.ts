@@ -135,7 +135,8 @@ export const markAsNotSuitReasonOptions: RunDataEnumOption[] = [
   { value: 4, label: '工作地不合适' },
   { value: 5, label: '工作经验不合适' },
   { value: 6, label: '薪资不合适' },
-  { value: 7, label: '公司名称不匹配' }
+  { value: 7, label: '公司名称不匹配' },
+  { value: 8, label: '发布者身份不匹配' }
 ]
 
 export const markAsNotSuitOpOptions: RunDataEnumOption[] = [

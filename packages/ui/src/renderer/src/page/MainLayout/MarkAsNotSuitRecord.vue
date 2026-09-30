@@ -120,6 +120,14 @@ function formatMarkReason(row: VMarkAsNotSuitLog) {
     case MarkAsNotSuitReason.JOB_CITY_NOT_SUIT:
     case MarkAsNotSuitReason.COMPANY_NAME_NOT_SUIT:
       return chosenReason || ''
+    case MarkAsNotSuitReason.POSTER_TITLE_NOT_SUIT:
+      return [
+        extInfo?.posterTitle && `BOSS身份：${extInfo.posterTitle}`,
+        extInfo?.posterHrTitleRegExpStr && `匹配规则：${extInfo.posterHrTitleRegExpStr}`,
+        chosenReason
+      ]
+        .filter(Boolean)
+        .join('\n')
     default:
       return ''
   }
