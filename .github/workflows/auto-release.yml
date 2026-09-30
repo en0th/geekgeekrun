@@ -4,10 +4,10 @@ name: Auto Release
 #   1. prepare: pick the next version, bump it, summarise the changes into release notes
 #   2. release: build all platforms and publish the release (release-ui.yml)
 #
-# Commit message markers:
-#   [skip release]                   no release for this push
-#   [release:major|minor|patch]      force the version bump level (default: minor when
-#                                    there are new features, otherwise patch)
+# Markers, recognised in commit subject lines only:
+#   [skip release]                   in the pushed head commit: no release for this push
+#   [release:major|minor|patch]      in any released commit: force the version bump level
+#                                    (default: minor when there are new features, else patch)
 #
 # Repository settings:
 #   secret   ANTHROPIC_API_KEY       Claude API key used to write the release notes. Without it
@@ -46,7 +46,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Install release script dependencies
         run: npm ci --prefix .github/scripts/release --no-audit --no-fund

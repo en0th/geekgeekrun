@@ -123,7 +123,8 @@ function parseVersion(v) {
 }
 
 function decideBump(commits) {
-  const text = commits.map((c) => `${c.subject}\n${c.body}`).join('\n')
+  // markers only count in subject lines, so a commit body that merely mentions one doesn't apply it
+  const text = commits.map((c) => c.subject).join('\n')
   const explicit = [...text.matchAll(/\[release:(major|minor|patch)\]/gi)].map((m) =>
     m[1].toLowerCase()
   )
@@ -291,8 +292,9 @@ function setOutputs(outputs) {
 }
 
 async function main() {
-  const headMessage = git('log', '-1', '--format=%B')
-  if (/\[(skip release|release skip)\]/i.test(headMessage)) {
+  // only the subject line: a body that merely mentions the marker must not skip the release
+  const headSubject = git('log', '-1', '--format=%s')
+  if (/\[(skip release|release skip)\]/i.test(headSubject)) {
     console.log('HEAD commit asks to skip the release')
     return setOutputs({ skip: true })
   }
