@@ -1,7 +1,14 @@
 import createDbWorker from './worker/index?nodeWorker&url'
 import { type Worker } from 'node:worker_threads'
 import { randomUUID } from 'node:crypto'
-import { PageReq } from '../../../../../common/types/pagination'
+import type {
+  RunDataDeleteReq,
+  RunDataDistinctReq,
+  RunDataImportReq,
+  RunDataPageQuery,
+  RunDataQuery,
+  RunDataStatsReq
+} from '../../../../../common/run-data'
 
 let worker: Worker | null = null
 let workerExitCode: number | null = null
@@ -50,51 +57,6 @@ const createWorkerPromise = async (data) => {
   })
 }
 
-export const getAutoStartChatRecord = async ({ pageNo, pageSize }: Partial<PageReq> = {}) => {
-  const res = await createWorkerPromise({
-    type: 'getAutoStartChatRecord',
-    pageNo,
-    pageSize
-  })
-  return res
-}
-
-export const getMarkAsNotSuitRecord = async ({ pageNo, pageSize }: Partial<PageReq> = {}) => {
-  const res = await createWorkerPromise({
-    type: 'getMarkAsNotSuitRecord',
-    pageNo,
-    pageSize
-  })
-  return res
-}
-
-export const getBossLibrary = async ({ pageNo, pageSize }: Partial<PageReq> = {}) => {
-  const res = await createWorkerPromise({
-    type: 'getBossLibrary',
-    pageNo,
-    pageSize
-  })
-  return res
-}
-
-export const getCompanyLibrary = async ({ pageNo, pageSize }: Partial<PageReq> = {}) => {
-  const res = await createWorkerPromise({
-    type: 'getCompanyLibrary',
-    pageNo,
-    pageSize
-  })
-  return res
-}
-
-export const getJobLibrary = async ({ pageNo, pageSize }: Partial<PageReq> = {}) => {
-  const res = await createWorkerPromise({
-    type: 'getJobLibrary',
-    pageNo,
-    pageSize
-  })
-  return res
-}
-
 export const getJobHistoryByEncryptId = async (encryptJobId) => {
   const res = await createWorkerPromise({
     type: 'getJobHistoryByEncryptId',
@@ -109,3 +71,33 @@ export const saveAndGetCurrentRunRecord = async () => {
   })
   return res
 }
+
+// run-data handlers reject when the worker reports an error, so ipcRenderer.invoke rejects too
+const runDataWorkerCall = async (type: string, payload: object) => {
+  const res = (await createWorkerPromise({ ...payload, type })) as {
+    data?: unknown
+    error?: string
+  }
+  if (res.error) {
+    throw new Error(res.error)
+  }
+  return res
+}
+
+export const queryRunData = (payload: RunDataPageQuery) =>
+  runDataWorkerCall('queryRunData', payload)
+
+export const queryAllRunData = (payload: RunDataQuery) =>
+  runDataWorkerCall('queryAllRunData', payload)
+
+export const getRunDataDistinctValues = (payload: RunDataDistinctReq) =>
+  runDataWorkerCall('getRunDataDistinctValues', payload)
+
+export const getRunDataStats = (payload: RunDataStatsReq) =>
+  runDataWorkerCall('getRunDataStats', payload)
+
+export const deleteRunData = (payload: RunDataDeleteReq) =>
+  runDataWorkerCall('deleteRunData', payload)
+
+export const importRunData = (payload: RunDataImportReq) =>
+  runDataWorkerCall('importRunData', payload)

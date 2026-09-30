@@ -13,16 +13,17 @@ import { checkCookieListFormat } from '../../../../common/utils/cookie'
 import { getAnyAvailablePuppeteerExecutable } from '../../DOWNLOAD_DEPENDENCIES/utils/puppeteer-executable/index'
 import { mainWindow } from '../../../window/mainWindow'
 import {
-  getAutoStartChatRecord,
-  getBossLibrary,
-  getCompanyLibrary,
-  getJobLibrary,
   getJobHistoryByEncryptId,
-  getMarkAsNotSuitRecord
+  queryRunData,
+  queryAllRunData,
+  getRunDataDistinctValues,
+  getRunDataStats,
+  deleteRunData,
+  importRunData
 } from '../utils/db/index'
-import { PageReq } from '../../../../common/types/pagination'
 import { pipeWriteRegardlessError } from '../../utils/pipe'
 import { WriteStream } from 'node:fs'
+import { writeFile } from 'node:fs/promises'
 // eslint-disable-next-line vue/prefer-import-from-vue
 import { hasOwn } from '@vue/shared'
 import { createLlmConfigWindow, llmConfigWindow } from '../../../window/llmConfigWindow'
@@ -299,26 +300,38 @@ export default function initIpc() {
     return checkCookieListFormat(cookies)
   })
 
-  ipcMain.handle('get-auto-start-chat-record', async (ev, payload: PageReq) => {
-    const a = await getAutoStartChatRecord(payload)
-    return a
-  })
-  ipcMain.handle('get-mark-as-not-suit-record', async (ev, payload: PageReq) => {
-    const a = await getMarkAsNotSuitRecord(payload)
-    return a
-  })
-  ipcMain.handle('get-job-library', async (ev, payload: PageReq) => {
-    const a = await getJobLibrary(payload)
-    return a
-  })
-  ipcMain.handle('get-boss-library', async (ev, payload: PageReq) => {
-    const a = await getBossLibrary(payload)
-    return a
-  })
-  ipcMain.handle('get-company-library', async (ev, payload: PageReq) => {
-    const a = await getCompanyLibrary(payload)
-    return a
-  })
+  ipcMain.handle('run-data-query', (_, payload) => queryRunData(payload))
+  ipcMain.handle('run-data-query-all', (_, payload) => queryAllRunData(payload))
+  ipcMain.handle('run-data-distinct-values', (_, payload) => getRunDataDistinctValues(payload))
+  ipcMain.handle('run-data-stats', (_, payload) => getRunDataStats(payload))
+  ipcMain.handle('run-data-delete', (_, payload) => deleteRunData(payload))
+  ipcMain.handle('run-data-import', (_, payload) => importRunData(payload))
+  ipcMain.handle(
+    'save-file-with-dialog',
+    async (
+      ev,
+      {
+        defaultPath,
+        filters,
+        content
+      }: { defaultPath?: string; filters?: Electron.FileFilter[]; content: string | Uint8Array }
+    ) => {
+      const win = BrowserWindow.fromWebContents(ev.sender)
+      const options = {
+        defaultPath: path.join(app.getPath('downloads'), defaultPath ?? ''),
+        filters
+      }
+      const { canceled, filePath } = win
+        ? await dialog.showSaveDialog(win, options)
+        : await dialog.showSaveDialog(options)
+      if (canceled || !filePath) {
+        return { canceled: true }
+      }
+      await writeFile(filePath, content)
+      return { canceled: false, filePath }
+    }
+  )
+  ipcMain.handle('show-item-in-folder', (_, filePath: string) => shell.showItemInFolder(filePath))
 
   let subProcessOfOpenBossSiteDefer: null | PromiseWithResolvers<ChildProcess> = null
   let subProcessOfOpenBossSite: null | ChildProcess = null

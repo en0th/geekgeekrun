@@ -121,6 +121,7 @@ void taskManagerStore
 .router-view-wrap {
   display: flex;
   flex: 1;
+  min-width: 0;
   height: 100%;
   box-shadow: -4px 1px 20px rgb(50 114 108 / 29%);
 }
