@@ -20,6 +20,10 @@ on:
         description: Create the release as a draft
         type: boolean
         default: false
+      prerelease:
+        description: Mark the release as a prerelease (manual ui-v* tag pushes always are)
+        type: boolean
+        default: false
 
 jobs:
   build_on_windows:
@@ -178,7 +182,8 @@ jobs:
         uses: ncipollo/release-action@v1
         with:
           repo: geekgeekrun
-          prerelease: true
+          # inputs are empty on a manual tag push, which keeps the old prerelease behaviour
+          prerelease: ${{ !inputs.tag || inputs.prerelease }}
           draft: ${{ inputs.draft || false }}
           allowUpdates: true
           artifacts: geekgeekrun-ui@${{ github.sha }}/*

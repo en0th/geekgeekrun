@@ -2,17 +2,19 @@ name: Auto Release
 
 # Every push to master that changes the app gets a new UI version:
 #   1. prepare: pick the next version, bump it, summarise the changes into release notes
-#   2. release: build all platforms and publish the release (release-ui.yml)
+#   2. release: build all platforms and publish it as a full release (release-ui.yml)
 #
 # Markers, recognised in commit subject lines only:
 #   [skip release]                   in the pushed head commit: no release for this push
 #   [release:major|minor|patch]      in any released commit: force the version bump level
 #                                    (default: minor when there are new features, else patch)
 #
-# Repository settings:
-#   secret   ANTHROPIC_API_KEY       Claude API key used to write the release notes. Without it
-#                                    the release is created as a draft for manual editing.
-#   variable RELEASE_NOTES_MODEL     optional model override (default claude-opus-5-5)
+# Repository settings (release notes are written by the first configured provider that works;
+# with none, or if all fail, the release is created as a draft for manual editing):
+#   secret   DEEPSEEK_API_KEY        DeepSeek API key, tried first
+#   secret   ANTHROPIC_API_KEY       Claude API key, tried when DeepSeek is missing or fails
+#   variable RELEASE_NOTES_MODEL     optional model override for the provider in use
+#                                    (defaults: deepseek-v4-pro / claude-opus-5-5)
 
 on:
   push:
@@ -54,6 +56,7 @@ jobs:
       - name: Decide version and write release notes
         id: prepare
         env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           RELEASE_NOTES_MODEL: ${{ vars.RELEASE_NOTES_MODEL }}
         run: node .github/scripts/release/prepare-release.mjs
@@ -80,4 +83,5 @@ jobs:
       tag: ${{ needs.prepare.outputs.tag }}
       release_notes: ${{ needs.prepare.outputs.notes }}
       draft: ${{ needs.prepare.outputs.draft == 'true' }}
+      prerelease: false
     secrets: inherit

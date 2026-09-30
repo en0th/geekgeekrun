@@ -1,13 +1,17 @@
 // Decides whether a push to master should produce a new UI release, bumps the version and
-// writes user-facing release notes summarised by Claude.
+// writes user-facing release notes summarised by an LLM.
 //
 // Usage: node prepare-release.mjs [--dry-run]
 //   --dry-run  print the decision and notes, don't touch any file
 //
 // Env:
-//   ANTHROPIC_API_KEY      enables the Claude summary; without it the notes fall back to a
-//                          grouped change list and the release is created as a draft
-//   RELEASE_NOTES_MODEL    optional model override (default claude-opus-5-5)
+//   DEEPSEEK_API_KEY       summarise with DeepSeek (tried first)
+//   ANTHROPIC_API_KEY      summarise with Claude (tried when DeepSeek isn't configured or fails)
+//                          with neither, or if every configured one fails, the notes fall back
+//                          to a grouped change list and the release is created as a draft
+//   RELEASE_NOTES_MODEL    optional model override for the provider that is used
+//                          (defaults: deepseek-v4-pro / claude-opus-5-5)
+//   DEEPSEEK_BASE_URL      optional, defaults to https://api.deepseek.com
 //   GITHUB_REPOSITORY      owner/repo, used for compare links
 //   GITHUB_OUTPUT          set by Actions; decisions are written here
 import { execFileSync } from 'node:child_process'
@@ -17,7 +21,7 @@ import crypto from 'node:crypto'
 import Anthropic from '@anthropic-ai/sdk'
 
 const DRY_RUN = process.argv.includes('--dry-run')
-const MODEL = process.env.RELEASE_NOTES_MODEL || 'claude-opus-5-5'
+const MODEL_OVERRIDE = process.env.RELEASE_NOTES_MODEL
 // keeps the request comfortably small; larger diffs keep their stat line but lose the patch
 const MAX_PATCH_CHARS = 400_000
 const TAG_PREFIX = 'ui-v'
@@ -212,11 +216,65 @@ ${diff.patch}
 </diff>`
 }
 
+async function summariseWithDeepSeek(input) {
+  const baseUrl = (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com').replace(/\/$/, '')
+  // streamed: thinking mode can run for minutes, longer than a plain request's header timeout
+  const res = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`
+    },
+    body: JSON.stringify({
+      model: MODEL_OVERRIDE || 'deepseek-v4-pro',
+      max_tokens: 64000,
+      thinking: { type: 'enabled', reasoning_effort: 'high' },
+      stream: true,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: buildUserContent(input) }
+      ]
+    }),
+    signal: AbortSignal.timeout(20 * 60 * 1000)
+  })
+  if (!res.ok) {
+    throw new Error(`DeepSeek 请求失败 ${res.status}：${(await res.text()).slice(0, 500)}`)
+  }
+  let text = ''
+  let finishReason = null
+  let buffer = ''
+  const decoder = new TextDecoder()
+  const handleLine = (line) => {
+    // skips blank lines and ": keep-alive" comments
+    if (!line.startsWith('data:')) return
+    const data = line.slice(5).trim()
+    if (!data || data === '[DONE]') return
+    const choice = JSON.parse(data).choices?.[0]
+    if (choice?.delta?.content) text += choice.delta.content
+    if (choice?.finish_reason) finishReason = choice.finish_reason
+  }
+  for await (const chunk of res.body) {
+    buffer += decoder.decode(chunk, { stream: true })
+    let newline
+    while ((newline = buffer.indexOf('\n')) >= 0) {
+      handleLine(buffer.slice(0, newline).trim())
+      buffer = buffer.slice(newline + 1)
+    }
+  }
+  handleLine(buffer.trim())
+  if (finishReason !== 'stop') {
+    throw new Error(`DeepSeek 没有正常结束：${finishReason ?? '连接中断'}`)
+  }
+  text = text.trim()
+  if (!text) throw new Error('DeepSeek 没有返回发布说明')
+  return text
+}
+
 async function summariseWithClaude(input) {
   const client = new Anthropic()
   // server-side fallback re-runs a declined request on another model inside the same call
   const response = await client.beta.messages.create({
-    model: MODEL,
+    model: MODEL_OVERRIDE || 'claude-opus-5-5',
     max_tokens: 16000,
     betas: ['server-side-fallback-2026-07-01'],
     fallbacks: 'default',
@@ -248,7 +306,7 @@ function fallbackNotes({ commits, files }) {
   }
   const subjects = commits.filter((c) => !c.isMerge).map((c) => c.subject)
   return [
-    '> 自动总结不可用（未配置 ANTHROPIC_API_KEY 或调用失败），以下为按模块整理的草稿，请编辑后再发布。',
+    '> 自动总结不可用（未配置 DEEPSEEK_API_KEY / ANTHROPIC_API_KEY，或调用失败），以下为按模块整理的草稿，请编辑后再发布。',
     '',
     '## 涉及模块',
     ...[...areas].map(([area, n]) => `- ${area}（${n} 个文件）`),
@@ -318,14 +376,24 @@ async function main() {
   if (input.diff.omitted.length) {
     console.log(`diff too large, patch omitted for: ${input.diff.omitted.join(', ')}`)
   }
-  if (process.env.ANTHROPIC_API_KEY) {
+  const providers = [
+    ['DeepSeek', 'DEEPSEEK_API_KEY', summariseWithDeepSeek],
+    ['Claude', 'ANTHROPIC_API_KEY', summariseWithClaude]
+  ].filter(([, envKey]) => process.env[envKey])
+  if (!providers.length) {
+    console.log('::warning::未配置 DEEPSEEK_API_KEY 或 ANTHROPIC_API_KEY，发布说明为草稿，需要人工编辑后发布')
+  }
+  for (const [name, , summarise] of providers) {
     try {
-      notes = await summariseWithClaude(input)
+      notes = await summarise(input)
+      console.log(`release notes written by ${name}`)
+      break
     } catch (err) {
-      console.log(`::warning::生成发布说明失败，改为草稿发布：${err?.message ?? err}`)
+      console.log(`::warning::${name} 生成发布说明失败：${err?.message ?? err}`)
     }
-  } else {
-    console.log('::warning::未配置 ANTHROPIC_API_KEY，发布说明为草稿，需要人工编辑后发布')
+  }
+  if (!notes && providers.length) {
+    console.log('::warning::所有已配置的模型都生成失败，改为草稿发布')
   }
   if (!notes) {
     notes = fallbackNotes({ commits, files })
