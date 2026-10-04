@@ -5,6 +5,7 @@
       :columns="columns"
       :stats-preset="runDataStatsPresets.markAsNotSuitLog"
       gtag-prefix="mansr"
+      :actions-width="180"
       class="flex-1"
     >
       <template #cell-markReason="{ row }">
@@ -13,18 +14,18 @@
       </template>
       <template #actions="{ row }">
         <ElButton link type="primary" size="small" @click="handleViewJobSnapshotButtonClick(row)"
-          >快照</ElButton
+          >当时详情</ElButton
         >
         <ElButton
           link
           type="primary"
           size="small"
           @click="handleViewJobOnlineButtonClick(row.encryptJobId)"
-          >线上</ElButton
+          >在BOSS查看</ElButton
         >
       </template>
     </RunDataTable>
-    <ElDrawer v-model="drawVisibleModelValue" size="400px">
+    <ElDrawer v-model="drawVisibleModelValue" title="当时详情" size="400px">
       <JobInfoSnapshot
         v-if="selectedJobInfoForViewSnapshot"
         :job-info="selectedJobInfoForViewSnapshot"

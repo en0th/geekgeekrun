@@ -18,8 +18,8 @@ import {
   checkAnyCombineBossRecommendFilterHasCondition,
   formatStaticCombineFilters,
 } from './combineCalculator.mjs'
-import { default as jobFilterConditions } from './internal-config/job-filter-conditions-20241002.json' assert { type: 'json' }
-import { default as rawIndustryFilterExemption } from './internal-config/job-filter-industry-filter-exemption-20241002.json' assert { type: 'json' }
+import { default as jobFilterConditions } from './internal-config/job-filter-conditions-20241002.json' with { type: 'json' }
+import { default as rawIndustryFilterExemption } from './internal-config/job-filter-industry-filter-exemption-20241002.json' with { type: 'json' }
 import { ChatStartupFrom } from '@geekgeekrun/sqlite-plugin/dist/entity/ChatStartupLog.js'
 import {
   MarkAsNotSuitReason,
@@ -44,6 +44,8 @@ import {
   resolvePosterHrTitleRegExpStr,
 } from './poster-title-filter.mjs'
 import { hasIntersection } from '@geekgeekrun/utils/number.mjs';
+import { missingJobFields, scopedMarkStrategy, ExpiringBlockSet, COOLDOWN_MS } from './job-safety.mjs'
+import { NoMatchBatchGuard, loadNextJobBatch, openJobCardForReview, listSkipReason, describeListScope } from './auto-chat-navigation.mjs'
 const flattedCityList = []
 ;(cityGroupData?.zpData?.cityGroup ?? []).forEach(it => {
   const firstChar = it.firstChar
@@ -318,8 +320,8 @@ let browser
 let page
 
 const blockBossNotNewChat = new Set()
-const blockBossNotActive = new Set()
-const blockJobNotSuit = new Set()
+const blockBossNotActive = new ExpiringBlockSet()
+const blockJobNotSuit = new ExpiringBlockSet()
 
 async function markJobAsNotSuitInRecommendPage (reasonCode) {
   /**
@@ -914,36 +916,8 @@ async function toRecommendPage (hooks) {
         try {
           const { targetJobIndex, targetJobData } = await new Promise(async (resolve, reject) => {
             try {
-              let requestNextPagePromiseWithResolver = null
-              page.on(
-                'request',
-                function reqHandler (request) {
-                  if (
-                    request.url().startsWith('https://www.zhipin.com/wapi/zpgeek/pc/recommend/job/list.json') ||
-                    request.url().startsWith('https://www.zhipin.com/wapi/zpgeek/search/joblist.json')
-                  ) {
-                    requestNextPagePromiseWithResolver = (() => {
-                      const o = {}
-                      o.promise = new Promise((resolve, reject) => {
-                        o.resolve = resolve
-                        o.reject = reject
-                      })
-                      return o
-                    })()
-                    page.off(reqHandler)
-
-                    page.on(
-                      'response',
-                      function resHandler (response) {
-                        if (response.request() === request) {
-                          requestNextPagePromiseWithResolver?.resolve()
-                          page.off(resHandler)
-                        }
-                      }
-                    )
-                  }
-                }
-              )
+              const searchGuard = new NoMatchBatchGuard()
+              const listSkipReasons = new Map()
               // job list
               let  recommendJobListElProxy
               try {
@@ -958,40 +932,24 @@ async function toRecommendPage (hooks) {
               let jobListData = []
               async function updateJobListData () {
                 jobListData = await page.evaluate(`document.querySelector('.page-jobs-main')?.__vue__?.jobList`)
-                // due to city can get from list immediately
-                // so just set those job which city is not suit to blockJobNotSuit
-                // to skip view detail
-
-                // skip invalid salaryData (兼职、日结、实习 etc)
-                jobListData.forEach(it => {
-                  const salaryData = parseSalary(it.salaryDesc)
-                  if (!salaryData.high || !salaryData.low) {
-                    blockJobNotSuit.add(it.encryptJobId)
-                  }
-                })
-                if (
-                  (
-                    expectCityNotMatchStrategy === MarkAsNotSuitOp.NO_OP && 
-                    Array.isArray(expectCityList) &&
-                    expectCityList.length
-                  ) ||
-                  (
-                    expectWorkExpNotMatchStrategy === MarkAsNotSuitOp.NO_OP && 
-                    Array.isArray(expectWorkExpList) &&
-                    expectWorkExpList.length
-                  ) ||
-                  (
-                    strategyScopeOptionWhenMarkSalaryNotMatch === MarkAsNotSuitOp.NO_OP &&
-                    isSalaryFilterEnabled
-                  )
-                ) {
-                  console.log(`add job city not suit into blockJobNotSuit set`)
-                  for (const it of jobListData) {
-                    if (!expectCityList.includes(it.cityName)) {
-                      blockJobNotSuit.add(it.encryptJobId)
-                    }
-                  }
+                if (!Array.isArray(jobListData)) throw new Error('AUTO_CHAT_LIST_STALLED')
+                for (const row of jobListData) {
+                  const salary = parseSalary(row.salaryDesc || '')
+                  const reason = listSkipReason(row, {
+                    cities: expectCityList, cityStrategy: expectCityNotMatchStrategy,
+                    experiences: expectWorkExpList, experienceStrategy: expectWorkExpNotMatchStrategy,
+                    salaryEnabled: !!isSalaryFilterEnabled, salaryStrategy: expectSalaryNotMatchStrategy,
+                    salaryMatches: checkIfSalarySuit(row.salaryDesc || ''),
+                    invalidSalary: salary.low == null || salary.high == null
+                  })
+                  if (reason) { blockJobNotSuit.add(row.encryptJobId); listSkipReasons.set(row.encryptJobId, reason) }
                 }
+                const listSummary = describeListScope(jobListData, {
+                  allow: [...expectCompanySet], skipReasons: listSkipReasons,
+                  blocked: row => blockJobNotSuit.has(row.encryptJobId) || blockBossNotNewChat.has(row.encryptBossId) || blockBossNotActive.has(row.encryptBossId)
+                })
+                autoStartChatEventBus.emit('TASK_PROGRESS', { detail: '按当前求职条件检查岗位', listSummary })
+
               }
               await updateJobListData()
 
@@ -1009,7 +967,8 @@ async function toRecommendPage (hooks) {
                   return hasIntersection(theirSalaryInterval, ourSalaryInterval)
                 }
                 else if (expectSalaryCalculateWay === SalaryCalculateWay.ANNUAL_PACKAGE) {
-                  const salaryDataMonth = salaryData.month || 12
+                  if (salaryData.low == null || salaryData.high == null || !salaryData.month) return false
+                  const salaryDataMonth = salaryData.month
                   let ourSalaryInterval = [expectSalaryLow ?? null, expectSalaryHigh ?? null]
                   if (ourSalaryInterval.every(it => !isNaN(parseFloat(it)))) {
                     ourSalaryInterval = ourSalaryInterval.sort((a, b) => a - b)
@@ -1083,37 +1042,13 @@ async function toRecommendPage (hooks) {
                 // when disable company allow list, we will believe that the first one in the list is your expect job.
                 let tempTargetJobIndexToCheckDetail = getTempTargetJobIndexToCheckDetail()
                 while (tempTargetJobIndexToCheckDetail < 0 && !hasReachLastPage) {
-                  // fetch new
-                  const recommendJobListElBBox = await recommendJobListElProxy.boundingBox()
-                  const windowInnerHeight = await page.evaluate('window.innerHeight')
-                  await page.mouse.move(
-                    recommendJobListElBBox.x + recommendJobListElBBox.width / 2,
-                    windowInnerHeight / 2
-                  )
-                  let scrolledHeight = 0
-                  const increase = 40 + Math.floor(30 * Math.random())
-
-                  while (
-                    !requestNextPagePromiseWithResolver &&
-                    !hasReachLastPage
-                  ) {
-                    scrolledHeight += increase
-                    await page.mouse.wheel({deltaY: increase});
-                    await sleep(100)
-                    await requestNextPagePromiseWithResolver?.promise
-                    hasReachLastPage = await page.evaluate(`
-                      !(document.querySelector('.page-jobs-main')?.__vue__?.hasMore)
-                    `)
-                    if (hasReachLastPage) {
-                      console.log(`Arrive the terminal of the job list.`)
-                    }
-                  }
-                  requestNextPagePromiseWithResolver = null
-                  await waitForSageTimeOrJustContinue({
-                    tag: 'afterJobListPageFetched',
-                    hooks
-                  })
-                  await sleep(5000)
+                  searchGuard.beforeLoad()
+                  autoStartChatEventBus.emit('TASK_PROGRESS', { detail: '当前列表没有可沟通岗位，正在检查下一批；连续5批没有结果会停止', state: 'searching' })
+                  const nextBatch = await loadNextJobBatch({ page, list: recommendJobListElProxy })
+                  hasReachLastPage = !nextBatch.hasMore
+                  searchGuard.loadedBatch()
+                  await waitForSageTimeOrJustContinue({ tag: 'afterJobListPageFetched', hooks })
+                  await sleep(500)
                   await updateJobListData()
                   tempTargetJobIndexToCheckDetail = getTempTargetJobIndexToCheckDetail()
                 }
@@ -1137,25 +1072,11 @@ async function toRecommendPage (hooks) {
 
                   await sleepWithRandomDelay(200)
 
-                  if (tempTargetJobIndexToCheckDetail === 0) {
-                  } else {
-                    const recommendJobItemList = await recommendJobListElProxy.$$('ul.rec-job-list li.job-card-box')
-                    const targetJobElProxy = recommendJobItemList[tempTargetJobIndexToCheckDetail]
-                    // click that element
-                    await sleep(500)
-                    await targetJobElProxy.click()
-                    await page.waitForResponse(
-                      response => {
-                        if (
-                          response.url().startsWith('https://www.zhipin.com/wapi/zpgeek/job/detail.json')
-                        ) {
-                          return true
-                        }
-                        return false
-                      }
-                    );
-                    await sleepWithRandomDelay(2000)
-                  }
+                  await openJobCardForReview({
+                    page, list: recommendJobListElProxy, index: tempTargetJobIndexToCheckDetail,
+                    jobId: jobListData[tempTargetJobIndexToCheckDetail]?.encryptJobId
+                  })
+                  await sleepWithRandomDelay(200)
                   await waitForSageTimeOrJustContinue({
                     tag: 'afterJobDetailFetched',
                     hooks
@@ -1164,6 +1085,27 @@ async function toRecommendPage (hooks) {
                   selectedJobData = await page.evaluate('document.querySelector(".page-jobs-main").__vue__.currentJob')
                   // save the job detail info
                   await hooks.jobDetailIsGetFromRecommendList?.promise(targetJobData)
+                  autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'viewed', detail: '已查看岗位详情' })
+                  const parsedSalary = parseSalary(selectedJobData.salaryDesc || '')
+                  const missing = missingJobFields({
+                    jobName: targetJobData.jobInfo?.jobName,
+                    jobTypeName: targetJobData.jobInfo?.positionName,
+                    jobDescription: targetJobData.jobInfo?.postDescription,
+                    cityName: selectedJobData.cityName, companyName: selectedJobData.brandName,
+                    experienceName: selectedJobData.jobExperience, bossTitle: targetJobData.bossInfo?.title,
+                    salaryLow: parsedSalary.low, salaryHigh: parsedSalary.high, salaryMonth: parsedSalary.month,
+                    active: targetJobData.bossInfo?.activeTimeDesc
+                  }, { title: !!expectJobNameRegExpStr?.trim(), category: !!expectJobTypeRegExpStr?.trim(),
+                    description: !!expectJobDescRegExpStr?.trim(), city: !!expectCityList.length,
+                    company: enableCompanyAllowList || !!blockCompanyNameRegExp, experience: !!expectWorkExpList.length,
+                    hr: isPosterHrFilterEnabled, salary: !!isSalaryFilterEnabled,
+                    annual: expectSalaryCalculateWay === SalaryCalculateWay.ANNUAL_PACKAGE,
+                    activity: markAsNotActiveSelectedTimeRange > 0, activeLabels: activeDescList })
+                  if (missing.length) {
+                    blockJobNotSuit.add(targetJobData.jobInfo.encryptId)
+                    autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'skipped', detail: missing.join('；') + '，不发送、不标记' })
+                    continue continueFind
+                  }
 
                   //#region collect not suit reasons
                   const notSuitReasonIdToStrategyMap = {}
@@ -1517,24 +1459,32 @@ async function toRecommendPage (hooks) {
                   }
                   // #endregion
                   console.log('not suit reason and related strategy: ', notSuitReasonIdToStrategyMap)
+                  for (const [key, scope] of [['city', strategyScopeOptionWhenMarkJobCityNotMatch], ['salary', strategyScopeOptionWhenMarkSalaryNotMatch], ['workExp', strategyScopeOptionWhenMarkJobWorkExpNotMatch]]) {
+                    if (key in notSuitReasonIdToStrategyMap) notSuitReasonIdToStrategyMap[key] = scopedMarkStrategy(notSuitReasonIdToStrategyMap[key], scope, [...expectCompanySet], selectedJobData.brandName)
+                  }
+                  if (Object.keys(notSuitReasonIdToStrategyMap).length) autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'skipped', detail: '岗位不符合求职条件：' + Object.keys(notSuitReasonIdToStrategyMap).map(key => ({ companyName: '排除公司', active: '招聘者活跃度', city: '工作城市', workExp: '岗位经验', posterTitle: '招聘者身份', jobDetail: '岗位名称、分类或描述', salary: '期望薪资' }[key] || key)).join('、') })
 
                   // #region execute mark logic
                   // 1. find the one mark on Boss
                   const markOnBossCondition = Object.keys(notSuitReasonIdToStrategyMap).find(k => notSuitReasonIdToStrategyMap[k] === MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_BOSS)
                   if (markOnBossCondition) {
                     await notSuitConditionHandleMap[markOnBossCondition]()
+                    blockJobNotSuit.setExpiry(targetJobData.jobInfo.encryptId, Date.now() + COOLDOWN_MS)
                     continue continueFind
                   }
                   // 2. if there is no condition to mark Boss, then find the one mark on local db
                   const markOnLocalDbCondition = Object.keys(notSuitReasonIdToStrategyMap).find(k => notSuitReasonIdToStrategyMap[k] === MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_LOCAL)
                   if (markOnLocalDbCondition) {
                     await notSuitConditionHandleMap[markOnLocalDbCondition]()
+                    blockJobNotSuit.setExpiry(targetJobData.jobInfo.encryptId, Date.now() + COOLDOWN_MS)
+                    if (markOnLocalDbCondition === 'active') blockBossNotActive.setExpiry(targetJobData.jobInfo.encryptUserId, Date.now() + COOLDOWN_MS)
                     continue continueFind
                   }
                   // 3.
                   const noOpCondition = Object.keys(notSuitReasonIdToStrategyMap).find(k => notSuitReasonIdToStrategyMap[k] === MarkAsNotSuitOp.NO_OP)
                   if (noOpCondition) {
-                    await notSuitConditionHandleMap[noOpCondition]()
+                    // Skipping must never fall through to a local mark.
+                    blockJobNotSuit.add(targetJobData.jobInfo.encryptId)
                     continue continueFind
                   }
                   // #endregion
@@ -1550,11 +1500,14 @@ async function toRecommendPage (hooks) {
                     ].includes(targetJobData.jobInfo.encryptId)
                   ) {
                     // just skip
+                    blockJobNotSuit.add(targetJobData.jobInfo.encryptId)
+                    autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'skipped', detail: '公司范围不符合或岗位已跳过' })
                     continue continueFind
                   }
                   const startChatButtonInnerHTML = await page.evaluate('document.querySelector(".job-detail-box .op-btn.op-btn-chat")?.innerHTML.trim()')
                   if (startChatButtonInnerHTML !== '立即沟通') {
                     blockBossNotNewChat.add(targetJobData.jobInfo.encryptUserId)
+                    autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'skipped', detail: '岗位不可立即沟通' })
                     continue continueFind
                   }
                   targetJobIndex = tempTargetJobIndexToCheckDetail
@@ -1627,6 +1580,7 @@ async function toRecommendPage (hooks) {
               }
             )
             blockBossNotNewChat.add(targetJobData.jobInfo.encryptUserId)
+            autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'sent', detail: 'BOSS已确认开聊成功' })
 
             await storeStorage(page).catch(() => void 0)
             await sleepWithRandomDelay(1500)
@@ -1792,6 +1746,9 @@ export async function mainLoop (hooks) {
       jobNotMatchStrategy,
       jobNotActiveStrategy,
       expectCityNotMatchStrategy,
+      expectSalaryNotMatchStrategy,
+      expectWorkExpNotMatchStrategy,
+      blockCompanyNameRegMatchStrategy,
       posterHrNotMatchStrategy,
       blockJobNotSuit,
       blockBossNotActive,

@@ -6,7 +6,7 @@ import packageJson from './package.json' assert {type: 'json'}
 
 const isUiDev = process.env.NODE_ENV === 'development'
 
-export const runtimeFolderPath = path.join(os.homedir(), '.geekgeekrun')
+export const runtimeFolderPath = process.env.GEEKGEEKRUN_RUNTIME_DIR || path.join(os.homedir(), '.geekgeekrun')
 
 const extensionDir = path.join(
   runtimeFolderPath,

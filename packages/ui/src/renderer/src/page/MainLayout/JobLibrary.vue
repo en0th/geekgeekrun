@@ -5,26 +5,26 @@
       :columns="columns"
       :stats-preset="runDataStatsPresets.jobLibrary"
       gtag-prefix="job_library"
-      :actions-width="180"
+      :actions-width="240"
       class="flex-1"
     >
       <template #actions="{ row }">
         <ElButton link type="primary" size="small" @click="handleViewJobSnapshotButtonClick(row)"
-          >最新快照</ElButton
+          >已保存详情</ElButton
         >
         <ElButton link type="primary" size="small" @click="handleViewJobHistoryButtonClick(row)"
-          >变更记录</ElButton
+          >历史变化</ElButton
         >
         <ElButton
           link
           type="primary"
           size="small"
           @click="handleViewJobOnlineButtonClick(row.encryptJobId)"
-          >线上</ElButton
+          >在BOSS查看</ElButton
         >
       </template>
     </RunDataTable>
-    <ElDrawer v-model="drawVisibleModelValue" size="400px">
+    <ElDrawer v-model="drawVisibleModelValue" title="已保存详情" size="400px">
       <JobInfoSnapshot
         v-if="selectedJobInfoForViewSnapshot"
         :job-info="selectedJobInfoForViewSnapshot"
@@ -39,6 +39,7 @@
     </ElDrawer>
     <ElDialog
       v-model="historyDialogVisibleModelValue"
+      title="历史变化"
       width="100%"
       :style="{
         margin: 0,
@@ -111,10 +112,17 @@ const selectedJobInfoForViewHistory = ref<VChatStartupLog | null>(null)
 const selectedJobHistory = ref<null | JobInfoChangeLog[]>(null)
 async function handleViewJobHistoryButtonClick(record: VChatStartupLog) {
   gtagRenderer('view_job_history_button_clicked')
-  let { data: historyList } = await electron.ipcRenderer.invoke(
-    'get-job-history-by-encrypt-id',
-    record.encryptJobId
-  )
+  let historyResponse
+  try {
+    historyResponse = await electron.ipcRenderer.invoke(
+      'get-job-history-by-encrypt-id',
+      record.encryptJobId
+    )
+  } catch {
+    ElMessage.error('读取历史变化失败，请稍后重试。')
+    return
+  }
+  let { data: historyList } = historyResponse
 
   historyList = historyList.map((it) => ({
     ...it,
@@ -167,7 +175,7 @@ async function handleViewJobHistoryButtonClick(record: VChatStartupLog) {
   if (!historyList.length) {
     gtagRenderer('job_history_is_not_found')
     ElMessage.warning({
-      message: '未找到与此条目相关的历史变更记录，再多投一投吧'
+      message: '此职位暂无已保存的历史变化。'
     })
     return
   }

@@ -42,6 +42,8 @@ import initPublicIpc from '../../utils/initPublicIpc'
 import { getLastUsedAndAvailableBrowser } from '../DOWNLOAD_DEPENDENCIES/utils/browser-history'
 import { configWithBrowserAssistant } from '../../features/config-with-browser-assistant'
 import { DEFAULT_CONSTANT_OPEN_CONTENT_SEGS } from '../../../common/constant'
+import { createTaskProgress } from '../../features/task-progress'
+const taskProgress = createTaskProgress()
 
 process.on('SIGTERM', () => {
   console.log('收到SIGTERM信号，正在退出')
@@ -485,6 +487,7 @@ const mainLoop = async () => {
     }
   }
 
+  taskProgress.update(undefined, '正在检查会话')
   let cursorToContinueFind = 0
 
   // eslint-disable-next-line no-constant-condition
@@ -533,6 +536,7 @@ const mainLoop = async () => {
               ?.__vue__.scrollToIndex(0)
           })()
         })
+        taskProgress.update(undefined, '暂时没有符合条件的会话，稍后继续查找', 'waiting')
         await sleep(10000)
       } else {
         cursorToContinueFind = friendListData.length - 1
@@ -610,11 +614,12 @@ const mainLoop = async () => {
 
     const lastGeekMessageSendTime = historyMessageList.findLast((it) => it.isSelf)?.time ?? 0
     const isJobClosed = await checkJobIsClosed()
+    taskProgress.update('viewed', '已检查会话状态')
     if (
       !isJobClosed &&
       isExpectJobTypeMatch &&
-      historyMessageList[historyMessageList.length - 1].isSelf &&
-      historyMessageList[historyMessageList.length - 1].status === MsgStatus.HAS_READ &&
+      historyMessageList[historyMessageList.length - 1]?.isSelf &&
+      historyMessageList[historyMessageList.length - 1]?.status === MsgStatus.HAS_READ &&
       ((conversationInfo &&
         Object.hasOwn(conversationInfo, 'bothTalked') &&
         !conversationInfo.bothTalked) ||
@@ -640,6 +645,7 @@ const mainLoop = async () => {
             gtag('rnrr_llm_content_sent')
           } catch (err) {
             console.log(err)
+            if ((err as Error)?.message?.includes('SEND_CONFIRMATION_UNCERTAIN')) throw err
             await sendMessage(pageMapByName.boss!, constantOpenContent)
             gtag('rnrr_look_forward_reply_emotion_sent', {
               fallback: true
@@ -654,6 +660,7 @@ const mainLoop = async () => {
             gtag('rnrr_llm_content_sent')
           } catch (err) {
             console.log(err)
+            if ((err as Error)?.message?.includes('SEND_CONFIRMATION_UNCERTAIN')) throw err
             if (rechatLlmFallback === RECHAT_LLM_FALLBACK.SEND_LOOK_FORWARD_EMOTION) {
               await sendLookForwardReplyEmotion(pageMapByName.boss!)
               gtag('rnrr_look_forward_reply_emotion_sent', {
@@ -671,7 +678,9 @@ const mainLoop = async () => {
           gtag('rnrr_look_forward_reply_emotion_sent')
         }
       }
+      taskProgress.update('sent', '页面已确认跟进消息发送')
     } else {
+      taskProgress.update('skipped', '会话暂不符合跟进条件')
       cursorToContinueFind += 1
     }
     await sleep(1000)
@@ -777,6 +786,10 @@ export async function runEntry() {
       }
       // handle error
       if (err instanceof Error) {
+        if (err.message.includes('SEND_CONFIRMATION_UNCERTAIN')) {
+          taskProgress.update(undefined, '发送结果未确认，请在BOSS中核对后重新开始；不会自动补发', 'error')
+          process.exit(AUTO_CHAT_ERROR_EXIT_CODE.MESSAGE_SEND_UNCONFIRMED)
+        }
         if (err.message.includes('LOGIN_STATUS_INVALID')) {
           process.exit(AUTO_CHAT_ERROR_EXIT_CODE.LOGIN_STATUS_INVALID)
           break

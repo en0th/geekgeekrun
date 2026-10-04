@@ -1,5 +1,12 @@
 <template>
   <el-form class="form" label-position="top" size="small">
+    <p class="detail-note">
+      {{
+        scene === 'jobLibrary'
+          ? '这里展示本机已保存的职位信息；当前岗位请通过“在BOSS查看”打开。'
+          : '这里展示此记录关联的本地职位信息；后续采集可能更新内容，不保证完整还原操作发生时的详情。'
+      }}
+    </p>
     <el-form-item label="公司">{{ jobInfo.companyName }}</el-form-item>
     <el-form-item label="职位名称">{{ jobInfo.jobName }}</el-form-item>
     <el-form-item label="职位分类">{{ jobInfo.positionName }}</el-form-item>
@@ -51,6 +58,11 @@ defineProps({
 
 <style lang="scss" scoped>
 .form {
+  .detail-note {
+    margin: 0 0 16px;
+    color: #606266;
+    line-height: 1.6;
+  }
   :deep(.el-form-item__label) {
     color: #999;
   }

@@ -189,7 +189,7 @@ defineExpose({
   show,
   hide
 })
-ipcRenderer.on('worker-exited', (ev, payload) => {
+const unListenExit = ipcRenderer.on('worker-exited', (ev, payload) => {
   const { workerId, code } = payload
   if (
     workerId !== props.workerId
@@ -211,6 +211,7 @@ ipcRenderer.on('worker-exited', (ev, payload) => {
     })
   }
 })
+onUnmounted(unListenExit)
 </script>
 
 <style lang="scss">

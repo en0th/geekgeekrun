@@ -8,7 +8,7 @@
         <el-col :span="6"><el-form-item label="BOSS及其身份">{{ jobInfo.bossName }} {{ jobInfo.bossTitle }}</el-form-item></el-col>
       </el-row>
     </el-form>
-    <el-divider content-position="left">变更记录</el-divider>
+    <el-divider content-position="left">历史变化</el-divider>
     <el-table
       class="diff-table"
       :data="dataForRender"

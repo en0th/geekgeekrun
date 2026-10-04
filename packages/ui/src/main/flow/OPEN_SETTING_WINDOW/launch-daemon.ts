@@ -1,4 +1,5 @@
 import { spawn } from 'child_process'
+import { app } from 'electron'
 import {
   ensureStorageFileExist,
   writeStorageFile,
@@ -28,9 +29,7 @@ export async function launchDaemon() {
     // 添加参数使守护进程在后台运行，不显示 UI
     daemonProcess = spawn(
       process.argv[0],
-      process.env.NODE_ENV === 'development'
-        ? [process.argv[1], `--mode=launchDaemon`]
-        : [`--mode=launchDaemon`],
+      !app.isPackaged ? [app.getAppPath(), `--mode=launchDaemon`] : [`--mode=launchDaemon`],
       {
         stdio: ['ignore', 'pipe', 'pipe', 'pipe'],
         detached: true,

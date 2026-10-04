@@ -18,6 +18,7 @@ import { connectToDaemon, sendToDaemon } from '../OPEN_SETTING_WINDOW/connect-to
 import { checkShouldExit } from '../../utils/worker'
 import { CookieInvalidHandlePlugin } from '../../features/cookie-invalid-handle-plugin'
 import initPublicIpc from '../../utils/initPublicIpc'
+import { createTaskProgress } from '../../features/task-progress'
 import { getLastUsedAndAvailableBrowser } from '../DOWNLOAD_DEPENDENCIES/utils/browser-history'
 import { configWithBrowserAssistant } from '../../features/config-with-browser-assistant'
 const { default: SqlitePlugin } = SqlitePluginModule
@@ -95,6 +96,9 @@ const runAutoChat = async () => {
   const { initPuppeteer, mainLoop, closeBrowserWindow, autoStartChatEventBus } = await import(
     '@geekgeekrun/geek-auto-start-chat-with-boss/index.mjs'
   )
+  const taskProgress = createTaskProgress()
+  autoStartChatEventBus.on('TASK_PROGRESS', ({ kind, detail, state, listSummary }) => taskProgress.update(kind, detail, state || 'running', { listSummary }))
+  taskProgress.update(undefined, '准备查找岗位')
   process.on('disconnect', () => {
     closeBrowserWindow()
     app.exit()
@@ -120,6 +124,9 @@ const runAutoChat = async () => {
     sageTimeExit: new AsyncSeriesHook(['args'])
   }
   initPlugins(hooks)
+  hooks.noPositionFoundAfterTraverseAllJob.tap('TaskProgress', () => taskProgress.update(undefined, '暂时没有可沟通岗位，稍后继续查找', 'waiting'))
+  hooks.sageTimeEnter.tapPromise('TaskProgress', async () => taskProgress.update(undefined, '定时休息中', 'resting'))
+  hooks.sageTimeExit.tapPromise('TaskProgress', async () => taskProgress.update(undefined, '休息结束，继续查找'))
 
   gtag('run_auto_chat_with_boss_main_ready')
 
@@ -131,6 +138,15 @@ const runAutoChat = async () => {
       await mainLoop(hooks)
     } catch (err) {
       if (err instanceof Error) {
+        if (/AUTO_CHAT_(NO_MATCH_BATCH_LIMIT|LIST_STALLED|DETAIL_NOT_READY)/.test(err.message)) {
+          const noMatch = err.message.includes('NO_MATCH_BATCH_LIMIT')
+          taskProgress.update(undefined, noMatch
+            ? '连续检查5批岗位仍无可沟通岗位，已停止；请检查公司名单、岗位分类和经验条件'
+            : '岗位列表或详情无法确认，已停止，未继续发送；请检查BOSS页面后重新开始', 'blocked')
+          await closeBrowserWindow?.()
+          process.exit(noMatch ? AUTO_CHAT_ERROR_EXIT_CODE.NO_MATCHING_JOBS : AUTO_CHAT_ERROR_EXIT_CODE.JOB_PAGE_NOT_READY)
+          return
+        }
         if (err.message.includes('LOGIN_STATUS_INVALID')) {
           await dialog.showMessageBox({
             type: `error`,
@@ -155,6 +171,7 @@ const runAutoChat = async () => {
       }
       closeBrowserWindow?.()
       console.error(err)
+      taskProgress.update(undefined, '遇到异常，等待重新检查任务', 'retrying')
       const shouldExit = await checkShouldExit()
       if (shouldExit) {
         app.exit()

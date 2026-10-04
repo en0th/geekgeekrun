@@ -2,6 +2,7 @@ import { AUTO_CHAT_ERROR_EXIT_CODE } from '../../common/enums/auto-start-chat'
 import { daemonEE, sendToDaemon } from '../flow/OPEN_SETTING_WINDOW/connect-to-daemon'
 import { saveAndGetCurrentRunRecord } from '../flow/OPEN_SETTING_WINDOW/utils/db'
 import minimist from 'minimist'
+import { app } from 'electron'
 
 export async function runCommon({ mode }) {
   await sendToDaemon(
@@ -38,13 +39,15 @@ export async function runCommon({ mode }) {
     GEEKGEEKRUND_NO_AUTO_RESTART_EXIT_CODE: [
       AUTO_CHAT_ERROR_EXIT_CODE.PUPPETEER_IS_NOT_EXECUTABLE,
       AUTO_CHAT_ERROR_EXIT_CODE.LOGIN_STATUS_INVALID,
-      AUTO_CHAT_ERROR_EXIT_CODE.LLM_UNAVAILABLE
+      AUTO_CHAT_ERROR_EXIT_CODE.LLM_UNAVAILABLE,
+      AUTO_CHAT_ERROR_EXIT_CODE.MESSAGE_SEND_UNCONFIRMED,
+      AUTO_CHAT_ERROR_EXIT_CODE.NO_MATCHING_JOBS,
+      AUTO_CHAT_ERROR_EXIT_CODE.JOB_PAGE_NOT_READY
     ].join(',')
   }
-  const args =
-    process.env.NODE_ENV === 'development'
-      ? [process.argv[1], `--mode=${mode}`, `--run-record-id=${currentRunRecord?.id || 0}`]
-      : [`--mode=${mode}`, `--run-record-id=${currentRunRecord?.id || 0}`]
+  const args = !app.isPackaged
+    ? [app.getAppPath(), `--mode=${mode}`, `--run-record-id=${currentRunRecord?.id || 0}`]
+    : [`--mode=${mode}`, `--run-record-id=${currentRunRecord?.id || 0}`]
   await sendToDaemon(
     {
       type: 'start-worker',

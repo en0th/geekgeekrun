@@ -21,11 +21,12 @@ const defaultConfigFileContentMap = {
   'llm.json': JSON.stringify(defaultLlmConf),
   'common-job-condition-config.json': JSON.stringify(defaultCommonJobConditionConfig)
 }
-const runtimeFolderPath = path.join(os.homedir(), '.geekgeekrun')
+export const runtimeFolderPath = process.env.GEEKGEEKRUN_RUNTIME_DIR || path.join(os.homedir(), '.geekgeekrun')
 export const configFolderPath = path.join(
   runtimeFolderPath,
   'config'
 )
+fs.mkdirSync(configFolderPath, { recursive: true })
 export const writeConfigFile = async (fileName, content, { isSync } = {}) => {
   const filePath = path.join(configFolderPath, fileName)
   const fileContent = JSON.stringify(content)
