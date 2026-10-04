@@ -39,6 +39,10 @@ import { AddColumnForMarkAsNotSuitLog1746092370665 } from "./migrations/17460923
 import { Init1000000000000 } from "./migrations/1000000000000-Init";
 import { AddJobSourceColumnForChatStartupLogAndMarkAsNotSuitLog1752380078526 } from "./migrations/1752380078526-AddJobSourceColumnForChatStartupLogAndMarkAsNotSuitLog";
 import { AddJobHireStatusTable1766466476822 } from "./migrations/1766466476822-AddJobHireStatusTable";
+import { AddFavoriteAndJobHireStatusLog1791100000000 } from "./migrations/1791100000000-AddFavoriteAndJobHireStatusLog";
+import { FavoriteFolder } from "./entity/FavoriteFolder";
+import { FavoriteJob } from "./entity/FavoriteJob";
+import { JobHireStatusLog } from "./entity/JobHireStatusLog";
 import chunk from 'lodash/chunk'
 import * as typeorm from 'typeorm'
 
@@ -70,6 +74,9 @@ export function initDb(dbFilePath) {
       ChatMessageRecord,
       LlmModelUsageRecord,
       JobHireStatusRecord,
+      FavoriteFolder,
+      FavoriteJob,
+      JobHireStatusLog,
     ],
     migrations: [
       Init1000000000000,
@@ -77,7 +84,8 @@ export function initDb(dbFilePath) {
       UpdateBossInfoTable1732032381304,
       AddColumnForMarkAsNotSuitLog1746092370665,
       AddJobSourceColumnForChatStartupLogAndMarkAsNotSuitLog1752380078526,
-      AddJobHireStatusTable1766466476822
+      AddJobHireStatusTable1766466476822,
+      AddFavoriteAndJobHireStatusLog1791100000000
     ],
     migrationsRun: true
   });

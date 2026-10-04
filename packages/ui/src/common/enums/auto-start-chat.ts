@@ -11,6 +11,9 @@ export enum AUTO_CHAT_ERROR_EXIT_CODE {
   JOB_PAGE_NOT_READY = 89,
 }
 
+// a long-running task left its turn to a queued one; packages/pm/daemon.js requeues it
+export const TASK_YIELD_EXIT_CODE = 90
+
 export enum RECHAT_CONTENT_SOURCE {
   LOOK_FORWARD_EMOTION = 1,
   GEMINI_WITH_CHAT_CONTEXT = 2

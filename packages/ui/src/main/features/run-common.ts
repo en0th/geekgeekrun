@@ -4,7 +4,22 @@ import { saveAndGetCurrentRunRecord } from '../flow/OPEN_SETTING_WINDOW/utils/db
 import minimist from 'minimist'
 import { app } from 'electron'
 
-export async function runCommon({ mode }) {
+interface DaemonStatus {
+  workers?: { workerId: string; args?: string[] }[]
+  queue?: { workerId: string; position: number; args?: string[] }[]
+}
+
+export async function runCommon({
+  mode,
+  // the poll task doesn't create an auto-greeting run record
+  withRunRecord = true,
+  // exit codes after which this task must not be restarted, on top of the shared ones
+  extraNoAutoRestartExitCodes = [] as number[]
+}: {
+  mode: string
+  withRunRecord?: boolean
+  extraNoAutoRestartExitCodes?: number[]
+}) {
   await sendToDaemon(
     {
       type: 'user-process-register'
@@ -13,27 +28,29 @@ export async function runCommon({ mode }) {
       needCallback: true
     }
   )
-  const taskList = (
-    await sendToDaemon(
-      {
-        type: 'get-status'
-      },
-      {
-        needCallback: true
-      }
-    )
-  )?.workers
-  const runningTask = taskList?.find((it) => it.workerId === mode)
-  if (runningTask) {
-    const commandlineArgs = minimist(runningTask.args ?? [])
+  const daemonStatus = (await sendToDaemon(
+    {
+      type: 'get-status'
+    },
+    {
+      needCallback: true
+    }
+  )) as DaemonStatus | undefined
+  const runningTask = daemonStatus?.workers?.find((it) => it.workerId === mode)
+  // a task waiting in the queue counts as started too
+  const queuedTask = daemonStatus?.queue?.find((it) => it.workerId === mode)
+  if (runningTask || queuedTask) {
+    const commandlineArgs = minimist((runningTask ?? queuedTask)?.args ?? [])
     const runRecordId = Number(commandlineArgs['run-record-id'])
-    console.log('任务已在运行中')
+    console.log(runningTask ? '任务已在运行中' : '任务已在队列中')
     return {
       runRecordId,
-      isAlreadyRunning: true
+      isAlreadyRunning: true,
+      queued: !runningTask,
+      queuePosition: queuedTask?.position ?? 0
     }
   }
-  const currentRunRecord = (await saveAndGetCurrentRunRecord())?.data
+  const currentRunRecord = withRunRecord ? (await saveAndGetCurrentRunRecord())?.data : null
   const subProcessEnv = {
     ...process.env,
     GEEKGEEKRUND_NO_AUTO_RESTART_EXIT_CODE: [
@@ -42,13 +59,15 @@ export async function runCommon({ mode }) {
       AUTO_CHAT_ERROR_EXIT_CODE.LLM_UNAVAILABLE,
       AUTO_CHAT_ERROR_EXIT_CODE.MESSAGE_SEND_UNCONFIRMED,
       AUTO_CHAT_ERROR_EXIT_CODE.NO_MATCHING_JOBS,
-      AUTO_CHAT_ERROR_EXIT_CODE.JOB_PAGE_NOT_READY
+      AUTO_CHAT_ERROR_EXIT_CODE.JOB_PAGE_NOT_READY,
+      ...extraNoAutoRestartExitCodes
     ].join(',')
   }
   const args = !app.isPackaged
     ? [app.getAppPath(), `--mode=${mode}`, `--run-record-id=${currentRunRecord?.id || 0}`]
     : [`--mode=${mode}`, `--run-record-id=${currentRunRecord?.id || 0}`]
-  await sendToDaemon(
+  // the daemon queues BOSS tasks while another one runs
+  const startResponse = (await sendToDaemon(
     {
       type: 'start-worker',
       workerId: mode,
@@ -59,7 +78,7 @@ export async function runCommon({ mode }) {
     {
       needCallback: true
     }
-  )
+  )) as { queued?: boolean; position?: number } | undefined
   daemonEE.on('message', (message) => {
     if (message.type === 'worker-exited') {
       if (
@@ -72,6 +91,8 @@ export async function runCommon({ mode }) {
     }
   })
   return {
-    runRecordId: currentRunRecord?.id
+    runRecordId: currentRunRecord?.id,
+    queued: Boolean(startResponse?.queued),
+    queuePosition: startResponse?.position ?? 0
   }
 }

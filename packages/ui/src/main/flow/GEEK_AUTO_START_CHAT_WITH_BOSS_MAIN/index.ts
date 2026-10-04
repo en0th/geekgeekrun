@@ -19,6 +19,7 @@ import { checkShouldExit } from '../../utils/worker'
 import { CookieInvalidHandlePlugin } from '../../features/cookie-invalid-handle-plugin'
 import initPublicIpc from '../../utils/initPublicIpc'
 import { createTaskProgress } from '../../features/task-progress'
+import { yieldIfRequested } from '../../features/task-queue'
 import { getLastUsedAndAvailableBrowser } from '../DOWNLOAD_DEPENDENCIES/utils/browser-history'
 import { configWithBrowserAssistant } from '../../features/config-with-browser-assistant'
 const { default: SqlitePlugin } = SqlitePluginModule
@@ -121,9 +122,17 @@ const runAutoChat = async () => {
     errorEncounter: new SyncHook(['errorInfo']),
     encounterEmptyRecommendJobList: new AsyncSeriesHook(['args']),
     sageTimeEnter: new AsyncSeriesHook(['args']),
-    sageTimeExit: new AsyncSeriesHook(['args'])
+    sageTimeExit: new AsyncSeriesHook(['args']),
+    // between jobs; see yieldIfRequested
+    checkpoint: new AsyncSeriesHook([])
   }
   initPlugins(hooks)
+  hooks.checkpoint.tapPromise('TaskQueue', () =>
+    yieldIfRequested(async () => {
+      taskProgress.update(undefined, '排队中的任务先运行，本任务稍后自动继续', 'yielded')
+      await closeBrowserWindow?.()
+    })
+  )
   hooks.noPositionFoundAfterTraverseAllJob.tap('TaskProgress', () => taskProgress.update(undefined, '暂时没有可沟通岗位，稍后继续查找', 'waiting'))
   hooks.sageTimeEnter.tapPromise('TaskProgress', async () => taskProgress.update(undefined, '定时休息中', 'resting'))
   hooks.sageTimeExit.tapPromise('TaskProgress', async () => taskProgress.update(undefined, '休息结束，继续查找'))

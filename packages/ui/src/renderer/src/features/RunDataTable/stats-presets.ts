@@ -114,6 +114,18 @@ export const runDataStatsPresets: Record<RunDataDatasetKey, RunDataStatsPreset> 
       }
     ]
   },
+  favoriteJobs: {
+    distinctFields: [
+      { field: 'companyName', label: '公司数' },
+      { field: 'folderName', label: '收藏夹数' }
+    ],
+    numericFields: salaryNumeric,
+    charts: [
+      { id: 'hireStatus', title: '招聘状态', type: 'pie', group: { field: 'hireStatus' } },
+      { id: 'folder', title: '收藏夹', type: 'pie', group: { field: 'folderName', limit: 12 } },
+      ...jobCharts('job')
+    ]
+  },
   bossLibrary: {
     distinctFields: [{ field: 'companyName', label: '公司数' }],
     charts: [

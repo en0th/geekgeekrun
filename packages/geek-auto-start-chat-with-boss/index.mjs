@@ -243,10 +243,16 @@ if (
 }
 const posterHrNotMatchStrategy = readConfigFile('boss.json').posterHrNotMatchStrategy ?? MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_LOCAL
 const {
+  runMode,
+  collectOnlyMatchingJobs,
   skipUnparseableSalaryJob,
   jobListLoadWaitSeconds,
   jobDetailViewWaitSeconds
 } = readRunSettings(readConfigFile('boss.json'))
+// collect mode saves job details only: no chat and no not-suit marks, on BOSS or locally
+const isCollectMode = runMode === 'collect'
+// collect everything the sources show, without applying the job conditions
+const isCollectAll = isCollectMode && !collectOnlyMatchingJobs
 
 let {
   jobSourceList
@@ -940,6 +946,7 @@ async function toRecommendPage (hooks) {
                 jobListData = await page.evaluate(`document.querySelector('.page-jobs-main')?.__vue__?.jobList`)
                 if (!Array.isArray(jobListData)) throw new Error('AUTO_CHAT_LIST_STALLED')
                 for (const row of jobListData) {
+                  if (isCollectAll) break
                   const salary = parseSalary(row.salaryDesc || '')
                   // unparseable salaries are 兼职、日结、实习 etc.; skipped by default whether or not the
                   // salary filter is on (when it is on, listSkipReason still skips them)
@@ -992,6 +999,8 @@ async function toRecommendPage (hooks) {
                 return true
               }
               function getTempTargetJobIndexToCheckDetail () {
+                // collecting everything: any job not handled yet this run or cooling down
+                if (isCollectAll) return jobListData.findIndex(it => !blockJobNotSuit.has(it.encryptJobId))
                 return jobListData.findIndex(it => {
                   return !blockBossNotNewChat.has(it.encryptBossId) &&
                     !blockBossNotActive.has(it.encryptBossId) &&
@@ -1049,6 +1058,8 @@ async function toRecommendPage (hooks) {
                 })
               }
               continueFind: while (targetJobIndex < 0 && !hasReachLastPage) {
+                // between jobs: the task queue may ask this run to make way for a queued task
+                await hooks.checkpoint?.promise()
                 // when disable company allow list, we will believe that the first one in the list is your expect job.
                 let tempTargetJobIndexToCheckDetail = getTempTargetJobIndexToCheckDetail()
                 while (tempTargetJobIndexToCheckDetail < 0 && !hasReachLastPage) {
@@ -1098,6 +1109,11 @@ async function toRecommendPage (hooks) {
                   // save the job detail info
                   await hooks.jobDetailIsGetFromRecommendList?.promise(targetJobData)
                   autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'viewed', detail: '已查看岗位详情' })
+                  if (isCollectAll) {
+                    blockJobNotSuit.add(targetJobData.jobInfo.encryptId)
+                    autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'collected', detail: '已保存岗位信息' })
+                    continue continueFind
+                  }
                   const parsedSalary = parseSalary(selectedJobData.salaryDesc || '')
                   const missing = missingJobFields({
                     jobName: targetJobData.jobInfo?.jobName,
@@ -1474,6 +1490,11 @@ async function toRecommendPage (hooks) {
                   }
                   if (Object.keys(notSuitReasonIdToStrategyMap).length) autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'skipped', detail: '岗位不符合求职条件：' + Object.keys(notSuitReasonIdToStrategyMap).map(key => ({ companyName: '排除公司', active: '招聘者活跃度', city: '工作城市', workExp: '岗位经验', posterTitle: '招聘者身份', jobDetail: '岗位名称、分类或描述', salary: '期望薪资' }[key] || key)).join('、') })
 
+                  // collect mode never marks: a job that doesn't match is just skipped
+                  if (isCollectMode && Object.keys(notSuitReasonIdToStrategyMap).length) {
+                    blockJobNotSuit.add(targetJobData.jobInfo.encryptId)
+                    continue continueFind
+                  }
                   // #region execute mark logic
                   // 1. find the one mark on Boss
                   const markOnBossCondition = Object.keys(notSuitReasonIdToStrategyMap).find(k => notSuitReasonIdToStrategyMap[k] === MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_BOSS)
@@ -1512,6 +1533,11 @@ async function toRecommendPage (hooks) {
                     // just skip
                     blockJobNotSuit.add(targetJobData.jobInfo.encryptId)
                     autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'skipped', detail: '公司范围不符合或岗位已跳过' })
+                    continue continueFind
+                  }
+                  if (isCollectMode) {
+                    blockJobNotSuit.add(targetJobData.jobInfo.encryptId)
+                    autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'collected', detail: '已保存符合条件的岗位' })
                     continue continueFind
                   }
                   const startChatButtonInnerHTML = await page.evaluate('document.querySelector(".job-detail-box .op-btn.op-btn-chat")?.innerHTML.trim()')

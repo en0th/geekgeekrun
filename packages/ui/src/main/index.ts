@@ -36,6 +36,7 @@ const backgroundModes = new Set([
   'launchBossZhipinLoginPageWithPreloadExtension',
   'launchBossSite',
   'readNoReplyAutoReminderMain',
+  'jobStatusPollMain',
   'launchDaemon',
   'geekAutoStartWithBoss',
   'readNoReplyAutoReminder'
@@ -80,6 +81,11 @@ if (backgroundModes.has(runMode) || process.env.GEEKGEEKRUN_RUNTIME_DIR) {
     }
     case 'readNoReplyAutoReminderMain': {
       const { runEntry } = await import('./flow/READ_NO_REPLY_AUTO_REMINDER_MAIN/index')
+      runEntry()
+      break
+    }
+    case 'jobStatusPollMain': {
+      const { runEntry } = await import('./flow/JOB_STATUS_POLL_MAIN/index')
       runEntry()
       break
     }

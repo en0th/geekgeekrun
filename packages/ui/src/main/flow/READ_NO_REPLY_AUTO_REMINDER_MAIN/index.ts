@@ -43,6 +43,7 @@ import { getLastUsedAndAvailableBrowser } from '../DOWNLOAD_DEPENDENCIES/utils/b
 import { configWithBrowserAssistant } from '../../features/config-with-browser-assistant'
 import { DEFAULT_CONSTANT_OPEN_CONTENT_SEGS } from '../../../common/constant'
 import { createTaskProgress } from '../../features/task-progress'
+import { yieldIfRequested } from '../../features/task-queue'
 const taskProgress = createTaskProgress()
 
 process.on('SIGTERM', () => {
@@ -492,6 +493,11 @@ const mainLoop = async () => {
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    // between conversations: the task queue may ask this run to make way for a queued task
+    await yieldIfRequested(async () => {
+      taskProgress.update(undefined, '排队中的任务先运行，本任务稍后自动继续', 'yielded')
+      await browser?.close().catch(() => void 0)
+    })
     await pageMapByName.boss?.waitForFunction(() => {
       return Array.isArray(document.querySelector('.main-wrap .chat-user')?.__vue__?.list)
     })

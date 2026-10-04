@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   readRunSettings,
+  readJobStatusPollSettings,
   waitSeconds,
   DEFAULT_JOB_LIST_LOAD_WAIT_SECONDS,
   DEFAULT_JOB_DETAIL_VIEW_WAIT_SECONDS,
@@ -10,6 +11,8 @@ import {
 
 test('configs without the settings get the defaults', () => {
   assert.deepEqual(readRunSettings({}), {
+    runMode: 'chat',
+    collectOnlyMatchingJobs: true,
     skipUnparseableSalaryJob: true,
     jobListLoadWaitSeconds: DEFAULT_JOB_LIST_LOAD_WAIT_SECONDS,
     jobDetailViewWaitSeconds: DEFAULT_JOB_DETAIL_VIEW_WAIT_SECONDS
@@ -18,9 +21,38 @@ test('configs without the settings get the defaults', () => {
 
 test('saved settings are used as they are', () => {
   assert.deepEqual(
-    readRunSettings({ skipUnparseableSalaryJob: false, jobListLoadWaitSeconds: 0, jobDetailViewWaitSeconds: 3.5 }),
-    { skipUnparseableSalaryJob: false, jobListLoadWaitSeconds: 0, jobDetailViewWaitSeconds: 3.5 }
+    readRunSettings({
+      autoChatRunMode: 'collect',
+      collectOnlyMatchingJobs: false,
+      skipUnparseableSalaryJob: false,
+      jobListLoadWaitSeconds: 0,
+      jobDetailViewWaitSeconds: 3.5
+    }),
+    {
+      runMode: 'collect',
+      collectOnlyMatchingJobs: false,
+      skipUnparseableSalaryJob: false,
+      jobListLoadWaitSeconds: 0,
+      jobDetailViewWaitSeconds: 3.5
+    }
   )
+})
+
+test('an unknown run mode falls back to chatting', () => {
+  assert.equal(readRunSettings({ autoChatRunMode: 'spam' }).runMode, 'chat')
+  assert.equal(readRunSettings({ collectOnlyMatchingJobs: 'no' }).collectOnlyMatchingJobs, true)
+})
+
+test('job status poll settings keep only allowed values', () => {
+  assert.deepEqual(readJobStatusPollSettings(undefined), { enabled: true, intervalHours: 6 })
+  assert.deepEqual(readJobStatusPollSettings({ enabled: false, intervalHours: 24 }), {
+    enabled: false,
+    intervalHours: 24
+  })
+  assert.deepEqual(readJobStatusPollSettings({ enabled: 'yes', intervalHours: 5 }), {
+    enabled: true,
+    intervalHours: 6
+  })
 })
 
 test('invalid waits fall back to the default and huge ones are capped', () => {

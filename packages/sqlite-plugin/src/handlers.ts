@@ -12,6 +12,7 @@ import { MarkAsNotSuitLog } from "./entity/MarkAsNotSuitLog";
 import { ChatMessageRecord } from "./entity/ChatMessageRecord";
 import { LlmModelUsageRecord } from "./entity/LlmModelUsageRecord";
 import { JobHireStatusRecord } from "./entity/JobHireStatusRecord";
+import { JobHireStatusLog } from "./entity/JobHireStatusLog";
 
 function getBossInfoIfIsEqual (savedOne, currentOne) {
   if (savedOne === currentOne) {
@@ -372,7 +373,18 @@ export async function saveJobHireStatusRecord(
   record: JobHireStatusRecord
 ) {
   const jobHireStatusRecordRepository = ds.getRepository(JobHireStatusRecord);
+  const previous = await jobHireStatusRecordRepository.findOne({
+    where: { encryptJobId: record.encryptJobId }
+  });
   await jobHireStatusRecordRepository.save(record);
+  // keep a history of changes, so it's known when a job was closed
+  if (!previous || previous.hireStatus !== record.hireStatus) {
+    const log = new JobHireStatusLog();
+    log.encryptJobId = record.encryptJobId;
+    log.hireStatus = record.hireStatus;
+    log.checkedAt = record.lastSeenDate;
+    await ds.getRepository(JobHireStatusLog).save(log);
+  }
   return
 }
 

@@ -129,12 +129,16 @@ html:not(.replica-child) body {
   min-height: 100vh;
 }
 .ux-shell {
+  --ux-nav-width: 184px;
   display: flex;
   height: calc(100vh / var(--replica-scale));
   color: var(--el-text-color-primary);
 }
 .ux-nav {
-  width: 184px;
+  width: var(--ux-nav-width);
+  transition:
+    width 0.2s ease,
+    padding 0.2s ease;
   flex-shrink: 0;
   padding: 18px 0 16px 18px;
   box-sizing: border-box;
@@ -470,7 +474,8 @@ html:not(.replica-child) body {
 .ux-footer {
   position: fixed;
   bottom: 0;
-  left: 184px;
+  left: var(--ux-nav-width, 184px);
+  transition: left 0.2s ease;
   right: 0;
   padding: 10px 20px;
   border-top: 1px solid var(--el-border-color-lighter);
@@ -947,15 +952,16 @@ html:not(.replica-child) body {
   }
 }
 @media (max-width: 720px) {
+  .ux-shell {
+    --ux-nav-width: 150px;
+  }
   .ux-nav {
-    width: 150px;
     padding-left: 12px;
   }
   .ux-brand {
     font-size: 16px;
   }
   .ux-footer {
-    left: 150px;
     padding: 10px;
     flex-wrap: wrap;
   }
@@ -1546,4 +1552,243 @@ html:not(.replica-child) body {
   .ux-rail-item {
     flex: 1;
   }
+}
+
+/* collapsible left navigation: icons only when folded */
+.ux-shell.is-nav-collapsed {
+  --ux-nav-width: 60px;
+}
+.ux-nav-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 4px;
+  padding-right: 8px;
+}
+.ux-nav-brand {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.ux-nav-brand .ux-hint {
+  margin: 2px 0 0;
+}
+.ux-nav-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #2faa9e;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.ux-nav-toggle:hover {
+  background: #ffffffb3;
+}
+.ux-nav-toggle:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 1px;
+}
+.ux-nav .link-list a {
+  position: relative;
+  gap: 8px;
+}
+.ux-nav-icon {
+  flex-shrink: 0;
+}
+.ux-nav-label {
+  overflow: hidden;
+  white-space: nowrap;
+}
+.ux-nav-badge {
+  margin: 0 12px 0 auto;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  background: var(--el-color-primary);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+}
+.ux-shell.is-nav-collapsed .ux-nav {
+  padding-left: 10px;
+}
+.ux-shell.is-nav-collapsed .ux-nav-head {
+  justify-content: center;
+  padding-right: 10px;
+}
+.ux-shell.is-nav-collapsed .ux-nav-brand,
+.ux-shell.is-nav-collapsed .ux-nav .group-title,
+.ux-shell.is-nav-collapsed .ux-nav-label,
+.ux-shell.is-nav-collapsed .ux-nav-bottom {
+  display: none;
+}
+.ux-shell.is-nav-collapsed .ux-nav .link-list a {
+  padding-left: 0;
+  justify-content: center;
+}
+.ux-shell.is-nav-collapsed .ux-nav-badge {
+  position: absolute;
+  top: -4px;
+  right: 6px;
+  margin: 0;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  font-size: 10px;
+  line-height: 15px;
+}
+
+/* pull tab that folds the section rail; sits on the right edge, vertically centred */
+.ux-rail-toggle {
+  --tab-bg: var(--el-color-primary);
+  position: fixed;
+  top: 50%;
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 22px;
+  padding: 16px 0;
+  border: 0;
+  border-radius: 12px 0 0 12px;
+  background: var(--tab-bg);
+  color: #fff;
+  cursor: pointer;
+  transform: translateY(-50%);
+  /* drop-shadow follows the flared corners too */
+  filter: drop-shadow(-2px 0 4px #32726c40);
+  transition:
+    width 0.15s ease,
+    background 0.15s ease;
+}
+.ux-rail-toggle.is-ready {
+  --tab-bg: var(--el-color-success);
+}
+/* concave fillets that flare the tab into the window edge */
+.ux-rail-toggle::before,
+.ux-rail-toggle::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+}
+.ux-rail-toggle::before {
+  top: -10px;
+  background: radial-gradient(
+    circle at 0 0,
+    transparent 9.5px,
+    var(--tab-bg) 10px
+  );
+}
+.ux-rail-toggle::after {
+  bottom: -10px;
+  background: radial-gradient(
+    circle at 0 100%,
+    transparent 9.5px,
+    var(--tab-bg) 10px
+  );
+}
+.ux-rail-toggle:hover {
+  width: 26px;
+}
+.ux-rail-toggle.is-collapsed {
+  width: 30px;
+}
+.ux-rail-toggle.is-collapsed:hover {
+  width: 34px;
+}
+.ux-rail-toggle:focus-visible {
+  outline: 2px solid var(--el-color-primary-light-3);
+  outline-offset: 2px;
+}
+.ux-rail-toggle-icon {
+  transition: transform 0.2s ease;
+}
+.ux-rail-toggle:hover .ux-rail-toggle-icon {
+  transform: translateX(-2px);
+}
+.ux-rail-toggle:not(.is-collapsed):hover .ux-rail-toggle-icon {
+  transform: translateX(2px);
+}
+.ux-rail-toggle-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+.ux-rail-toggle-text span {
+  writing-mode: vertical-rl;
+  letter-spacing: 2px;
+}
+.ux-rail-toggle-text strong {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* run mode switch at the top of the auto-greeting page */
+.ux-run-mode-option {
+  margin-top: 10px;
+}
+.ux-run-mode .ux-hint {
+  margin-bottom: 0;
+}
+
+/* task queue page */
+.ux-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ux-task-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--el-fill-color-lighter);
+  font-size: 14px;
+}
+.ux-task-row .ux-hint {
+  margin: 0;
+}
+.ux-task-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+.ux-task-actions .el-button + .el-button {
+  margin-left: 0;
+}
+.ux-task-position {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+  font-size: 12px;
+  font-weight: 600;
 }

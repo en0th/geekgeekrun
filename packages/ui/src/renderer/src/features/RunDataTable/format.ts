@@ -13,6 +13,13 @@ const DB_DATE_FORMAT = 'YYYY-MM-DD HH:mm:ss.SSS'
 // reactive proxies can't be structured-cloned by ipcRenderer.invoke
 export const toPlain = <T>(v: T): T => JSON.parse(JSON.stringify(v))
 
+// ipcRenderer.invoke wraps main-process errors as "Error invoking remote method 'x': Error: msg"
+export const ipcErrorMessage = (err: unknown) =>
+  String((err as Error)?.message ?? err).replace(
+    /^Error invoking remote method '[^']*': (Error: )?/,
+    ''
+  )
+
 export const isBlank = (v: unknown) => v === null || v === undefined || v === ''
 
 export function formatDbDate(v: unknown, format = DISPLAY_DATE_FORMAT) {

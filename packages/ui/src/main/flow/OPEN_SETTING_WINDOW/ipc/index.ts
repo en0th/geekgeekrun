@@ -6,12 +6,20 @@ import {
   restoreLlmSecrets
 } from '../../../features/config-secrets'
 import { modelPair, validModels } from '../../../../common/model-config.mjs'
+import { startJobStatusPoll, JOB_STATUS_POLL_MODE } from '../../../features/job-status-poll'
+import { JOB_STATUS_POLL_LAST_RUN_FILE } from '../../../features/job-hire-status'
+import {
+  JOB_STATUS_POLL_INTERVAL_HOURS,
+  JOB_STATUS_POLL_SETTINGS_FILE,
+  readJobStatusPollSettings
+} from '@geekgeekrun/geek-auto-start-chat-with-boss/run-settings.mjs'
 import path from 'path'
 import * as childProcess from 'node:child_process'
 import {
   readConfigFile,
   writeConfigFile,
   readStorageFile,
+  writeStorageFile,
   storageFilePath
 } from '@geekgeekrun/geek-auto-start-chat-with-boss/runtime-file-utils.mjs'
 import { ChildProcess } from 'child_process'
@@ -26,7 +34,12 @@ import {
   getRunDataDistinctValues,
   getRunDataStats,
   deleteRunData,
-  importRunData
+  importRunData,
+  listFavoriteFolders,
+  createFavoriteFolder,
+  renameFavoriteFolder,
+  deleteFavoriteFolder,
+  addFavoriteJobs
 } from '../utils/db/index'
 import { pipeWriteRegardlessError } from '../../utils/pipe'
 import { WriteStream } from 'node:fs'
@@ -208,7 +221,7 @@ export default function initIpc() {
 
   ipcMain.handle('run-geek-auto-start-chat-with-boss', async (ev) => {
     const mode = 'geekAutoStartWithBossMain'
-    const { runRecordId } = await runCommon({ mode })
+    const result = await runCommon({ mode })
     daemonEE.on('message', function handler(message) {
       if (message.workerId !== mode) {
         return
@@ -218,12 +231,13 @@ export default function initIpc() {
         mainWindow?.webContents.send('worker-exited', message)
       }
     })
-    return { runRecordId }
+    // runRecordId plus whether it had to wait in the task queue
+    return result
   })
 
   ipcMain.handle('run-read-no-reply-auto-reminder', async () => {
     const mode = 'readNoReplyAutoReminderMain'
-    const { runRecordId } = await runCommon({ mode })
+    const result = await runCommon({ mode })
     daemonEE.on('message', function handler(message) {
       if (message.workerId !== mode) {
         return
@@ -233,7 +247,8 @@ export default function initIpc() {
         mainWindow?.webContents.send('worker-exited', message)
       }
     })
-    return { runRecordId }
+    // runRecordId plus whether it had to wait in the task queue
+    return result
   })
 
   ipcMain.handle('stop-geek-auto-start-chat-with-boss', async () => {
@@ -318,6 +333,36 @@ export default function initIpc() {
   ipcMain.handle('check-boss-zhipin-cookie-file', () => {
     const cookies = readStorageFile('boss-cookies.json')
     return checkCookieListFormat(cookies)
+  })
+
+  // ---- favourites ----
+  ipcMain.handle('favorite-folders', () => listFavoriteFolders())
+  ipcMain.handle('favorite-folder-create', (_, payload) => createFavoriteFolder(payload))
+  ipcMain.handle('favorite-folder-rename', (_, payload) => renameFavoriteFolder(payload))
+  ipcMain.handle('favorite-folder-delete', (_, payload) => deleteFavoriteFolder(payload))
+  ipcMain.handle('favorite-jobs-add', (_, payload) => addFavoriteJobs(payload))
+
+  // ---- job status polling ----
+  ipcMain.handle('job-status-poll-info', () => ({
+    settings: readJobStatusPollSettings(readStorageFile(JOB_STATUS_POLL_SETTINGS_FILE)),
+    intervalOptions: JOB_STATUS_POLL_INTERVAL_HOURS,
+    lastRun: readStorageFile(JOB_STATUS_POLL_LAST_RUN_FILE) || null
+  }))
+  ipcMain.handle('job-status-poll-save-settings', async (_, payload) => {
+    const settings = readJobStatusPollSettings(payload)
+    await writeStorageFile(JOB_STATUS_POLL_SETTINGS_FILE, settings)
+    return settings
+  })
+  ipcMain.handle('run-job-status-poll', async () => {
+    const result = await startJobStatusPoll()
+    daemonEE.on('message', function handler(message) {
+      if (message.workerId !== JOB_STATUS_POLL_MODE) return
+      if (message.type === 'worker-exited') {
+        daemonEE.off('message', handler)
+        mainWindow?.webContents.send('worker-exited', message)
+      }
+    })
+    return result
   })
 
   ipcMain.handle('run-data-query', (_, payload) => queryRunData(payload))

@@ -4,7 +4,7 @@ import { gtagRenderer } from '@renderer/utils/gtag'
 
 const routes: Array<RouteRecordRaw> = [
   {
-    path: '/ux/:screen(auto|follow|records|library|settings)',
+    path: '/ux/:screen(auto|follow|records|library|tasks|settings)',
     component: () => import('@renderer/page/Ux/index.js'),
     meta: { title: '牛人快跑' }
   },
@@ -123,6 +123,13 @@ const routes: Array<RouteRecordRaw> = [
         component: () => import('@renderer/page/MainLayout/BossLibrary.vue'),
         meta: {
           title: 'BOSS库'
+        }
+      },
+      {
+        path: 'FavoriteJobs',
+        component: () => import('@renderer/page/MainLayout/FavoriteJobs.vue'),
+        meta: {
+          title: '收藏夹'
         }
       },
       {

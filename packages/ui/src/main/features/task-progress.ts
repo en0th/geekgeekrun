@@ -7,6 +7,8 @@ export function createTaskProgress() {
     viewed: 0,
     sent: 0,
     skipped: 0,
+    // collect-only mode: job details saved without starting a chat
+    collected: 0,
     state: "running",
     detail: "正在准备任务",
     listSummary: "",
@@ -15,7 +17,7 @@ export function createTaskProgress() {
   };
   const runRecordId = minimist(process.argv.slice(2))["run-record-id"] ?? null;
   function update(
-    kind?: "viewed" | "sent" | "skipped",
+    kind?: "viewed" | "sent" | "skipped" | "collected",
     detail = "",
     state = "running",
     diagnostics?: { listSummary?: string },

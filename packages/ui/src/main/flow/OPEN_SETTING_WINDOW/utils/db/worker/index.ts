@@ -7,6 +7,7 @@ import { measureExecutionTime } from '../../../../../../common/utils/performance
 import { JobInfoChangeLog } from '@geekgeekrun/sqlite-plugin/dist/entity/JobInfoChangeLog'
 import { AutoStartChatRunRecord } from '@geekgeekrun/sqlite-plugin/dist/entity/AutoStartChatRunRecord'
 import * as runData from './run-data'
+import * as favorites from './favorites'
 
 const dbInitPromise = initDb(getPublicDbFilePath())
 let dataSource: DataSource | null = null
@@ -52,7 +53,13 @@ const payloadHandler = {
   getRunDataDistinctValues: (payload) => runData.getRunDataDistinctValues(getRawDb(), payload),
   getRunDataStats: (payload) => runData.getRunDataStats(getRawDb(), payload),
   deleteRunData: (payload) => runData.deleteRunData(getRawDb(), payload),
-  importRunData: (payload) => runData.importRunData(getRawDb(), payload)
+  importRunData: (payload) => runData.importRunData(getRawDb(), payload),
+  listFavoriteFolders: () => favorites.listFavoriteFolders(getRawDb()),
+  createFavoriteFolder: (payload) => favorites.createFavoriteFolder(getRawDb(), payload),
+  renameFavoriteFolder: (payload) => favorites.renameFavoriteFolder(getRawDb(), payload),
+  deleteFavoriteFolder: (payload) => favorites.deleteFavoriteFolder(getRawDb(), payload),
+  addFavoriteJobs: (payload) => favorites.addFavoriteJobs(getRawDb(), payload),
+  countJobStatusPollTargets: () => favorites.countJobStatusPollTargets(getRawDb())
 }
 
 function getRawDb(): runData.Db {

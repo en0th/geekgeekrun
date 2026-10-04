@@ -7,6 +7,7 @@ export type RunDataDatasetKey =
   | 'jobLibrary'
   | 'bossLibrary'
   | 'companyLibrary'
+  | 'favoriteJobs'
 
 export type RunDataFieldType = 'string' | 'number' | 'date' | 'enum'
 
@@ -33,6 +34,8 @@ export interface RunDataDatasetDef {
   defaultSort?: RunDataSort
   // whether rows link to a job on zhipin.com via encryptJobId
   hasJob: boolean
+  // false hides import (rows that only make sense created from the app)
+  importable?: boolean
   fields: RunDataField[]
 }
 
@@ -151,6 +154,14 @@ export const jobSourceOptions: RunDataEnumOption[] = [
   { value: 3, label: '搜索' }
 ]
 
+// job_hire_status_record.hireStatus; NULL = never checked
+export const hireStatusOptions: RunDataEnumOption[] = [
+  { value: 1, label: '招聘中' },
+  { value: 2, label: '已关闭' },
+  { value: 3, label: '已删除' },
+  { value: null, label: '未检查' }
+]
+
 export const startupFromOptions: RunDataEnumOption[] = [
   { value: null, label: '自动' },
   { value: 1, label: '手动' }
@@ -168,6 +179,11 @@ const jobFields: RunDataField[] = [
   { key: 'address', label: '工作地址', type: 'string', searchable: true },
   { key: 'publishDate', label: '发布时间', type: 'date' },
   { key: 'description', label: '职位描述', type: 'string', searchable: true }
+]
+
+const hireStatusFields: RunDataField[] = [
+  { key: 'hireStatus', label: '职位状态', type: 'enum', enumOptions: hireStatusOptions },
+  { key: 'hireStatusCheckedAt', label: '状态检查时间', type: 'date' }
 ]
 
 const jobIdFields: RunDataField[] = [
@@ -231,7 +247,28 @@ export const runDataDatasets: Record<RunDataDatasetKey, RunDataDatasetDef> = {
       ...jobFields,
       { key: 'bossName', label: 'BOSS', type: 'string', searchable: true },
       { key: 'bossTitle', label: 'BOSS身份', type: 'string', searchable: true },
+      ...hireStatusFields,
       ...jobIdFields
+    ]
+  },
+  favoriteJobs: {
+    key: 'favoriteJobs',
+    label: '收藏的职位',
+    rowKey: 'id',
+    defaultSort: { field: 'favoritedAt', order: 'desc' },
+    hasJob: true,
+    importable: false,
+    fields: [
+      { key: 'folderName', label: '收藏夹', type: 'string', searchable: true },
+      ...hireStatusFields,
+      { key: 'closedAt', label: '关闭时间', type: 'date' },
+      ...jobFields,
+      { key: 'bossName', label: 'BOSS', type: 'string', searchable: true },
+      { key: 'bossTitle', label: 'BOSS身份', type: 'string', searchable: true },
+      { key: 'favoritedAt', label: '收藏时间', type: 'date' },
+      { key: 'id', label: '收藏ID', type: 'number' },
+      { key: 'folderId', label: '收藏夹ID', type: 'number' },
+      { key: 'encryptJobId', label: '职位ID', type: 'string', searchable: true }
     ]
   },
   bossLibrary: {

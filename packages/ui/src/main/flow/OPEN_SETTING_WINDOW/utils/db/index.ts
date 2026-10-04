@@ -101,3 +101,14 @@ export const deleteRunData = (payload: RunDataDeleteReq) =>
 
 export const importRunData = (payload: RunDataImportReq) =>
   runDataWorkerCall('importRunData', payload)
+
+export const listFavoriteFolders = () => runDataWorkerCall('listFavoriteFolders', {})
+export const createFavoriteFolder = (payload: { name: string }) =>
+  runDataWorkerCall('createFavoriteFolder', payload)
+export const renameFavoriteFolder = (payload: { id: number; name: string }) =>
+  runDataWorkerCall('renameFavoriteFolder', payload)
+export const deleteFavoriteFolder = (payload: { id: number }) =>
+  runDataWorkerCall('deleteFavoriteFolder', payload)
+export const addFavoriteJobs = (payload: { folderId: number; jobIds: string[] }) =>
+  runDataWorkerCall('addFavoriteJobs', payload)
+export const countJobStatusPollTargets = () => runDataWorkerCall('countJobStatusPollTargets', {})

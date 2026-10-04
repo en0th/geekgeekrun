@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, globalShortcut } from 'electron'
+import { startJobStatusPollScheduler } from '../../features/job-status-poll'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { createMainWindow } from '../../window/mainWindow'
 import './app-menu'
@@ -36,6 +37,8 @@ export function openSettingWindow() {
     ipcMain.on('ping', () => console.log('pong'))
     initPublicIpc()
     initIpc()
+    // queues a job status poll for favourited jobs on the configured interval
+    startJobStatusPollScheduler()
 
     app.on('activate', function () {
       // On macOS it's common to re-create a window in the app when the

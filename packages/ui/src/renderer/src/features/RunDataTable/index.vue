@@ -17,7 +17,13 @@
       </ElBadge>
       <div class="run-data-table__tools">
         <ElButton size="small" :icon="DataAnalysis" @click="openStats">统计</ElButton>
-        <ElButton size="small" :icon="Upload" @click="openImport">导入</ElButton>
+        <ElButton
+          v-if="datasetDef.importable !== false"
+          size="small"
+          :icon="Upload"
+          @click="openImport"
+          >导入</ElButton
+        >
         <ElDropdown trigger="click" @command="exportAll">
           <ElButton size="small" :icon="Download" :loading="exporting">导出</ElButton>
           <template #dropdown>
@@ -104,9 +110,18 @@
         @click="openSelectedOnline"
         >在BOSS查看所选职位</ElButton
       >
-      <ElButton size="small" link type="danger" :icon="Delete" @click="deleteSelected"
-        >删除</ElButton
+      <ElButton
+        v-if="datasetDef.hasJob"
+        size="small"
+        link
+        type="primary"
+        :icon="Star"
+        @click="openFavoritePicker"
+        >收藏到…</ElButton
       >
+      <ElButton size="small" link type="danger" :icon="Delete" @click="deleteSelected">{{
+        dataset === 'favoriteJobs' ? '移出收藏夹' : '删除'
+      }}</ElButton>
       <ElButton size="small" link @click="clearSelection">取消选择</ElButton>
     </div>
 
@@ -192,6 +207,11 @@
       @drill="handleDrill"
     />
     <ImportDialog v-model:visible="importVisible" :dataset="dataset" @imported="fetchData" />
+    <FavoriteFolderPicker
+      v-model:visible="favoritePickerVisible"
+      :job-ids="favoriteJobIds"
+      @saved="handleFavoritesSaved"
+    />
   </div>
 </template>
 
@@ -223,12 +243,14 @@ import {
   Operation,
   Refresh,
   Search,
+  Star,
   Upload
 } from '@element-plus/icons-vue'
 import {
   runDataDatasets,
   type RunDataDatasetKey,
   type RunDataField,
+  type RunDataFilter,
   type RunDataQuery,
   type RunDataSort
 } from '../../../../common/run-data'
@@ -250,6 +272,7 @@ import ColumnSettings from './ColumnSettings.vue'
 import FilterBuilder from './FilterBuilder.vue'
 import StatsPanel from './StatsPanel.vue'
 import ImportDialog from './ImportDialog.vue'
+import FavoriteFolderPicker from './FavoriteFolderPicker.vue'
 
 const OPEN_ONLINE_LIMIT = 20
 
@@ -260,6 +283,13 @@ const props = defineProps<{
   // prefix for analytics events, e.g. `job_library` -> `job_library_request_sent`
   gtagPrefix: string
   actionsWidth?: number
+  // always applied and not shown as removable conditions, e.g. the selected favourite folder
+  baseFilters?: RunDataFilter[]
+}>()
+
+const emit = defineEmits<{
+  // rows were deleted or favourited, so counts shown outside the table may be stale
+  (e: 'changed'): void
 }>()
 
 const slots = useSlots()
@@ -363,6 +393,7 @@ const query = computed<RunDataQuery>(() => ({
   dataset: props.dataset,
   keyword: appliedKeyword.value,
   filters: [
+    ...(props.baseFilters ?? []),
     ...advancedRows.value
       .filter((r) => isFilterRowComplete(r) && fieldByKey(r.field))
       .map((r) => toServerFilter(r, fieldByKey(r.field)!)),
@@ -568,7 +599,8 @@ const deleteWarning: Record<RunDataDatasetKey, string> = {
   markAsNotSuitLog: '删除标记记录后，这些职位可能会被再次处理。',
   jobLibrary: '引用这些职位的开聊 / 标记记录将无法再显示职位信息。',
   bossLibrary: '引用这些 BOSS 的职位将无法再显示 BOSS 信息。',
-  companyLibrary: '引用这些公司的职位 / BOSS 将无法再显示公司信息。'
+  companyLibrary: '引用这些公司的职位 / BOSS 将无法再显示公司信息。',
+  favoriteJobs: '只从收藏夹中移除，职位本身仍保留在职位库中。'
 }
 
 async function deleteSelected() {
@@ -579,14 +611,17 @@ async function deleteSelected() {
         h(
           'p',
           { class: 'm-0' },
-          `确定从数据库中永久删除选中的 ${count} 条${datasetDef.value.label}吗？此操作不可撤销。`
+          props.dataset === 'favoriteJobs'
+            ? `确定将选中的 ${count} 个职位移出收藏夹吗？`
+            : `确定从数据库中永久删除选中的 ${count} 条${datasetDef.value.label}吗？此操作不可撤销。`
         ),
         h('p', { class: 'm-0 mt6px color-#e6a23c' }, deleteWarning[props.dataset])
       ]),
-      '删除记录',
+      props.dataset === 'favoriteJobs' ? '移出收藏夹' : '删除记录',
       {
         type: 'warning',
-        confirmButtonText: `删除 ${count} 条`,
+        confirmButtonText:
+          props.dataset === 'favoriteJobs' ? `移出 ${count} 个` : `删除 ${count} 条`,
         confirmButtonClass: 'el-button--danger',
         cancelButtonText: '取消'
       }
@@ -606,9 +641,29 @@ async function deleteSelected() {
     ElMessage.success(`已删除 ${data.deleted} 条记录`)
     clearSelection()
     fetchData()
+    emit('changed')
   } catch (err) {
     ElMessage.error(`删除失败：${(err as Error)?.message ?? err}`)
   }
+}
+
+// ---------- favourites ----------
+const favoritePickerVisible = ref(false)
+const favoriteJobIds = ref<string[]>([])
+function openFavoritePicker() {
+  const ids = [...new Set(selection.value.map((r) => r.encryptJobId).filter(Boolean))] as string[]
+  if (!ids.length) {
+    ElMessage.warning('选中的记录中没有可收藏的职位')
+    return
+  }
+  trackAction('favorite_selected', { count: ids.length })
+  favoriteJobIds.value = ids
+  favoritePickerVisible.value = true
+}
+function handleFavoritesSaved() {
+  clearSelection()
+  emit('changed')
+  if (props.dataset === 'favoriteJobs') fetchData()
 }
 
 // ---------- export all ----------

@@ -14,6 +14,19 @@ import BossLibrary from "../MainLayout/BossLibrary.vue";
 import CompanyLibrary from "../MainLayout/CompanyLibrary.vue";
 import StartChatRecord from "../MainLayout/StartChatRecord.vue";
 import MarkAsNotSuitRecord from "../MainLayout/MarkAsNotSuitRecord.vue";
+import FavoriteJobs from "../MainLayout/FavoriteJobs.vue";
+import {
+  Fold,
+  Expand,
+  DArrowLeft,
+  DArrowRight,
+  ChatDotRound,
+  Bell,
+  Document,
+  Collection,
+  List,
+  Setting,
+} from "@element-plus/icons-vue";
 import RunningOverlay from "../../features/RunningOverlay/index.vue";
 import { useTaskManagerStore, useUpdateStore } from "../../store";
 import buildInfo from "../../../../common/build-info.json";
@@ -401,6 +414,8 @@ export default Vue.defineComponent({
       renameError = ref(""),
       templateDelete = ref("");
     const running = ref({ auto: false, follow: false }),
+      // waiting in the daemon's task queue (BOSS tasks run one at a time)
+      queued = ref({ auto: false, follow: false }),
       checks = ref(""),
       preparing = ref(false),
       runtimeSteps = ref([]),
@@ -443,8 +458,42 @@ export default Vue.defineComponent({
       ["follow", "消息跟进"],
       ["records", "求职记录"],
       ["library", "资料库"],
+      ["tasks", "任务队列"],
       ["settings", "设置"],
     ];
+    const navIcons = {
+      auto: ChatDotRound,
+      follow: Bell,
+      records: Document,
+      library: Collection,
+      tasks: List,
+      settings: Setting,
+    };
+    // collapsed side bars are a per-device preference
+    const readFlag = (key) => {
+      try {
+        return localStorage.getItem(key) === "1";
+      } catch {
+        return false;
+      }
+    };
+    const writeFlag = (key, value) => {
+      try {
+        localStorage.setItem(key, value ? "1" : "0");
+      } catch {
+        // storage unavailable: the choice lasts for this session only
+      }
+    };
+    const navCollapsed = ref(readFlag("ux-nav-collapsed")),
+      railCollapsed = ref(readFlag("ux-rail-collapsed"));
+    function toggleNav() {
+      navCollapsed.value = !navCollapsed.value;
+      writeFlag("ux-nav-collapsed", navCollapsed.value);
+    }
+    function toggleRail() {
+      railCollapsed.value = !railCollapsed.value;
+      writeFlag("ux-rail-collapsed", railCollapsed.value);
+    }
     const allowedShared = [
       "titles",
       "cities",
@@ -1619,6 +1668,8 @@ export default Vue.defineComponent({
         isSageTimeEnabled: d.pause,
         ...(d.pause ? { sageTimeOpTimes: d.actions, sageTimePauseMinute: d.minutes } : {}),
         skipUnparseableSalaryJob: d.skipUnparseableSalaryJob !== false,
+        autoChatRunMode: d.runMode === "collect" ? "collect" : "chat",
+        collectOnlyMatchingJobs: d.collectOnlyMatchingJobs !== false,
         jobListLoadWaitSeconds: waitSeconds(
           d.jobListLoadWaitSeconds,
           DEFAULT_JOB_LIST_LOAD_WAIT_SECONDS,
@@ -2027,6 +2078,7 @@ export default Vue.defineComponent({
       CompanyLibrary,
       StartChatRecord,
       MarkAsNotSuitRecord,
+      FavoriteJobs,
     };
     function legacyFrame(path, key = "legacy") {
       const name = path.split("/").pop();
@@ -3288,6 +3340,26 @@ export default Vue.defineComponent({
       auto: "geekAutoStartWithBossMain",
       follow: "readNoReplyAutoReminderMain",
     };
+    // every task that takes a turn in the daemon's BOSS task queue
+    const queuedTaskLabels = {
+      geekAutoStartWithBossMain: "自动打招呼",
+      readNoReplyAutoReminderMain: "消息跟进",
+      jobStatusPollMain: "检查收藏职位状态",
+    };
+    const exitCodeLabels = {
+      81: "登录凭证已失效",
+      82: "登录状态已失效",
+      83: "网络已断开",
+      84: "平台拒绝访问或需要人工验证",
+      85: "浏览器不可执行",
+      86: "AI服务不可用",
+      87: "发送结果未确认，请先在BOSS中核对，避免重复发送",
+      88: "连续检查5批岗位没有可沟通岗位；请检查公司名单、分类和经验条件",
+      89: "岗位列表或详情未能确认，已停止，未继续发送；请检查BOSS页面",
+    };
+    const queueDetail = (position, yielded = false) =>
+      (yielded ? "已让出给排队的任务；" : "其他任务运行中；") +
+      `排在队列第 ${position || 1} 位，轮到时自动${yielded ? "继续" : "开始"}`;
     const runIds = ref({ auto: null, follow: null }),
       overlays = { auto: null, follow: null };
     function showRuntime(task) {
@@ -3297,8 +3369,8 @@ export default Vue.defineComponent({
       if (
         preparing.value ||
         starting.value ||
-        running.value.auto ||
-        running.value.follow
+        running.value[task] ||
+        queued.value[task]
       )
         return;
       validationTask = task;
@@ -3393,12 +3465,12 @@ export default Vue.defineComponent({
       const task = checks.value;
       try {
         await taskStore.getRunningTasks();
+        const id = workerIds[task];
         if (
-          taskStore.runningTasks.some((t) =>
-            Object.values(workerIds).includes(t.workerId),
-          )
+          taskStore.runningTasks.some((t) => t.workerId === id) ||
+          taskStore.taskQueue.some((t) => t.workerId === id)
         )
-          throw Error("已有任务运行中，请先停止当前任务。");
+          throw Error("该任务已在运行或排队中。");
         const result = await window.electron.ipcRenderer.invoke(
           task === "auto"
             ? "run-geek-auto-start-chat-with-boss"
@@ -3410,16 +3482,22 @@ export default Vue.defineComponent({
           viewed: 0,
           sent: 0,
           skipped: 0,
-          state: "running",
-          detail: "准备检查任务",
+          collected: 0,
+          state: result.queued ? "queued" : "running",
+          detail: result.queued
+            ? queueDetail(result.queuePosition)
+            : "准备检查任务",
           runRecordId: result.runRecordId,
         };
         runIds.value[task] = result.runRecordId;
-        running.value[task] = true;
+        running.value[task] = !result.queued;
+        queued.value[task] = Boolean(result.queued);
         modal.value = "";
-        notice.value =
-          "任务已启动。运行中修改的条件用于下次开始，不改变本次任务使用的配置。";
-        R.nextTick(() => showRuntime(task));
+        notice.value = result.queued
+          ? "其他任务正在运行，本任务已加入队列，轮到时会自动开始。"
+          : "任务已启动。运行中修改的条件用于下次开始，不改变本次任务使用的配置。";
+        await taskStore.getRunningTasks();
+        if (!result.queued) R.nextTick(() => showRuntime(task));
       } catch (error) {
         R.message({ type: "error", message: "任务启动失败：" + error.message });
         notice.value = "任务未启动，请修复错误后重试。";
@@ -3432,14 +3510,25 @@ export default Vue.defineComponent({
       requestedStop[task] = true;
       stopping.value = true;
       try {
+        const wasQueued = queued.value[task] && !running.value[task];
         await window.electron.ipcRenderer.invoke("stop-task", workerIds[task]);
         await taskStore.getRunningTasks();
         running.value[task] = taskStore.runningTasks.some(
           (t) => t.workerId === workerIds[task],
         );
+        queued.value[task] = taskStore.taskQueue.some(
+          (t) => t.workerId === workerIds[task],
+        );
+        if (wasQueued && taskProgress.value[task]) {
+          taskProgress.value[task].state = "stopped";
+          taskProgress.value[task].stoppedAt = Date.now();
+          taskProgress.value[task].detail = "已移出队列，未开始运行";
+        }
         notice.value = running.value[task]
           ? "停止请求已发送，等待任务退出。"
-          : "任务已停止。";
+          : wasQueued
+            ? "已移出队列。"
+            : "任务已停止。";
       } catch (error) {
         R.message({ type: "error", message: "停止失败：" + error.message });
       } finally {
@@ -3449,6 +3538,7 @@ export default Vue.defineComponent({
     function runPanel(task) {
       const p = taskProgress.value[task];
       if (!p) return null;
+      const waiting = queued.value[task] && !running.value[task];
       const active = running.value[task],
         elapsed = Math.max(
           0,
@@ -3469,6 +3559,8 @@ export default Vue.defineComponent({
         retrying: "正在重新检查",
         stopped: "已停止",
         error: "任务异常结束",
+        queued: "排队等待中",
+        yielded: "已让出，等待继续",
       };
       return h(
         "section",
@@ -3478,11 +3570,14 @@ export default Vue.defineComponent({
           h("p", [
             "已查看 ",
             metric(p.viewed),
+            ...(task === "auto" && (p.collected || draft.value.runMode === "collect")
+              ? [" · 已收集 ", metric(p.collected || 0)]
+              : []),
             " · 已发送 ",
             metric(p.sent),
             " · 已跳过 ",
             metric(p.skipped),
-            " · 已运行 ",
+            waiting ? " · 已等待 " : " · 已运行 ",
             metric(elapsed),
             " 秒",
           ]),
@@ -3494,7 +3589,16 @@ export default Vue.defineComponent({
           hint(
             "持续查找，不显示预计完成时间。已查看仅统计完成详情检查的岗位或会话。",
           ),
-          active
+          waiting
+            ? inline([
+                button("查看任务队列", () => navigate("tasks")),
+                button("移出队列", () => stop(task), {
+                  type: "danger",
+                  plain: true,
+                  loading: stopping.value,
+                }),
+              ])
+            : active
             ? inline([
                 button("查看运行状态", () => showRuntime(task)),
                 button("停止运行", () => stop(task), {
@@ -3592,7 +3696,8 @@ export default Vue.defineComponent({
         templateBar(),
         problems(errors.value),
         runPanel("auto"),
-        sectionRail(),
+        railCollapsed.value ? null : sectionRail(),
+        runModeCard(),
         card("我的求职条件", prefs(draft.value), {
           id: "job-preferences",
           tabIndex: -1,
@@ -3772,6 +3877,225 @@ export default Vue.defineComponent({
         ],
       );
     }
+    function runModeCard() {
+      const d = draft.value;
+      const collect = d.runMode === "collect";
+      return card(
+        "运行方式",
+        [
+          E(
+            "ElRadioGroup",
+            {
+              modelValue: collect ? "collect" : "chat",
+              "onUpdate:modelValue": (v) => update(d, "runMode", v),
+              "aria-label": "运行方式",
+            },
+            () => [
+              E("ElRadioButton", { value: "chat" }, () => "自动打招呼"),
+              E("ElRadioButton", { value: "collect" }, () => "只收集岗位数据"),
+            ],
+          ),
+          collect
+            ? h("div", { class: "ux-run-mode-option" }, [
+                check(
+                  d,
+                  "collectOnlyMatchingJobs",
+                  "只收集符合求职条件的岗位",
+                ),
+              ])
+            : null,
+          hint(
+            !collect
+              ? "查看岗位详情后，向符合条件的岗位发起沟通；不符合的按下方处理方式处理。"
+              : d.collectOnlyMatchingJobs !== false
+                ? "只把符合求职条件的岗位详情保存到资料库，不打招呼，也不在BOSS标记不合适。"
+                : "把遇到的所有岗位详情保存到资料库，不检查求职条件，不打招呼，也不标记。",
+          ),
+        ],
+        { id: "job-run-mode", class: "ux-card ux-run-mode" },
+      );
+    }
+    // pull tab on the right edge that folds the section rail away and back
+    function railToggle() {
+      const collapsed = railCollapsed.value;
+      const { percent, ready } = autoProgress();
+      return h(
+        "button",
+        {
+          type: "button",
+          class: [
+            "ux-rail-toggle",
+            collapsed ? "is-collapsed" : "",
+            ready ? "is-ready" : "",
+          ],
+          "aria-label": collapsed
+            ? `展开配置完成度（${percent}%）`
+            : "收起配置完成度",
+          "aria-expanded": String(!collapsed),
+          title: collapsed ? "展开配置完成度" : "收起配置完成度",
+          onClick: toggleRail,
+        },
+        [
+          E("ElIcon", { class: "ux-rail-toggle-icon", size: 14 }, () =>
+            h(collapsed ? DArrowLeft : DArrowRight),
+          ),
+          collapsed
+            ? h("span", { class: "ux-rail-toggle-text" }, [
+                h("span", "完成度"),
+                h("strong", percent + "%"),
+              ])
+            : null,
+        ],
+      );
+    }
+    const taskOutcomeLabels = {
+      finished: ["已完成", "success"],
+      stopped: ["已停止", "info"],
+      failed: ["异常结束", "danger"],
+      restarting: ["异常，自动重启", "warning"],
+      yielded: ["已让出", "info"],
+    };
+    const clockTime = (ms) =>
+      ms
+        ? new Date(ms).toLocaleString("zh-CN", {
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+          })
+        : "—";
+    const durationText = (ms) => {
+      const minutes = Math.max(0, Math.round(ms / 60000));
+      return minutes < 60
+        ? minutes + " 分钟"
+        : Math.floor(minutes / 60) + " 小时 " + (minutes % 60) + " 分钟";
+    };
+    async function removeQueued(workerId) {
+      await window.electron.ipcRenderer.invoke("stop-task", workerId);
+      await taskStore.getRunningTasks();
+      const task = Object.keys(workerIds).find((k) => workerIds[k] === workerId);
+      if (task && taskProgress.value[task]) {
+        taskProgress.value[task].state = "stopped";
+        taskProgress.value[task].stoppedAt = Date.now();
+        taskProgress.value[task].detail = "已移出队列，未开始运行";
+      }
+      R.message({ type: "success", message: "已移出队列" });
+    }
+    function tasksPage() {
+      const current = taskStore.runningTasks.filter(
+        (t) => t.workerId in queuedTaskLabels,
+      );
+      const queue = taskStore.taskQueue;
+      const history = taskStore.taskHistory.filter(
+        (t) => t.workerId in queuedTaskLabels,
+      );
+      const taskOf = (workerId) =>
+        Object.keys(workerIds).find((k) => workerIds[k] === workerId);
+      return [
+        heading("任务队列"),
+        explain(
+          "自动打招呼、只收集岗位数据、消息跟进和收藏职位状态检查都会操作BOSS页面，因此一次只运行一个，其余按顺序排队。长时间运行的任务每 20 分钟会在安全的检查点让出一次，让排队的任务先执行，之后自动继续；收藏职位检查会排在最前面。",
+        ),
+        card("正在运行", [
+          current.length
+            ? h(
+                "ul",
+                { class: "ux-task-list" },
+                current.map((t) =>
+                  h("li", { class: "ux-task-row" }, [
+                    E("ElTag", { size: "small", type: "primary" }, () =>
+                      t.yielding ? "即将让出" : "运行中",
+                    ),
+                    h("strong", queuedTaskLabels[t.workerId]),
+                    h(
+                      "span",
+                      { class: "ux-hint" },
+                      "已运行 " + durationText(t.uptime || 0),
+                    ),
+                    h("span", { class: "ux-task-actions" }, [
+                      taskOf(t.workerId)
+                        ? button("查看运行状态", () => showRuntime(taskOf(t.workerId)), {
+                            link: true,
+                            type: "primary",
+                          })
+                        : null,
+                      button(
+                        "停止",
+                        () =>
+                          taskOf(t.workerId)
+                            ? stop(taskOf(t.workerId))
+                            : window.electron.ipcRenderer.invoke("stop-task", t.workerId),
+                        { link: true, type: "danger", loading: stopping.value },
+                      ),
+                    ]),
+                  ]),
+                ),
+              )
+            : hint("当前没有运行中的任务。"),
+        ]),
+        card("排队中", [
+          queue.length
+            ? h(
+                "ol",
+                { class: "ux-task-list" },
+                queue.map((t) =>
+                  h("li", { class: "ux-task-row" }, [
+                    h("span", { class: "ux-task-position" }, String(t.position)),
+                    h("strong", queuedTaskLabels[t.workerId] || t.workerId),
+                    E(
+                      "ElTag",
+                      { size: "small", type: t.reason === "yielded" ? "warning" : "info" },
+                      () =>
+                        t.reason === "yielded"
+                          ? "已让出，等待继续"
+                          : t.reason === "restarting"
+                            ? "等待重启"
+                            : "等待开始",
+                    ),
+                    h("span", { class: "ux-hint" }, "加入于 " + clockTime(t.queuedAt)),
+                    h("span", { class: "ux-task-actions" }, [
+                      button("移出队列", () => removeQueued(t.workerId), {
+                        link: true,
+                        type: "danger",
+                      }),
+                    ]),
+                  ]),
+                ),
+              )
+            : hint("队列为空。其他任务运行时开始的新任务会在这里等待。"),
+        ]),
+        card("最近记录", [
+          history.length
+            ? h(
+                "ul",
+                { class: "ux-task-list" },
+                history.slice(0, 20).map((t) => {
+                  const [label, type] = taskOutcomeLabels[t.outcome] || [
+                    t.outcome,
+                    "info",
+                  ];
+                  return h("li", { class: "ux-task-row" }, [
+                    E("ElTag", { size: "small", type }, () => label),
+                    h("strong", queuedTaskLabels[t.workerId]),
+                    h(
+                      "span",
+                      { class: "ux-hint" },
+                      clockTime(t.startedAt) +
+                        " – " +
+                        clockTime(t.endedAt) +
+                        "，运行 " +
+                        durationText(t.endedAt - t.startedAt) +
+                        (t.outcome === "failed" && t.code != null
+                          ? "，" + (exitCodeLabels[t.code] || "退出码 " + t.code)
+                          : ""),
+                    ),
+                  ]);
+                }),
+              )
+            : hint("本次启动以来还没有结束的任务。"),
+        ]),
+      ];
+    }
     function heading(title, desc) {
       return h("header", [
         h("div", { class: "ux-page-title" }, [h("h1", title)]),
@@ -3798,6 +4122,8 @@ export default Vue.defineComponent({
               },
               running.value[task]
                 ? "运行中 · 修改用于下次"
+                : queued.value[task]
+                  ? "排队中 · 开始运行时读取当时已保存的条件"
                 : draftSaveError.value ||
                     (draftSaveState.value.includes("保存中")
                       ? "草稿保存中…"
@@ -3807,16 +4133,32 @@ export default Vue.defineComponent({
           ? button("重试保存", () => save(false, task), { plain: true })
           : null,
         button(
-          task === "follow" ? "开始跟进" : "开始打招呼",
+          (task === "follow"
+            ? "开始跟进"
+            : draft.value.runMode === "collect"
+              ? "开始收集"
+              : "开始打招呼") + (otherTaskBusy(task) ? "（排队）" : ""),
           () => begin(task),
           {
             type: "primary",
             loading: preparing.value || starting.value,
             disabled:
-              running.value.auto || running.value.follow || starting.value,
+              running.value[task] || queued.value[task] || starting.value,
+            title: otherTaskBusy(task)
+              ? "其他任务运行中，开始后会加入队列，轮到时自动运行"
+              : undefined,
           },
         ),
       ]);
+    }
+    // another BOSS task holds the queue, so starting this one only queues it
+    function otherTaskBusy(task) {
+      return (
+        taskStore.runningTasks.some(
+          (t) => t.workerId in queuedTaskLabels && t.workerId !== workerIds[task],
+        ) ||
+        taskStore.taskQueue.some((t) => t.workerId !== workerIds[task])
+      );
     }
     function emotionBubble(label) {
       return E(
@@ -4138,6 +4480,7 @@ export default Vue.defineComponent({
       const tabs = library
         ? [
             ["jobs", "职位"],
+            ["favorites", "收藏夹"],
             ["boss", "招聘者"],
             ["company", "公司"],
           ]
@@ -4150,6 +4493,7 @@ export default Vue.defineComponent({
         jobs: "JobLibrary",
         boss: "BossLibrary",
         company: "CompanyLibrary",
+        favorites: "FavoriteJobs",
         chat: "StartChatRecord",
         skip: "MarkAsNotSuitRecord",
       };
@@ -4167,7 +4511,9 @@ export default Vue.defineComponent({
         hint(
           selected === "skip"
             ? "本地跳过不等于已在BOSS标记。"
-            : "这里读取本机真实数据。岗位详情是已保存内容，在BOSS查看当前岗位。",
+            : selected === "favorites"
+              ? "收藏夹中的职位会按设置定时检查是否已关闭；在职位、记录列表中选中职位后点“收藏到…”即可收藏。"
+              : "这里读取本机真实数据。岗位详情是已保存内容，在BOSS查看当前岗位。",
         ),
         h("div", { class: "ux-data-panel", key: selected }, [
           legacyFrame("/main-layout/" + routes[selected], routes[selected]),
@@ -5102,10 +5448,36 @@ export default Vue.defineComponent({
     }
     const Root = {
       render() {
-        return h("div", { class: "ux-shell" }, [
+        const taskCount =
+          taskStore.runningTasks.filter((t) => t.workerId in queuedTaskLabels)
+            .length + taskStore.taskQueue.length;
+        return h(
+          "div",
+          { class: ["ux-shell", navCollapsed.value ? "is-nav-collapsed" : ""] },
+          [
           h("aside", { class: "aside-nav ux-nav", "data-v-cccda18a": "" }, [
-            h("p", { class: "ux-brand" }, "牛人快跑"),
-            hint("GeekGeekRun"),
+            h("div", { class: "ux-nav-head" }, [
+              h("div", { class: "ux-nav-brand" }, [
+                h("p", { class: "ux-brand" }, "牛人快跑"),
+                hint("GeekGeekRun"),
+              ]),
+              h(
+                "button",
+                {
+                  type: "button",
+                  class: "ux-nav-toggle",
+                  "aria-label": navCollapsed.value ? "展开导航栏" : "收起导航栏",
+                  "aria-expanded": String(!navCollapsed.value),
+                  title: navCollapsed.value ? "展开导航栏" : "收起导航栏",
+                  onClick: toggleNav,
+                },
+                [
+                  E("ElIcon", { size: 18 }, () =>
+                    h(navCollapsed.value ? Expand : Fold),
+                  ),
+                ],
+              ),
+            ]),
             h(
               "nav",
               {
@@ -5131,35 +5503,67 @@ export default Vue.defineComponent({
                         class: route.value === key ? "router-link-active" : "",
                         "aria-current":
                           route.value === key ? "page" : undefined,
+                        "aria-label": navCollapsed.value ? label : undefined,
+                        title: navCollapsed.value ? label : undefined,
                         onClick: (e) => {
                           e.preventDefault();
                           navigate(key);
                         },
                       },
-                      label,
+                      [
+                        E("ElIcon", { class: "ux-nav-icon", size: 16 }, () =>
+                          h(navIcons[key]),
+                        ),
+                        h("span", { class: "ux-nav-label" }, label),
+                        key === "tasks" && taskCount
+                          ? h(
+                              "span",
+                              {
+                                class: "ux-nav-badge",
+                                "aria-label": taskCount + " 个任务运行或排队中",
+                              },
+                              String(taskCount),
+                            )
+                          : null,
+                      ],
                     ),
                   ),
                 ),
               ],
             ),
             h("div", { class: "ux-nav-bottom" }, [
-              running.value.auto
+              running.value.auto || queued.value.auto
                 ? inline([
-                    E("ElTag", { size: "small" }, "打招呼中"),
-                    button("停止开聊", () => stop("auto"), {
+                    E(
+                      "ElTag",
+                      { size: "small", type: queued.value.auto ? "info" : "primary" },
+                      queued.value.auto
+                        ? "打招呼排队中"
+                        : draft.value.runMode === "collect"
+                          ? "收集中"
+                          : "打招呼中",
+                    ),
+                    button(queued.value.auto ? "移出队列" : "停止", () => stop("auto"), {
                       link: true,
                       loading: stopping.value,
                     }),
                   ])
                 : null,
-              running.value.follow
+              running.value.follow || queued.value.follow
                 ? inline([
-                    E("ElTag", { size: "small" }, "跟进中"),
-                    button("停止跟进", () => stop("follow"), {
+                    E(
+                      "ElTag",
+                      { size: "small", type: queued.value.follow ? "info" : "primary" },
+                      queued.value.follow ? "跟进排队中" : "跟进中",
+                    ),
+                    button(queued.value.follow ? "移出队列" : "停止跟进", () => stop("follow"), {
                       link: true,
                       loading: stopping.value,
                     }),
                   ])
+                : null,
+              taskStore.runningTasks.some((t) => t.workerId === "jobStatusPollMain")
+                ? E("ElTag", { size: "small", type: "warning" }, "检查收藏职位中")
                 : null,
               updateStore.availableNewRelease
                 ? button(
@@ -5214,7 +5618,12 @@ export default Vue.defineComponent({
                     (route.value === "settings" && settingTab.value === "ai")
                       ? "ux-inner--config"
                       : "",
-                    route.value === "auto" ? "ux-inner--with-rail" : "",
+                    route.value === "auto" && !railCollapsed.value
+                      ? "ux-inner--with-rail"
+                      : "",
+                    route.value === "auto" && railCollapsed.value
+                      ? "ux-inner--rail-collapsed"
+                      : "",
                     ["library", "records"].includes(route.value)
                       ? "ux-inner--data"
                       : "",
@@ -5232,7 +5641,9 @@ export default Vue.defineComponent({
                         ? dataPage(false)
                         : route.value === "library"
                           ? dataPage(true)
-                          : settingsPage()),
+                          : route.value === "tasks"
+                            ? tasksPage()
+                            : settingsPage()),
                 ],
               ),
             ],
@@ -5252,7 +5663,9 @@ export default Vue.defineComponent({
             : null,
           runtimeOverlay("auto"),
           runtimeOverlay("follow"),
-        ]);
+          route.value === "auto" ? railToggle() : null,
+          ],
+        );
       },
     };
     function fromHash() {
@@ -5325,11 +5738,27 @@ export default Vue.defineComponent({
     window.addEventListener("beforeunload", unloadHandler);
     window.addEventListener("blur", flushDraft);
     const unwatch = R.watch(
-      () => taskStore.runningTasks,
-      (tasks) => {
+      () => [taskStore.runningTasks, taskStore.taskQueue],
+      ([tasks, queue]) => {
         for (const [task, id] of Object.entries(workerIds)) {
           const worker = tasks.find((t) => t.workerId === id);
+          const waiting = queue.find((t) => t.workerId === id);
           running.value[task] = Boolean(worker);
+          queued.value[task] = Boolean(waiting) && !worker;
+          if (waiting && !worker) {
+            const yielded = waiting.reason === "yielded";
+            taskProgress.value[task] = {
+              viewed: 0,
+              sent: 0,
+              skipped: 0,
+              ...taskProgress.value[task],
+              startedAt:
+                taskProgress.value[task]?.startedAt || waiting.queuedAt || Date.now(),
+              state: yielded ? "yielded" : "queued",
+              detail: queueDetail(waiting.position, yielded),
+            };
+            continue;
+          }
           if (worker?.runtimeStorage?.taskProgress)
             taskProgress.value[task] = {
               ...worker.runtimeStorage.taskProgress.progress,
@@ -5387,17 +5816,7 @@ export default Vue.defineComponent({
                 ? taskProgress.value[task].detail
                 : "请修复问题后重新开始；不会从原位置续跑";
         }
-        const labels = {
-          81: "登录凭证已失效",
-          82: "登录状态已失效",
-          83: "网络已断开",
-          84: "平台拒绝访问或需要人工验证",
-          85: "浏览器不可执行",
-          86: "AI服务不可用",
-          87: "发送结果未确认，请先在BOSS中核对，避免重复发送",
-          88: "连续检查5批岗位没有可沟通岗位；请检查公司名单、分类和经验条件",
-          89: "岗位列表或详情未能确认，已停止，未继续发送；请检查BOSS页面",
-        };
+        const labels = exitCodeLabels;
         notice.value =
           message.code === 0
             ? "任务已结束。"

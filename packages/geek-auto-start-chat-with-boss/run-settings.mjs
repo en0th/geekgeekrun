@@ -14,8 +14,18 @@ export function waitSeconds(value, fallback) {
   return Number.isFinite(n) && n >= 0 ? Math.min(n, MAX_WAIT_SECONDS) : fallback
 }
 
+// auto-greeting run modes: 'chat' starts conversations; 'collect' only saves job details
+export const RUN_MODES = ['chat', 'collect']
+export const DEFAULT_RUN_MODE = 'chat'
+export const DEFAULT_COLLECT_ONLY_MATCHING_JOBS = true
+
 export function readRunSettings(bossConfig = {}) {
   return {
+    runMode: RUN_MODES.includes(bossConfig.autoChatRunMode) ? bossConfig.autoChatRunMode : DEFAULT_RUN_MODE,
+    collectOnlyMatchingJobs:
+      typeof bossConfig.collectOnlyMatchingJobs === 'boolean'
+        ? bossConfig.collectOnlyMatchingJobs
+        : DEFAULT_COLLECT_ONLY_MATCHING_JOBS,
     skipUnparseableSalaryJob:
       typeof bossConfig.skipUnparseableSalaryJob === 'boolean'
         ? bossConfig.skipUnparseableSalaryJob
@@ -28,5 +38,22 @@ export function readRunSettings(bossConfig = {}) {
       bossConfig.jobDetailViewWaitSeconds,
       DEFAULT_JOB_DETAIL_VIEW_WAIT_SECONDS
     )
+  }
+}
+
+// polling favourited jobs for closed / deleted status (a queued task, see jobStatusPollMain)
+export const JOB_STATUS_POLL_INTERVAL_HOURS = [2, 6, 12, 24]
+export const DEFAULT_JOB_STATUS_POLL = { enabled: true, intervalHours: 6 }
+
+// kept in its own storage file: boss.json changes would discard the settings page draft
+export const JOB_STATUS_POLL_SETTINGS_FILE = 'job-status-poll-settings.json'
+
+export function readJobStatusPollSettings(saved) {
+  saved = saved && typeof saved === 'object' ? saved : {}
+  return {
+    enabled: typeof saved.enabled === 'boolean' ? saved.enabled : DEFAULT_JOB_STATUS_POLL.enabled,
+    intervalHours: JOB_STATUS_POLL_INTERVAL_HOURS.includes(saved.intervalHours)
+      ? saved.intervalHours
+      : DEFAULT_JOB_STATUS_POLL.intervalHours
   }
 }

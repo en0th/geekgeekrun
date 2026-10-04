@@ -56,10 +56,26 @@ const baseSql: Record<RunDataDatasetKey, string> = {
     LEFT JOIN company_info c ON c.encryptCompanyId = j.encryptCompanyId`,
   jobLibrary: `SELECT
     j.rowid AS _rowid, j.encryptJobId, ${jobColumns},
-    b.name AS bossName, b.title AS bossTitle, c.name AS companyName
+    b.name AS bossName, b.title AS bossTitle, c.name AS companyName,
+    h.hireStatus, h.lastSeenDate AS hireStatusCheckedAt
   FROM job_info j
     LEFT JOIN boss_info b ON b.encryptBossId = j.encryptBossId
-    LEFT JOIN company_info c ON c.encryptCompanyId = j.encryptCompanyId`,
+    LEFT JOIN company_info c ON c.encryptCompanyId = j.encryptCompanyId
+    LEFT JOIN job_hire_status_record h ON h.encryptJobId = j.encryptJobId`,
+  // one row per favourite; a job saved into two folders shows twice
+  favoriteJobs: `SELECT
+    f.id, f.folderId, f.encryptJobId, f.createdAt AS favoritedAt, ff.name AS folderName,
+    ${jobColumns},
+    b.name AS bossName, b.title AS bossTitle, c.name AS companyName,
+    h.hireStatus, h.lastSeenDate AS hireStatusCheckedAt,
+    (SELECT MAX(l.checkedAt) FROM job_hire_status_log l
+      WHERE l.encryptJobId = f.encryptJobId AND l.hireStatus IN (2, 3)) AS closedAt
+  FROM favorite_job f
+    JOIN favorite_folder ff ON ff.id = f.folderId
+    LEFT JOIN job_info j ON j.encryptJobId = f.encryptJobId
+    LEFT JOIN boss_info b ON b.encryptBossId = j.encryptBossId
+    LEFT JOIN company_info c ON c.encryptCompanyId = j.encryptCompanyId
+    LEFT JOIN job_hire_status_record h ON h.encryptJobId = f.encryptJobId`,
   bossLibrary: `SELECT
     b.encryptBossId, b.encryptCompanyId, b.name, b.title, b.date, c.name AS companyName
   FROM boss_info b
@@ -74,7 +90,9 @@ const deleteTarget: Record<RunDataDatasetKey, { table: string; pk: string }> = {
   markAsNotSuitLog: { table: 'mark_as_not_suit_log', pk: 'id' },
   jobLibrary: { table: 'job_info', pk: 'encryptJobId' },
   bossLibrary: { table: 'boss_info', pk: 'encryptBossId' },
-  companyLibrary: { table: 'company_info', pk: 'encryptCompanyId' }
+  companyLibrary: { table: 'company_info', pk: 'encryptCompanyId' },
+  // deleting a favourite only takes it out of its folder
+  favoriteJobs: { table: 'favorite_job', pk: 'id' }
 }
 
 function getDataset(dataset: RunDataDatasetKey) {
@@ -365,7 +383,7 @@ const num = (v: unknown) => {
   const n = Number(v)
   return Number.isFinite(n) ? n : null
 }
-const nowDbDate = () => new Date().toISOString().replace('T', ' ').replace('Z', '')
+export const nowDbDate = () => new Date().toISOString().replace('T', ' ').replace('Z', '')
 
 // spreadsheet round trips turn \r\n into \n and numbers into strings; neither counts as a change
 function sameValue(a: unknown, b: unknown) {
@@ -569,6 +587,8 @@ export function importRunData(db: Db, req: RunDataImportReq): RunDataImportRes {
           date: key(row.date),
           encryptCompanyId: key(row.encryptCompanyId)
         })
+      case 'favoriteJobs':
+        throw new Error('收藏夹不支持导入，请在职位库中选择职位后收藏')
       case 'companyLibrary':
         if (!key(row.encryptCompanyId)) throw new Error('缺少公司ID')
         return upsertCompany(db, row.encryptCompanyId, {
