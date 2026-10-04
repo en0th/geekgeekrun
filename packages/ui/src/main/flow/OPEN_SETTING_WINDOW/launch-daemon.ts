@@ -3,9 +3,11 @@ import { app } from 'electron'
 import {
   ensureStorageFileExist,
   writeStorageFile,
-  readStorageFile
+  readStorageFile,
+  storageFilePath
 } from '@geekgeekrun/geek-auto-start-chat-with-boss/runtime-file-utils.mjs'
 import { randomUUID } from 'node:crypto'
+import path from 'node:path'
 import { connectToDaemon } from './connect-to-daemon'
 
 export async function ensureIpcPipeName({ isReset } = {}) {
@@ -19,6 +21,8 @@ export async function ensureIpcPipeName({ isReset } = {}) {
     await writeStorageFile('ipc-pipe-name', ipcPipeName, { isJson: false })
   }
   process.env.GEEKGEEKRUND_PIPE_NAME = ipcPipeName
+  // the daemon keeps finished task runs here (task queue page, history tab)
+  process.env.GEEKGEEKRUND_TASK_HISTORY_FILE = path.join(storageFilePath, 'task-history.json')
   return ipcPipeName
 }
 
@@ -40,7 +44,8 @@ export async function launchDaemon() {
     )
 
     daemonProcess.stdout.on('data', (data) => {
-      console.log(`守护进程输出: ${data}`)
+      // the daemon writes its own log file entries; the relay only matters at debug level
+      console.debug(`守护进程输出: ${data}`)
     })
 
     daemonProcess.stderr.on('data', (data) => {

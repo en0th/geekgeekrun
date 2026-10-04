@@ -2,6 +2,8 @@ import { AUTO_CHAT_ERROR_EXIT_CODE } from '../../common/enums/auto-start-chat'
 import { daemonEE, sendToDaemon } from '../flow/OPEN_SETTING_WINDOW/connect-to-daemon'
 import { saveAndGetCurrentRunRecord } from '../flow/OPEN_SETTING_WINDOW/utils/db'
 import minimist from 'minimist'
+import { readConfigFile } from '@geekgeekrun/geek-auto-start-chat-with-boss/runtime-file-utils.mjs'
+import { readRunSettings } from '@geekgeekrun/geek-auto-start-chat-with-boss/run-settings.mjs'
 import { app } from 'electron'
 
 interface DaemonStatus {
@@ -63,9 +65,11 @@ export async function runCommon({
       ...extraNoAutoRestartExitCodes
     ].join(',')
   }
-  const args = !app.isPackaged
-    ? [app.getAppPath(), `--mode=${mode}`, `--run-record-id=${currentRunRecord?.id || 0}`]
-    : [`--mode=${mode}`, `--run-record-id=${currentRunRecord?.id || 0}`]
+  const taskArgs = [`--mode=${mode}`, `--run-record-id=${currentRunRecord?.id || 0}`]
+  // recorded in the task history so a finished run links to the right data (chats or jobs)
+  if (mode === 'geekAutoStartWithBossMain')
+    taskArgs.push(`--run-mode=${readRunSettings(readConfigFile('boss.json')).runMode}`)
+  const args = !app.isPackaged ? [app.getAppPath(), ...taskArgs] : taskArgs
   // the daemon queues BOSS tasks while another one runs
   const startResponse = (await sendToDaemon(
     {

@@ -10,11 +10,11 @@ const { randomUUID } = require('crypto')
 const AUTO = 'geekAutoStartWithBossMain', FOLLOW = 'readNoReplyAutoReminderMain', POLL = 'jobStatusPollMain'
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-async function startDaemon(sliceMs = 60000) {
+async function startDaemon(sliceMs = 60000, extraEnv = {}) {
   const pipeName = `ggr-test-${randomUUID()}`
   const child = spawn(process.execPath, [path.join(__dirname, '../daemon.js')], {
     stdio: ['ignore', 'ignore', 'ignore', 'pipe'],
-    env: { ...process.env, GEEKGEEKRUND_PIPE_NAME: pipeName, GEEKGEEKRUND_TIME_SLICE_MS: String(sliceMs) }
+    env: { ...process.env, GEEKGEEKRUND_PIPE_NAME: pipeName, GEEKGEEKRUND_TIME_SLICE_MS: String(sliceMs), ...extraEnv }
   })
   await new Promise((resolve) => child.stdio[3].once('data', resolve)) // DAEMON_READY
   const socket = net.connect(path.join(tmpdir(), `${pipeName}.sock`))
@@ -32,8 +32,8 @@ async function startDaemon(sliceMs = 60000) {
   })
   const send = (m) => new Promise((r) => { const id = randomUUID(); pending.set(id, r); socket.write(JSON.stringify({ ...m, _callbackUuid: id }) + '\n') })
   await send({ type: 'user-process-register' })
-  const start = (workerId, env = {}) =>
-    send({ type: 'start-worker', workerId, command: process.execPath, args: [path.join(__dirname, 'fake-worker.cjs')], env: { FAKE_KIND: 'long', ...env } })
+  const start = (workerId, env = {}, extraArgs = []) =>
+    send({ type: 'start-worker', workerId, command: process.execPath, args: [path.join(__dirname, 'fake-worker.cjs'), ...extraArgs], env: { FAKE_KIND: 'long', ...env } })
   const status = () => send({ type: 'get-status' })
   const running = async () => (await status()).workers.map((w) => w.workerId)
   const queued = async () => (await status()).queue.map((q) => `${q.workerId}:${q.reason}`)
@@ -128,4 +128,23 @@ test('a crashed task keeps its turn while it is restarted', async () => {
     await sleep(1800)
     assert.deepEqual(await d.running(), [POLL])
   } finally { d.close() }
+})
+
+test('finished runs are kept in the history file across daemon restarts', async () => {
+  const fs = require('fs')
+  const file = path.join(fs.mkdtempSync(path.join(tmpdir(), 'ggr-hist-')), 'task-history.json')
+  const d = await startDaemon(60000, { GEEKGEEKRUND_TASK_HISTORY_FILE: file })
+  try {
+    await d.start(POLL, { FAKE_KIND: 'finite', FAKE_MS: '200' }, ['--run-record-id=7', '--run-mode=collect'])
+    await sleep(600)
+  } finally { d.close() }
+  const saved = JSON.parse(fs.readFileSync(file, 'utf8'))
+  assert.equal(saved[0].workerId, POLL)
+  assert.equal(saved[0].outcome, 'finished')
+  assert.equal(saved[0].runRecordId, 7)
+  assert.equal(saved[0].runMode, 'collect')
+  const again = await startDaemon(60000, { GEEKGEEKRUND_TASK_HISTORY_FILE: file })
+  try {
+    assert.equal((await again.status()).history[0].id, saved[0].id)
+  } finally { again.close() }
 })

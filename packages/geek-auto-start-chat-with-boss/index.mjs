@@ -764,8 +764,16 @@ async function toRecommendPage (hooks) {
         continue
       }
       case 'expect': {
-        await page.waitForSelector(USER_SET_EXPECT_JOB_ENTRIES_SELECTOR)
+        await page.waitForSelector('.c-expect-select')
+        // an account without any 求职期望 on BOSS has nothing to pick here; waiting for an
+        // entry would time out and restart the browser over and over
+        await page.waitForSelector(USER_SET_EXPECT_JOB_ENTRIES_SELECTOR, { timeout: 8 * 1000 }).catch(() => null)
         const allExpectJobEntryHandles = await page.$$(USER_SET_EXPECT_JOB_ENTRIES_SELECTOR)
+        if (!allExpectJobEntryHandles.length) {
+          console.log('no 求职期望 on this BOSS account, skipping the expect job source')
+          autoStartChatEventBus.emit('TASK_PROGRESS', { detail: 'BOSS账号未设置求职期望，已跳过“按求职期望推荐”来源' })
+          break
+        }
         allExpectJobEntryHandles.forEach((it, index) => {
           computedSourceList.push({
             type: source.type,
@@ -824,6 +832,11 @@ async function toRecommendPage (hooks) {
       }
     }
   }
+  if (!computedSourceList.length) {
+    // e.g. only the expect source is enabled and the account has no 求职期望
+    throw new Error('AUTO_CHAT_NO_USABLE_SOURCE')
+  }
+
 
   let currentSourceIndex = 0
   afterPageLoad: while (true) {
@@ -1112,6 +1125,7 @@ async function toRecommendPage (hooks) {
                   if (isCollectAll) {
                     blockJobNotSuit.add(targetJobData.jobInfo.encryptId)
                     autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'collected', detail: '已保存岗位信息' })
+                    searchGuard.reset()
                     continue continueFind
                   }
                   const parsedSalary = parseSalary(selectedJobData.salaryDesc || '')
@@ -1538,6 +1552,7 @@ async function toRecommendPage (hooks) {
                   if (isCollectMode) {
                     blockJobNotSuit.add(targetJobData.jobInfo.encryptId)
                     autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'collected', detail: '已保存符合条件的岗位' })
+                    searchGuard.reset()
                     continue continueFind
                   }
                   const startChatButtonInnerHTML = await page.evaluate('document.querySelector(".job-detail-box .op-btn.op-btn-chat")?.innerHTML.trim()')

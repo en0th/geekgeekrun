@@ -348,9 +348,29 @@ watch(pollState, (state, previous) => {
   }
 })
 
+// the check opens job pages as the logged-in user; a missing or expired login is fixed first
+async function ensureBossLogin() {
+  const check = () =>
+    electron.ipcRenderer.invoke('boss-login-status') as Promise<{ status: string; detail: string }>
+  const result = await check()
+  if (result.status === 'valid' || result.status === 'unknown') return true
+  ElMessage.error(
+    result.status === 'missing'
+      ? '还没有登录BOSS直聘，请先完成登录'
+      : `BOSS直聘登录已失效（${result.detail}），请重新登录`
+  )
+  try {
+    await electron.ipcRenderer.invoke('login-with-cookie-assistant')
+  } catch {
+    return false
+  }
+  return (await check()).status === 'valid'
+}
+
 async function runPollNow() {
   startingPoll.value = true
   try {
+    if (!(await ensureBossLogin())) return
     const result = (await electron.ipcRenderer.invoke('run-job-status-poll')) as {
       queued?: boolean
       queuePosition?: number

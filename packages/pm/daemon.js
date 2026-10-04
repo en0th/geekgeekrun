@@ -122,16 +122,53 @@ function shouldYield(workerId) {
   return Date.now() - (info.sliceStartTime || info.startTime) >= TIME_SLICE_MS
 }
 
+// finished task runs, kept across daemon restarts when the UI names a file for them
+const TASK_HISTORY_FILE = process.env.GEEKGEEKRUND_TASK_HISTORY_FILE || ''
+const TASK_HISTORY_LIMIT = 200
+
+function loadTaskHistory() {
+  if (!TASK_HISTORY_FILE) return
+  try {
+    const saved = JSON.parse(fs.readFileSync(TASK_HISTORY_FILE, 'utf8'))
+    if (Array.isArray(saved)) taskHistory.push(...saved.slice(0, TASK_HISTORY_LIMIT))
+  } catch {
+    // no history yet, or an unreadable file: start empty
+  }
+}
+
+function saveTaskHistory() {
+  if (!TASK_HISTORY_FILE) return
+  try {
+    fs.writeFileSync(TASK_HISTORY_FILE + '.tmp', JSON.stringify(taskHistory))
+    fs.renameSync(TASK_HISTORY_FILE + '.tmp', TASK_HISTORY_FILE)
+  } catch (e) {
+    console.error('保存任务历史失败:', e)
+  }
+}
+
+// --name=value arguments the UI passes to a task (run record id, run mode)
+function argValue(args, name) {
+  const prefix = `--${name}=`
+  const found = (args || []).find((it) => typeof it === 'string' && it.startsWith(prefix))
+  return found ? found.slice(prefix.length) : undefined
+}
+
 function recordTaskHistory(info, outcome, code) {
+  const runRecordId = Number(argValue(info.args, 'run-record-id')) || null
   taskHistory.unshift({
+    id: `${info.workerId}-${info.startTime}`,
     workerId: info.workerId,
     startedAt: info.startTime,
     endedAt: Date.now(),
     outcome,
-    code
+    code,
+    runRecordId,
+    runMode: argValue(info.args, 'run-mode') || null
   })
-  taskHistory.length = Math.min(taskHistory.length, 50)
+  taskHistory.length = Math.min(taskHistory.length, TASK_HISTORY_LIMIT)
+  saveTaskHistory()
 }
+loadTaskHistory()
 
 // No tray is exposed: after the last client and task have gone, do not leave
 // an invisible daemon running. A new connection cancels this grace period.
@@ -397,7 +434,8 @@ function startWorker({ workerId, command, args, env }, restartCount = 0) {
   let output = '';
   workerProcess.stdout.on('data', (data) => {
     output += data.toString();
-    console.log(`工具进程 ${workerId} 输出:`, data.toString().trim());
+    // the task writes its own log file entries; the relay only matters at debug level
+    console.debug(`工具进程 ${workerId} 输出:`, data.toString().trim());
   });
 
   workerProcess.stderr.on('data', (data) => {

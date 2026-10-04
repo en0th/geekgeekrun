@@ -9,7 +9,19 @@ import { modelPair, validModels } from '../../../../common/model-config.mjs'
 import { startJobStatusPoll, JOB_STATUS_POLL_MODE } from '../../../features/job-status-poll'
 import { JOB_STATUS_POLL_LAST_RUN_FILE } from '../../../features/job-hire-status'
 import { checkBossLoginStatus } from '../../../features/boss-login-check'
-import { changeDataLocation, getDataLocationInfo, relaunchApp } from '../../../features/data-location'
+import { logDirPath } from '../../../utils/overrideConsole'
+import {
+  LOG_LEVELS,
+  LOG_LEVEL_LABELS,
+  LOG_RETENTION_DAYS,
+  LOG_SETTINGS_FILE,
+  readLogSettings
+} from '../../../../common/log-settings.mjs'
+import {
+  changeDataLocation,
+  getDataLocationInfo,
+  relaunchApp
+} from '../../../features/data-location'
 import {
   getDbBackupInfo,
   runDbBackup,
@@ -50,7 +62,7 @@ import {
   addFavoriteJobs
 } from '../utils/db/index'
 import { pipeWriteRegardlessError } from '../../utils/pipe'
-import { WriteStream } from 'node:fs'
+import fs, { WriteStream } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 // eslint-disable-next-line vue/prefer-import-from-vue
 import { hasOwn } from '@vue/shared'
@@ -136,7 +148,10 @@ export default function initIpc() {
       bossConfig.jobNotActiveStrategy = payload.jobNotActiveStrategy
     }
     if (hasOwn(payload, 'autoReminder')) {
-      bossConfig.autoReminder = keepAutoReminderSecrets(payload.autoReminder, bossConfig.autoReminder)
+      bossConfig.autoReminder = keepAutoReminderSecrets(
+        payload.autoReminder,
+        bossConfig.autoReminder
+      )
     }
 
     // city
@@ -383,7 +398,7 @@ export default function initIpc() {
       defaultPath,
       properties: ['openDirectory', 'createDirectory']
     })
-    return result.canceled ? null : (result.filePaths[0] ?? null)
+    return result.canceled ? null : result.filePaths[0] ?? null
   })
   ipcMain.handle('open-folder', async (_, dir: string) => {
     const fs = await import('node:fs')
@@ -397,6 +412,22 @@ export default function initIpc() {
   ipcMain.handle('data-location-change', (_, payload) => changeDataLocation(payload))
   ipcMain.handle('app-relaunch', () => relaunchApp())
   ipcMain.handle('db-backup-info', () => getDbBackupInfo())
+  // ---- log storage ----
+  ipcMain.handle('log-settings-info', () => {
+    fs.mkdirSync(logDirPath, { recursive: true })
+    return {
+      settings: readLogSettings(readConfigFile(LOG_SETTINGS_FILE)),
+      levels: LOG_LEVELS.map((value) => ({ value, label: LOG_LEVEL_LABELS[value] })),
+      dir: logDirPath,
+      retentionDays: LOG_RETENTION_DAYS
+    }
+  })
+  ipcMain.handle('log-settings-save', async (_, payload) => {
+    const settings = readLogSettings(payload)
+    // every process picks the change up within a few seconds
+    await writeConfigFile(LOG_SETTINGS_FILE, settings)
+    return settings
+  })
   ipcMain.handle('db-backup-save-settings', (_, payload) => saveDbBackupSettings(payload))
   ipcMain.handle('db-backup-run', () => runDbBackup('manual'))
   ipcMain.handle('db-backup-restore', (_, { name }) => scheduleDbRestore(name))

@@ -28,7 +28,11 @@ import {
   Setting,
 } from "@element-plus/icons-vue";
 import RunningOverlay from "../../features/RunningOverlay/index.vue";
-import { useTaskManagerStore, useUpdateStore } from "../../store";
+import {
+  useTaskManagerStore,
+  useUpdateStore,
+  useRunDataJumpStore,
+} from "../../store";
 import buildInfo from "../../../../common/build-info.json";
 import "./filter-data.js";
 import "./keyword-examples.js";
@@ -388,6 +392,8 @@ export default Vue.defineComponent({
       modal = ref(""),
       modalTitle = ref(""),
       modalRoute = ref("");
+    const tasksTab = ref("current"),
+      jumpStore = useRunDataJumpStore();
     const recordTab = ref("chat"),
       libraryTab = ref("jobs"),
       settingTab = ref("account");
@@ -2056,6 +2062,7 @@ export default Vue.defineComponent({
       if (!channel) return;
       try {
         await window.electron.ipcRenderer.invoke(channel);
+        if (path === "/cookieAssistant") refreshLoginStatus();
       } catch (error) {
         if (!/cancel/i.test(error.message))
           R.message({ type: "error", message: "未完成设置：" + error.message });
@@ -3383,6 +3390,7 @@ export default Vue.defineComponent({
       preparing.value = true;
       shortResume.value = false;
       try {
+        if (!(await ensureBossLogin(task))) return;
         if (!(await save(false, task))) return;
         if (
           task === "follow" &&
@@ -3445,7 +3453,10 @@ export default Vue.defineComponent({
         checks.value = task;
         runtimeSteps.value = [
           {
-            label: "登录凭证格式有效（登录是否有效由运行时确认）",
+            label:
+              bossLogin.value.status === "valid"
+                ? "BOSS直聘登录有效（刚刚已检测）"
+                : "登录凭证已保存（暂时无法联网确认，运行时会再次确认）",
             ok: cookieValid,
           },
           { label: "浏览器已配置", ok: browser.value },
@@ -3803,6 +3814,7 @@ export default Vue.defineComponent({
         "aside",
         { class: "ux-section-rail", "aria-label": "配置完成度与分组导航" },
         [
+          railLogin(),
           h("div", { class: "ux-rail-summary" }, [
             h("div", { class: "ux-rail-title" }, [
               h("span", "配置完成度"),
@@ -3965,6 +3977,7 @@ export default Vue.defineComponent({
           })
         : "—";
     const durationText = (ms) => {
+      if (ms < 60 * 1000) return Math.max(0, Math.round(ms / 1000)) + " 秒";
       const minutes = Math.max(0, Math.round(ms / 60000));
       return minutes < 60
         ? minutes + " 分钟"
@@ -3981,120 +3994,264 @@ export default Vue.defineComponent({
       }
       R.message({ type: "success", message: "已移出队列" });
     }
+    const runModeLabel = (t) =>
+      t.workerId !== "geekAutoStartWithBossMain"
+        ? "—"
+        : t.runMode === "collect"
+          ? "只收集"
+          : "打招呼";
+    // where a finished run's data lives, filtered to the time the run took
+    function historyTarget(t) {
+      // tasks run one at a time, so a few seconds of slack cannot reach into the next run
+      const range = [new Date(t.startedAt), new Date(t.endedAt + 5 * 1000)];
+      if (t.workerId === "geekAutoStartWithBossMain")
+        return t.runMode === "collect"
+          ? {
+              route: "library",
+              tab: "jobs",
+              dataset: "jobLibrary",
+              field: "hireStatusCheckedAt",
+              label: "本次运行查看并保存的岗位",
+              range,
+            }
+          : {
+              route: "records",
+              tab: "chat",
+              dataset: "chatStartupLog",
+              field: "date",
+              label: "本次运行的开聊记录",
+              range,
+            };
+      if (t.workerId === "jobStatusPollMain")
+        return {
+          route: "library",
+          tab: "favorites",
+          dataset: "favoriteJobs",
+          field: "hireStatusCheckedAt",
+          label: "本次检查过的收藏职位",
+          range,
+        };
+      // follow-up messages have no data table
+      return null;
+    }
+    function openHistoryData(t) {
+      const target = historyTarget(t);
+      if (!target) return;
+      jumpStore.jump({
+        dataset: target.dataset,
+        rows: [{ field: target.field, op: "between", value: target.range }],
+        label: target.label + "（" + clockTime(t.startedAt) + " 起）",
+      });
+      if (target.route === "library") libraryTab.value = target.tab;
+      else recordTab.value = target.tab;
+      navigate(target.route);
+    }
+    const column = (props, cell) =>
+      E("ElTableColumn", props, cell ? { default: ({ row }) => cell(row) } : undefined);
     function tasksPage() {
-      const current = taskStore.runningTasks.filter(
-        (t) => t.workerId in queuedTaskLabels,
-      );
-      const queue = taskStore.taskQueue;
-      const history = taskStore.taskHistory.filter(
+      const workerTasks = taskStore.runningTasks.filter(
         (t) => t.workerId in queuedTaskLabels,
       );
       const taskOf = (workerId) =>
         Object.keys(workerIds).find((k) => workerIds[k] === workerId);
+      // running and waiting tasks are one list; the state column tells them apart
+      const current = [
+        ...workerTasks.map((t) => ({
+          key: "run-" + t.workerId,
+          workerId: t.workerId,
+          state: t.yielding ? "yielding" : "running",
+          since: Date.now() - (t.uptime || 0),
+          args: t.args,
+        })),
+        ...taskStore.taskQueue.map((t) => ({
+          key: "queue-" + t.workerId,
+          workerId: t.workerId,
+          state:
+            t.reason === "yielded"
+              ? "yielded"
+              : t.reason === "restarting"
+                ? "restarting"
+                : "waiting",
+          position: t.position,
+          since: t.queuedAt,
+          args: t.args,
+        })),
+      ].map((t) => ({
+        ...t,
+        runMode: (t.args || [])
+          .find((a) => String(a).startsWith("--run-mode="))
+          ?.split("=")[1],
+      }));
+      const stateTags = {
+        running: ["运行中", "primary"],
+        yielding: ["即将让出", "warning"],
+        waiting: ["排队等待", "info"],
+        yielded: ["已让出，等待继续", "warning"],
+        restarting: ["等待重启", "danger"],
+      };
+      const history = taskStore.taskHistory.filter(
+        (t) => t.workerId in queuedTaskLabels,
+      );
+      const tab = tasksTab.value;
       return [
         heading("任务队列"),
         explain(
-          "自动打招呼、只收集岗位数据、消息跟进和收藏职位状态检查都会操作BOSS页面，因此一次只运行一个，其余按顺序排队。长时间运行的任务每 20 分钟会在安全的检查点让出一次，让排队的任务先执行，之后自动继续；收藏职位检查会排在最前面。",
+          "自动打招呼、只收集岗位数据、消息跟进和收藏职位状态检查都会操作BOSS页面，因此一次只运行一个，其余按顺序排队。长时间运行的任务每 20 分钟会在安全的检查点让出一次，之后自动继续；收藏职位检查会排在最前面。",
         ),
-        card("正在运行", [
-          current.length
-            ? h(
-                "ul",
-                { class: "ux-task-list" },
-                current.map((t) =>
-                  h("li", { class: "ux-task-row" }, [
-                    E("ElTag", { size: "small", type: "primary" }, () =>
-                      t.yielding ? "即将让出" : "运行中",
-                    ),
-                    h("strong", queuedTaskLabels[t.workerId]),
-                    h(
-                      "span",
-                      { class: "ux-hint" },
-                      "已运行 " + durationText(t.uptime || 0),
-                    ),
-                    h("span", { class: "ux-task-actions" }, [
-                      taskOf(t.workerId)
-                        ? button("查看运行状态", () => showRuntime(taskOf(t.workerId)), {
-                            link: true,
-                            type: "primary",
-                          })
-                        : null,
-                      button(
-                        "停止",
-                        () =>
-                          taskOf(t.workerId)
-                            ? stop(taskOf(t.workerId))
-                            : window.electron.ipcRenderer.invoke("stop-task", t.workerId),
-                        { link: true, type: "danger", loading: stopping.value },
-                      ),
-                    ]),
+        tabBar(
+          tab,
+          [
+            ["current", `当前任务（${current.length}）`],
+            ["history", `历史记录（${history.length}）`],
+          ],
+          (v) => (tasksTab.value = v),
+        ),
+        tab === "current"
+          ? E(
+              "ElTable",
+              {
+                data: current,
+                rowKey: "key",
+                size: "small",
+                border: true,
+                class: "ux-task-table",
+                emptyText: "当前没有运行或排队的任务",
+              },
+              () => [
+                column({ label: "状态", width: 150 }, (row) =>
+                  E("ElTag", { size: "small", type: stateTags[row.state][1] }, () =>
+                    stateTags[row.state][0],
+                  ),
+                ),
+                column({ label: "顺序", width: 64, align: "center" }, (row) =>
+                  row.position ? String(row.position) : "—",
+                ),
+                column({ label: "任务", minWidth: 150 }, (row) =>
+                  queuedTaskLabels[row.workerId],
+                ),
+                column({ label: "方式", width: 90 }, (row) => runModeLabel(row)),
+                column({ label: "开始 / 加入时间", width: 130 }, (row) =>
+                  clockTime(row.since),
+                ),
+                column({ label: "已运行 / 已等待", width: 130 }, (row) =>
+                  durationText(progressClock.value - row.since),
+                ),
+                column({ label: "操作", width: 190, fixed: "right" }, (row) =>
+                  h("span", { class: "ux-task-actions" }, [
+                    row.state === "running" || row.state === "yielding"
+                      ? [
+                          taskOf(row.workerId)
+                            ? button("查看运行状态", () => showRuntime(taskOf(row.workerId)), {
+                                link: true,
+                                type: "primary",
+                                size: "small",
+                              })
+                            : null,
+                          button(
+                            "停止",
+                            () =>
+                              taskOf(row.workerId)
+                                ? stop(taskOf(row.workerId))
+                                : ipc("stop-task", row.workerId),
+                            { link: true, type: "danger", size: "small" },
+                          ),
+                        ]
+                      : button("移出队列", () => removeQueued(row.workerId), {
+                          link: true,
+                          type: "danger",
+                          size: "small",
+                        }),
                   ]),
                 ),
-              )
-            : hint("当前没有运行中的任务。"),
-        ]),
-        card("排队中", [
-          queue.length
-            ? h(
-                "ol",
-                { class: "ux-task-list" },
-                queue.map((t) =>
-                  h("li", { class: "ux-task-row" }, [
-                    h("span", { class: "ux-task-position" }, String(t.position)),
-                    h("strong", queuedTaskLabels[t.workerId] || t.workerId),
-                    E(
-                      "ElTag",
-                      { size: "small", type: t.reason === "yielded" ? "warning" : "info" },
-                      () =>
-                        t.reason === "yielded"
-                          ? "已让出，等待继续"
-                          : t.reason === "restarting"
-                            ? "等待重启"
-                            : "等待开始",
-                    ),
-                    h("span", { class: "ux-hint" }, "加入于 " + clockTime(t.queuedAt)),
-                    h("span", { class: "ux-task-actions" }, [
-                      button("移出队列", () => removeQueued(t.workerId), {
-                        link: true,
-                        type: "danger",
-                      }),
-                    ]),
-                  ]),
-                ),
-              )
-            : hint("队列为空。其他任务运行时开始的新任务会在这里等待。"),
-        ]),
-        card("最近记录", [
-          history.length
-            ? h(
-                "ul",
-                { class: "ux-task-list" },
-                history.slice(0, 20).map((t) => {
-                  const [label, type] = taskOutcomeLabels[t.outcome] || [
-                    t.outcome,
-                    "info",
-                  ];
-                  return h("li", { class: "ux-task-row" }, [
-                    E("ElTag", { size: "small", type }, () => label),
-                    h("strong", queuedTaskLabels[t.workerId]),
-                    h(
-                      "span",
-                      { class: "ux-hint" },
-                      clockTime(t.startedAt) +
-                        " – " +
-                        clockTime(t.endedAt) +
-                        "，运行 " +
-                        durationText(t.endedAt - t.startedAt) +
-                        (t.outcome === "failed" && t.code != null
-                          ? "，" + (exitCodeLabels[t.code] || "退出码 " + t.code)
-                          : ""),
-                    ),
-                  ]);
+              ],
+            )
+          : E(
+              "ElTable",
+              {
+                data: history,
+                rowKey: "id",
+                size: "small",
+                border: true,
+                class: "ux-task-table",
+                maxHeight: "calc(100vh - 260px)",
+                emptyText: "还没有结束的任务",
+                rowClassName: ({ row }) => (historyTarget(row) ? "is-linkable" : ""),
+                onRowClick: (row) => openHistoryData(row),
+              },
+              () => [
+                column({ label: "结果", width: 120 }, (row) => {
+                  const [label, type] = taskOutcomeLabels[row.outcome] || [row.outcome, "info"];
+                  return E("ElTag", { size: "small", type, disableTransitions: true }, () => label);
                 }),
-              )
-            : hint("本次启动以来还没有结束的任务。"),
-        ]),
+                column({ label: "任务", minWidth: 150 }, (row) =>
+                  queuedTaskLabels[row.workerId],
+                ),
+                column({ label: "方式", width: 90 }, (row) => runModeLabel(row)),
+                column({ label: "开始", width: 130 }, (row) => clockTime(row.startedAt)),
+                column({ label: "结束", width: 130 }, (row) => clockTime(row.endedAt)),
+                column({ label: "时长", width: 110 }, (row) =>
+                  durationText(row.endedAt - row.startedAt),
+                ),
+                column({ label: "说明", minWidth: 200, showOverflowTooltip: true }, (row) =>
+                  row.outcome === "failed" && row.code != null
+                    ? exitCodeLabels[row.code] || "退出码 " + row.code
+                    : row.outcome === "yielded"
+                      ? "让出给排队的任务，稍后自动继续"
+                      : "",
+                ),
+                column({ label: "数据", width: 110, fixed: "right" }, (row) =>
+                  historyTarget(row)
+                    ? button("查看数据", () => openHistoryData(row), {
+                        link: true,
+                        type: "primary",
+                        size: "small",
+                      })
+                    : h("span", { class: "ux-hint" }, "—"),
+                ),
+              ],
+            ),
+        tab === "history"
+          ? hint(
+              "点击一条记录，会打开该次运行产生的数据并按运行时间筛选：打招呼看开聊记录，只收集看职位库中查看过的岗位，收藏检查看收藏夹。",
+            )
+          : null,
       ];
+    }
+    function railLogin() {
+      const { status, detail } = bossLogin.value;
+      const needsLogin = status === "invalid" || status === "missing";
+      return h(
+        "div",
+        {
+          class: ["ux-rail-login", "is-" + status],
+          role: "status",
+          "aria-label": "BOSS直聘登录状态",
+        },
+        [
+          h("div", { class: "ux-rail-login-head" }, [
+            h("span", { class: "ux-rail-dot", "aria-hidden": "true" }),
+            h("span", { class: "ux-rail-login-label" }, "BOSS账号"),
+            h("strong", loginStatusText[status] || status),
+          ]),
+          detail && status !== "valid"
+            ? h("p", { class: "ux-rail-login-detail" }, detail)
+            : null,
+          h("div", { class: "ux-rail-login-actions" }, [
+            needsLogin
+              ? button(status === "missing" ? "去登录" : "重新登录", goToLoginSetup, {
+                  link: true,
+                  type: "primary",
+                  size: "small",
+                })
+              : null,
+            button("重新检测", refreshLoginStatus, {
+              link: true,
+              size: "small",
+              disabled: status === "checking",
+            }),
+          ]),
+        ],
+      );
     }
     function heading(title, desc) {
       return h("header", [
@@ -4558,7 +4715,7 @@ export default Vue.defineComponent({
             ["browser", "浏览器"],
             ["ai", "AI模型配置"],
             ["notify", "钉钉通知"],
-            ["data", "数据与备份"],
+            ["data", "数据、备份与日志"],
           ],
           (v) => {
             settingTab.value = v;
@@ -4568,8 +4725,14 @@ export default Vue.defineComponent({
         tab === "account"
           ? card("BOSS账号与登录", [
               alert(
-                login.value ? "已保存登录凭证" : "未保存登录凭证",
-                login.value ? "success" : "warning",
+                "BOSS直聘：" +
+                  (loginStatusText[bossLogin.value.status] || "") +
+                  (bossLogin.value.detail && bossLogin.value.status !== "valid"
+                    ? "（" + bossLogin.value.detail + "）"
+                    : ""),
+                { valid: "success", unknown: "warning", checking: "info" }[
+                  bossLogin.value.status
+                ] || "error",
               ),
               inline([
                 button(
@@ -4590,16 +4753,13 @@ export default Vue.defineComponent({
                     ),
                   { plain: true, disabled: !browser.value },
                 ),
-              ]),
-              inline([
-                button("检测登录是否有效", checkLoginNow, {
+                button("重新检测", checkLoginNow, {
                   plain: true,
                   loading: dataBusy.value === "login",
-                  disabled: !login.value,
                 }),
               ]),
               hint(
-                "登录凭证是敏感信息，不要分享截图或日志。检测会用已保存的凭证向BOSS直聘请求一次账号信息，不会打开浏览器；每次启动时也会自动检测。",
+                "登录凭证是敏感信息，不要分享截图或日志。检测会用已保存的凭证向BOSS直聘请求一次账号信息，不会打开浏览器；打开软件和开始任务前也会自动检测。",
               ),
               !browser.value ? hint("打开BOSS网站前，请先配置浏览器。") : null,
             ])
@@ -4741,6 +4901,7 @@ export default Vue.defineComponent({
     // ---- data folder & database backups ----
     const dataInfo = ref(null),
       backupInfo = ref(null),
+      logInfo = ref(null),
       dataBusy = ref(""),
       dataTarget = ref(""),
       dataMode = ref("copy");
@@ -4755,13 +4916,18 @@ export default Vue.defineComponent({
       });
     let restoreNoticeShown = false;
     async function loadDataSettings() {
-      const [location, backup] = await Promise.all([
+      const [location, backup, logs] = await Promise.all([
         ipc("data-location-info"),
         ipc("db-backup-info"),
+        ipc("log-settings-info"),
       ]);
       dataInfo.value = location;
       backupInfo.value = backup;
-      const restored = backup.restoreResult;
+      logInfo.value = logs;
+      showRestoreNotice(backup.restoreResult);
+    }
+    // a restore is applied while the app restarts; say how it went once it is back
+    function showRestoreNotice(restored) {
       if (restored && !restoreNoticeShown) {
         restoreNoticeShown = true;
         R.message({
@@ -4793,9 +4959,83 @@ export default Vue.defineComponent({
         () => true,
         () => false,
       );
+    // ---- BOSS login state: shown in the section rail, checked before a task starts ----
+    const bossLogin = ref({ status: "checking", detail: "", checkedAt: 0 });
+    const loginStatusText = {
+      checking: "正在检测…",
+      valid: "登录正常",
+      invalid: "登录已失效",
+      missing: "未登录",
+      unknown: "暂时无法确认",
+    };
+    async function refreshLoginStatus() {
+      bossLogin.value = { ...bossLogin.value, status: "checking" };
+      try {
+        const result = await ipc("boss-login-status");
+        bossLogin.value = { ...result, checkedAt: Date.now() };
+      } catch (error) {
+        bossLogin.value = {
+          status: "unknown",
+          detail: error.message,
+          checkedAt: Date.now(),
+        };
+      }
+      login.value = bossLogin.value.status !== "missing";
+      return bossLogin.value;
+    }
+    // opens the BOSS login assistant; true once a login was saved and works
+    async function loginWithAssistant() {
+      try {
+        await ipc("login-with-cookie-assistant");
+      } catch {
+        // closed without saving
+        await refreshLoginStatus();
+        return false;
+      }
+      try {
+        await native.refresh();
+      } catch {
+        // the login check below reads the saved file itself
+      }
+      return (await refreshLoginStatus()).status === "valid";
+    }
+    async function goToLoginSetup() {
+      settingTab.value = "account";
+      await navigate("settings");
+      return loginWithAssistant();
+    }
+    /**
+     * Before a task starts: a missing or expired login takes the user to the login setup;
+     * once it works again they come back here and the start continues.
+     */
+    async function ensureBossLogin(task) {
+      const result = await refreshLoginStatus();
+      if (result.status === "valid") return true;
+      if (result.status === "unknown") {
+        R.message({
+          type: "warning",
+          message: "暂时无法确认登录状态（" + result.detail + "），任务运行时会再次确认。",
+          duration: 5000,
+        });
+        return true;
+      }
+      R.message({
+        type: "error",
+        message:
+          result.status === "missing"
+            ? "还没有登录BOSS直聘，请先完成登录。"
+            : "BOSS直聘登录已失效（" + result.detail + "），请重新登录。",
+        duration: 5000,
+      });
+      const back = route.value;
+      const ok = await goToLoginSetup();
+      await navigate(task === "follow" ? "follow" : back === "settings" ? "auto" : back);
+      if (ok) R.message({ type: "success", message: "登录成功，继续开始任务。" });
+      return ok;
+    }
     async function checkLoginNow() {
       await withDataBusy("login", async () => {
-        const result = await ipc("boss-login-status");
+        const result = await refreshLoginStatus();
         R.message({
           type:
             result.status === "valid"
@@ -4853,6 +5093,62 @@ export default Vue.defineComponent({
         backupInfo.value = { ...backupInfo.value, settings };
         backupInfo.value = await ipc("db-backup-info");
       });
+    }
+    async function saveLogSettings(patch) {
+      await withDataBusy("log", async () => {
+        const settings = await ipc("log-settings-save", {
+          ...logInfo.value.settings,
+          ...patch,
+        });
+        logInfo.value = { ...logInfo.value, settings };
+      });
+    }
+    function logCard() {
+      const info = logInfo.value;
+      if (!info) return null;
+      const st = info.settings;
+      return card(
+        "运行日志",
+        [
+          h("div", { class: "ux-inline ux-backup-switch" }, [
+            E("ElSwitch", {
+              modelValue: st.enabled,
+              loading: dataBusy.value === "log",
+              "aria-label": "保存运行日志",
+              "onUpdate:modelValue": (v) => saveLogSettings({ enabled: Boolean(v) }),
+            }),
+            h("span", st.enabled ? "正在保存运行日志" : "不保存运行日志"),
+          ]),
+          field(
+            "记录级别",
+            E(
+              "ElSelect",
+              {
+                modelValue: st.level,
+                disabled: !st.enabled,
+                "aria-label": "日志记录级别",
+                "onUpdate:modelValue": (v) => saveLogSettings({ level: v }),
+              },
+              () =>
+                info.levels.map((l) => E("ElOption", { value: l.value, label: l.label })),
+            ),
+            "只保存所选级别及更严重的记录：跟踪 < 调试 < 信息 < 警告 < 错误。排查问题时可临时调到“调试”，日志会明显变多。",
+          ),
+          field(
+            "日志目录",
+            h("div", { class: "ux-path-row" }, [
+              pathLine(info.dir),
+              button("打开", () => ipc("open-folder", info.dir), {
+                link: true,
+                type: "primary",
+              }),
+            ]),
+            `每天一个文件，保留最近 ${info.retentionDays} 天。修改后几秒内对所有正在运行的任务生效。日志可能包含职位、公司和聊天内容，分享前请检查。`,
+            true,
+          ),
+        ],
+        { class: "ux-card ux-data-card" },
+      );
     }
     async function chooseBackupDir() {
       const dir = await ipc("choose-directory", {
@@ -5093,6 +5389,7 @@ export default Vue.defineComponent({
             ? hint(`另有 ${backup.backups.length - 10} 个更早的备份，可在备份目录中查看。`)
             : null,
         ], { class: "ux-card ux-data-card" }),
+        logCard(),
       ];
     }
     function dingtalkConfigured() {
@@ -5728,10 +6025,15 @@ export default Vue.defineComponent({
       if (kind === "check") {
         title = "开始前确认";
         content = [
-          alert(
-            "确认开始后将执行真实任务，可能向招聘者发送消息或在BOSS标记不合适。请确认联系范围。",
-            "warning",
-          ),
+          checks.value === "auto" && draft.value.runMode === "collect"
+            ? alert(
+                "确认开始后将在BOSS中浏览岗位并把岗位详情保存到资料库；只收集模式不会打招呼，也不会标记不合适。",
+                "info",
+              )
+            : alert(
+                "确认开始后将执行真实任务，可能向招聘者发送消息或在BOSS标记不合适。请确认联系范围。",
+                "warning",
+              ),
           ...runtimeSteps.value.map((s) =>
             h("div", { class: "ux-check" }, [
               h("span", s.label),
@@ -6101,6 +6403,11 @@ export default Vue.defineComponent({
       }
     };
     fromHash();
+    // the rail shows whether the saved login still works
+    refreshLoginStatus();
+    ipc("db-backup-info")
+      .then((info) => showRestoreNotice(info.restoreResult))
+      .catch(() => void 0);
     window.addEventListener("hashchange", fromHash);
     window.addEventListener("pointerdown", pointerHandler);
     window.addEventListener("keydown", keyHandler);

@@ -6,6 +6,8 @@ export class NoMatchBatchGuard {
     if (this.loaded >= this.max) throw new Error('AUTO_CHAT_NO_MATCH_BATCH_LIMIT')
   }
   loadedBatch() { this.loaded++ }
+  // something usable turned up (collect mode keeps going while it finds jobs to save)
+  reset() { this.loaded = 0 }
 }
 export async function readListSnapshot(page) {
   return page.evaluate(() => {

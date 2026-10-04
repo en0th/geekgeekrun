@@ -179,7 +179,8 @@ html:not(.replica-child) body {
 }
 .ux-inner {
   max-width: 1120px;
-  margin: 0 auto;
+  /* content starts next to the navigation instead of floating in the middle */
+  margin: 0;
   padding: 16px 20px 76px;
 }
 .ux-inner--data {
@@ -1827,4 +1828,69 @@ html:not(.replica-child) body {
 }
 .ux-card.ux-data-card > .ux-field:first-of-type {
   max-width: none;
+}
+
+/* BOSS login state at the top of the section rail */
+.ux-rail-login {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--el-fill-color-light);
+  font-size: 13px;
+}
+.ux-rail-login-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ux-rail-login-label {
+  flex: 1;
+  color: var(--el-text-color-regular);
+}
+.ux-rail-login.is-valid .ux-rail-dot {
+  background: var(--el-color-success);
+}
+.ux-rail-login.is-unknown .ux-rail-dot,
+.ux-rail-login.is-checking .ux-rail-dot {
+  background: var(--el-color-warning);
+}
+.ux-rail-login.is-valid strong {
+  color: var(--el-color-success);
+}
+.ux-rail-login.is-invalid,
+.ux-rail-login.is-missing {
+  background: var(--el-color-danger-light-9);
+}
+.ux-rail-login.is-invalid strong,
+.ux-rail-login.is-missing strong {
+  color: var(--el-color-danger);
+}
+.ux-rail-login-detail {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
+}
+.ux-rail-login-actions {
+  display: flex;
+  gap: 10px;
+}
+.ux-rail-login-actions .el-button + .el-button {
+  margin-left: 0;
+}
+
+/* task queue tables */
+.ux-task-table {
+  margin-top: 4px;
+}
+.ux-task-table .is-linkable {
+  cursor: pointer;
+}
+.ux-task-table .ux-task-actions {
+  margin-left: 0;
+}
+.ux-data-card .el-select {
+  max-width: 360px;
 }

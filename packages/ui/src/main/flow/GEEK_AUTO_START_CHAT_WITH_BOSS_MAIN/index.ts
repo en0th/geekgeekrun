@@ -147,11 +147,13 @@ const runAutoChat = async () => {
       await mainLoop(hooks)
     } catch (err) {
       if (err instanceof Error) {
-        if (/AUTO_CHAT_(NO_MATCH_BATCH_LIMIT|LIST_STALLED|DETAIL_NOT_READY)/.test(err.message)) {
+        if (/AUTO_CHAT_(NO_MATCH_BATCH_LIMIT|LIST_STALLED|DETAIL_NOT_READY|NO_USABLE_SOURCE)/.test(err.message)) {
           const noMatch = err.message.includes('NO_MATCH_BATCH_LIMIT')
           taskProgress.update(undefined, noMatch
-            ? '连续检查5批岗位仍无可沟通岗位，已停止；请检查公司名单、岗位分类和经验条件'
-            : '岗位列表或详情无法确认，已停止，未继续发送；请检查BOSS页面后重新开始', 'blocked')
+            ? '连续检查5批岗位仍无可处理岗位，已停止；请检查公司名单、岗位分类和经验条件'
+            : err.message.includes('NO_USABLE_SOURCE')
+              ? '没有可用的职位来源：BOSS账号未设置求职期望；请在BOSS中添加求职期望，或启用“推荐职位”“搜索”来源'
+              : '岗位列表或详情无法确认，已停止，未继续发送；请检查BOSS页面后重新开始', 'blocked')
           await closeBrowserWindow?.()
           process.exit(noMatch ? AUTO_CHAT_ERROR_EXIT_CODE.NO_MATCHING_JOBS : AUTO_CHAT_ERROR_EXIT_CODE.JOB_PAGE_NOT_READY)
           return

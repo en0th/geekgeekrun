@@ -273,6 +273,7 @@ import FilterBuilder from './FilterBuilder.vue'
 import StatsPanel from './StatsPanel.vue'
 import ImportDialog from './ImportDialog.vue'
 import FavoriteFolderPicker from './FavoriteFolderPicker.vue'
+import { useRunDataJumpStore } from '../../store'
 
 const OPEN_ONLINE_LIMIT = 20
 
@@ -449,6 +450,18 @@ function clearAllConditions() {
   advancedRows.value = []
   Object.keys(columnFilters).forEach((k) => (columnFilters[k] = null))
 }
+
+// ---------- opened from elsewhere with filters (task history) ----------
+const jumpStore = useRunDataJumpStore()
+function applyJump() {
+  const target = jumpStore.take(props.dataset)
+  if (!target) return
+  clearAllConditions()
+  advancedRows.value = target.rows as FilterRow[]
+  ElMessage.success(`已筛选：${target.label}`)
+}
+applyJump()
+watch(() => jumpStore.pending, applyJump)
 
 // ---------- data ----------
 const pageSizeList = [50, 100, 200, 500]

@@ -183,7 +183,8 @@ const jobFields: RunDataField[] = [
 
 const hireStatusFields: RunDataField[] = [
   { key: 'hireStatus', label: '职位状态', type: 'enum', enumOptions: hireStatusOptions },
-  { key: 'hireStatusCheckedAt', label: '状态检查时间', type: 'date' }
+  // updated whenever the job page is viewed by a task or checked by the status poll
+  { key: 'hireStatusCheckedAt', label: '最近查看时间', type: 'date' }
 ]
 
 const jobIdFields: RunDataField[] = [
