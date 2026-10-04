@@ -8,6 +8,7 @@ import { JobInfoChangeLog } from '@geekgeekrun/sqlite-plugin/dist/entity/JobInfo
 import { AutoStartChatRunRecord } from '@geekgeekrun/sqlite-plugin/dist/entity/AutoStartChatRunRecord'
 import * as runData from './run-data'
 import * as favorites from './favorites'
+import * as backup from './backup'
 
 const dbInitPromise = initDb(getPublicDbFilePath())
 let dataSource: DataSource | null = null
@@ -59,7 +60,9 @@ const payloadHandler = {
   renameFavoriteFolder: (payload) => favorites.renameFavoriteFolder(getRawDb(), payload),
   deleteFavoriteFolder: (payload) => favorites.deleteFavoriteFolder(getRawDb(), payload),
   addFavoriteJobs: (payload) => favorites.addFavoriteJobs(getRawDb(), payload),
-  countJobStatusPollTargets: () => favorites.countJobStatusPollTargets(getRawDb())
+  countJobStatusPollTargets: () => favorites.countJobStatusPollTargets(getRawDb()),
+  backupDatabase: (payload) => backup.backupDatabase(getRawDb() as unknown as backup.BackupDb, payload),
+  copyDatabase: (payload) => backup.copyDatabase(getRawDb() as unknown as backup.BackupDb, payload)
 }
 
 function getRawDb(): runData.Db {

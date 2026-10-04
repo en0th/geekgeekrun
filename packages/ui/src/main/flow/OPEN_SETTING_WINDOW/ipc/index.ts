@@ -8,6 +8,14 @@ import {
 import { modelPair, validModels } from '../../../../common/model-config.mjs'
 import { startJobStatusPoll, JOB_STATUS_POLL_MODE } from '../../../features/job-status-poll'
 import { JOB_STATUS_POLL_LAST_RUN_FILE } from '../../../features/job-hire-status'
+import { checkBossLoginStatus } from '../../../features/boss-login-check'
+import { changeDataLocation, getDataLocationInfo, relaunchApp } from '../../../features/data-location'
+import {
+  getDbBackupInfo,
+  runDbBackup,
+  saveDbBackupSettings,
+  scheduleDbRestore
+} from '../../../features/db-backup'
 import {
   JOB_STATUS_POLL_INTERVAL_HOURS,
   JOB_STATUS_POLL_SETTINGS_FILE,
@@ -364,6 +372,34 @@ export default function initIpc() {
     })
     return result
   })
+
+  // ---- BOSS login check at start ----
+  ipcMain.handle('boss-login-status', () => checkBossLoginStatus())
+
+  // ---- data folder & database backups ----
+  ipcMain.handle('choose-directory', async (_, { title, defaultPath } = {}) => {
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      title,
+      defaultPath,
+      properties: ['openDirectory', 'createDirectory']
+    })
+    return result.canceled ? null : (result.filePaths[0] ?? null)
+  })
+  ipcMain.handle('open-folder', async (_, dir: string) => {
+    const fs = await import('node:fs')
+    // only folders; never launches files
+    if (typeof dir !== 'string' || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory())
+      throw new Error('文件夹不存在')
+    const error = await shell.openPath(dir)
+    if (error) throw new Error(error)
+  })
+  ipcMain.handle('data-location-info', () => getDataLocationInfo())
+  ipcMain.handle('data-location-change', (_, payload) => changeDataLocation(payload))
+  ipcMain.handle('app-relaunch', () => relaunchApp())
+  ipcMain.handle('db-backup-info', () => getDbBackupInfo())
+  ipcMain.handle('db-backup-save-settings', (_, payload) => saveDbBackupSettings(payload))
+  ipcMain.handle('db-backup-run', () => runDbBackup('manual'))
+  ipcMain.handle('db-backup-restore', (_, { name }) => scheduleDbRestore(name))
 
   ipcMain.handle('run-data-query', (_, payload) => queryRunData(payload))
   ipcMain.handle('run-data-query-all', (_, payload) => queryAllRunData(payload))

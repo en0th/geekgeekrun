@@ -1,7 +1,7 @@
 import * as path from 'path'
-import * as os from 'os'
 import * as fs from 'fs'
 import * as fsPromise from 'fs/promises'
+import { resolveStorageFolder } from '@geekgeekrun/geek-auto-start-chat-with-boss/data-location.mjs'
 
 export interface BrowserInfo {
   browser: string
@@ -10,11 +10,8 @@ export interface BrowserInfo {
 
 const CONFIG_VERSION = 2
 
-const runtimeFolderPath =
-  process.env.GEEKGEEKRUN_RUNTIME_DIR || path.join(os.homedir(), '.geekgeekrun')
 export const lastUsedBrowserRecordFilePath = path.join(
-  runtimeFolderPath,
-  'storage',
+  resolveStorageFolder().path,
   'last-used-browser-record'
 )
 /**
@@ -53,9 +50,7 @@ export const getLastUsedAndAvailableBrowser = async (): Promise<BrowserInfo | nu
 
 export const saveLastUsedAndAvailableBrowserInfo = async (browserInfo: BrowserInfo) => {
   try {
-    if (!fs.existsSync(runtimeFolderPath)) {
-      await fsPromise.mkdir(runtimeFolderPath)
-    }
+    await fsPromise.mkdir(path.dirname(lastUsedBrowserRecordFilePath), { recursive: true })
     await fsPromise.writeFile(
       lastUsedBrowserRecordFilePath,
       [browserInfo.executablePath, browserInfo.browser, CONFIG_VERSION].join('\n')

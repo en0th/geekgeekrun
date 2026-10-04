@@ -112,3 +112,9 @@ export const deleteFavoriteFolder = (payload: { id: number }) =>
 export const addFavoriteJobs = (payload: { folderId: number; jobIds: string[] }) =>
   runDataWorkerCall('addFavoriteJobs', payload)
 export const countJobStatusPollTargets = () => runDataWorkerCall('countJobStatusPollTargets', {})
+export const backupDatabase = (payload: { dir: string; mode: string; keep: number }) =>
+  runDataWorkerCall('backupDatabase', payload) as Promise<{
+    data: { file: string; name: string; size: number; removed: string[] }
+  }>
+export const copyDatabase = (payload: { destPath: string }) =>
+  runDataWorkerCall('copyDatabase', payload) as Promise<{ data: { file: string; size: number } }>

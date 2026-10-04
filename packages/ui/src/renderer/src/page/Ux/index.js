@@ -8,7 +8,7 @@ import {
   AI_MAX_RETRIES_RANGE,
 } from "../../../../common/model-config.mjs";
 import { followIssues } from "../../../../common/ux-validation.mjs";
-import { ElMessage, ElImageViewer } from "element-plus";
+import { ElMessage, ElMessageBox, ElImageViewer } from "element-plus";
 import JobLibrary from "../MainLayout/JobLibrary.vue";
 import BossLibrary from "../MainLayout/BossLibrary.vue";
 import CompanyLibrary from "../MainLayout/CompanyLibrary.vue";
@@ -4558,8 +4558,12 @@ export default Vue.defineComponent({
             ["browser", "浏览器"],
             ["ai", "AI模型配置"],
             ["notify", "钉钉通知"],
+            ["data", "数据与备份"],
           ],
-          (v) => (settingTab.value = v),
+          (v) => {
+            settingTab.value = v;
+            if (v === "data") loadDataSettings();
+          },
         ),
         tab === "account"
           ? card("BOSS账号与登录", [
@@ -4587,8 +4591,15 @@ export default Vue.defineComponent({
                   { plain: true, disabled: !browser.value },
                 ),
               ]),
+              inline([
+                button("检测登录是否有效", checkLoginNow, {
+                  plain: true,
+                  loading: dataBusy.value === "login",
+                  disabled: !login.value,
+                }),
+              ]),
               hint(
-                "登录凭证是敏感信息，不要分享截图或日志。这里只检测本地凭证是否存在，未验证真实BOSS登录。",
+                "登录凭证是敏感信息，不要分享截图或日志。检测会用已保存的凭证向BOSS直聘请求一次账号信息，不会打开浏览器；每次启动时也会自动检测。",
               ),
               !browser.value ? hint("打开BOSS网站前，请先配置浏览器。") : null,
             ])
@@ -4689,6 +4700,7 @@ export default Vue.defineComponent({
           : null,
         tab === "ai" ? aiSettings() : null,
         tab === "ai" ? aiFooter() : null,
+        ...(tab === "data" ? dataSettings() : []),
         tab === "notify"
           ? card("钉钉通知", [
               alert(
@@ -4724,6 +4736,363 @@ export default Vue.defineComponent({
               hint("修改后从下次开始任务起生效。"),
             ])
           : null,
+      ];
+    }
+    // ---- data folder & database backups ----
+    const dataInfo = ref(null),
+      backupInfo = ref(null),
+      dataBusy = ref(""),
+      dataTarget = ref(""),
+      dataMode = ref("copy");
+    const ipc = (channel, payload) =>
+      window.electron.ipcRenderer.invoke(channel, payload).catch((error) => {
+        throw new Error(
+          String(error?.message ?? error).replace(
+            /^Error invoking remote method '[^']*': (Error: )?/,
+            "",
+          ),
+        );
+      });
+    let restoreNoticeShown = false;
+    async function loadDataSettings() {
+      const [location, backup] = await Promise.all([
+        ipc("data-location-info"),
+        ipc("db-backup-info"),
+      ]);
+      dataInfo.value = location;
+      backupInfo.value = backup;
+      const restored = backup.restoreResult;
+      if (restored && !restoreNoticeShown) {
+        restoreNoticeShown = true;
+        R.message({
+          type: restored.ok ? "success" : "error",
+          message: restored.ok
+            ? "已从备份恢复数据库：" + restored.file.split(/[\\/]/).pop()
+            : "恢复备份失败：" + (restored.error || "未知错误") + "，仍在使用原数据库",
+          duration: 6000,
+        });
+      }
+    }
+    async function withDataBusy(key, fn) {
+      if (dataBusy.value) return;
+      dataBusy.value = key;
+      try {
+        return await fn();
+      } catch (error) {
+        R.message({ type: "error", message: error.message });
+      } finally {
+        dataBusy.value = "";
+      }
+    }
+    const confirmBox = (text, title, confirmButtonText) =>
+      ElMessageBox.confirm(text, title, {
+        type: "warning",
+        confirmButtonText,
+        cancelButtonText: "取消",
+      }).then(
+        () => true,
+        () => false,
+      );
+    async function checkLoginNow() {
+      await withDataBusy("login", async () => {
+        const result = await ipc("boss-login-status");
+        R.message({
+          type:
+            result.status === "valid"
+              ? "success"
+              : result.status === "unknown"
+                ? "warning"
+                : "error",
+          message:
+            result.status === "valid"
+              ? "BOSS直聘登录状态正常"
+              : result.status === "missing"
+                ? "本机没有保存登录凭证"
+                : result.status === "invalid"
+                  ? "登录凭证已失效：" + result.detail + "，请重新登录"
+                  : "暂时无法确认：" + result.detail,
+          duration: 5000,
+        });
+      });
+    }
+    async function chooseDataTarget() {
+      const dir = await ipc("choose-directory", {
+        title: "选择新的数据目录",
+        defaultPath: dataInfo.value?.current,
+      });
+      if (dir) dataTarget.value = dir;
+    }
+    async function applyDataLocation() {
+      const target = dataTarget.value;
+      if (!target) return;
+      const copy = dataMode.value === "copy";
+      if (
+        !(await confirmBox(
+          (copy
+            ? `将把当前数据复制到“${target}”，`
+            : `将直接使用“${target}”中已有的数据，`) +
+            "完成后软件会自动重启。原目录中的文件会保留，确认新目录无误后可自行删除。",
+          "更换数据目录",
+          "更换并重启",
+        ))
+      )
+        return;
+      await withDataBusy("location", async () => {
+        await ipc("data-location-change", { targetDir: target, mode: dataMode.value });
+        R.message({ type: "success", message: "数据目录已更换，正在重启…" });
+        await flushDraft();
+        await ipc("app-relaunch");
+      });
+    }
+    async function saveBackupSettings(patch) {
+      await withDataBusy("settings", async () => {
+        const settings = await ipc("db-backup-save-settings", {
+          ...backupInfo.value.settings,
+          ...patch,
+        });
+        backupInfo.value = { ...backupInfo.value, settings };
+        backupInfo.value = await ipc("db-backup-info");
+      });
+    }
+    async function chooseBackupDir() {
+      const dir = await ipc("choose-directory", {
+        title: "选择备份目录",
+        defaultPath: backupInfo.value?.dir,
+      });
+      if (dir) await saveBackupSettings({ dir });
+    }
+    async function runBackupNow() {
+      await withDataBusy("backup", async () => {
+        const result = await ipc("db-backup-run");
+        R.message({
+          type: result.ok ? "success" : "error",
+          message: result.ok
+            ? "备份完成：" + result.name
+            : "备份失败：" + result.error,
+        });
+        backupInfo.value = await ipc("db-backup-info");
+      });
+    }
+    async function restoreBackup(item) {
+      if (
+        !(await confirmBox(
+          `将用备份“${item.name}”（${clockTime(item.modifiedAt)}）替换当前数据库，软件会自动重启。` +
+            "当前数据库会先另存为 public-before-restore-*.db 放在备份目录中。",
+          "从备份恢复",
+          "恢复并重启",
+        ))
+      )
+        return;
+      await withDataBusy("restore", async () => {
+        await flushDraft();
+        await ipc("db-backup-restore", { name: item.name });
+        R.message({ type: "success", message: "正在重启并恢复备份…" });
+      });
+    }
+    const fileSize = (n) =>
+      n >= 1024 * 1024
+        ? (n / 1024 / 1024).toFixed(1) + " MB"
+        : Math.max(1, Math.round(n / 1024)) + " KB";
+    const intervalLabel = (hours) =>
+      ({ 24: "每天", 72: "每 3 天", 168: "每周" })[hours] || `每 ${hours} 小时`;
+    const pathLine = (text) => h("code", { class: "ux-path" }, text);
+    function dataSettings() {
+      const loc = dataInfo.value,
+        backup = backupInfo.value;
+      if (!loc || !backup) return [card("数据与备份", [hint("正在读取…")])];
+      const st = backup.settings;
+      const busy = (key) => dataBusy.value === key;
+      const last = backup.lastRun;
+      return [
+        card("数据保存位置", [
+          loc.fallbackFrom
+            ? alert(
+                `设置的数据目录“${loc.fallbackFrom}”当前不可用（可能是移动硬盘未连接），本次临时使用默认目录。连接后重启即可恢复。`,
+                "warning",
+              )
+            : null,
+          field(
+            "当前数据目录",
+            h("div", { class: "ux-path-row" }, [
+              pathLine(loc.current),
+              E("ElTag", { size: "small", type: loc.isDefault ? "info" : "primary" }, () =>
+                loc.isDefault ? "默认" : "自定义",
+              ),
+              button("打开", () => ipc("open-folder", loc.current), {
+                link: true,
+                type: "primary",
+              }),
+            ]),
+            "保存数据库（职位、开聊记录、收藏等）、BOSS登录凭证和运行缓存。配置文件不在此目录中。",
+            true,
+          ),
+          field(
+            "更换到",
+            h("div", { class: "ux-data-target" }, [
+              h("div", { class: "ux-path-row" }, [
+                dataTarget.value ? pathLine(dataTarget.value) : hint("尚未选择"),
+                button("选择文件夹…", chooseDataTarget, { plain: true, size: "small" }),
+                !loc.isDefault || loc.fallbackFrom
+                  ? button(
+                      "使用默认目录",
+                      () => (dataTarget.value = loc.defaultPath),
+                      { link: true, type: "primary", size: "small" },
+                    )
+                  : null,
+              ]),
+              E(
+                "ElRadioGroup",
+                {
+                  modelValue: dataMode.value,
+                  "onUpdate:modelValue": (v) => (dataMode.value = v),
+                  "aria-label": "更换方式",
+                },
+                () => [
+                  E("ElRadio", { value: "copy" }, () => "复制当前数据到新目录"),
+                  E("ElRadio", { value: "use-existing" }, () => "使用新目录中已有的数据"),
+                ],
+              ),
+              inline([
+                button("更换并重启", applyDataLocation, {
+                  type: "primary",
+                  disabled: !dataTarget.value,
+                  loading: busy("location"),
+                }),
+              ]),
+            ]),
+            "默认目录：" +
+              loc.defaultPath +
+              "。更换前请先停止正在运行或排队的任务；原目录中的文件会保留。",
+            true,
+          ),
+        ], { class: "ux-card ux-data-card" }),
+        card("数据库备份", [
+          h("div", { class: "ux-inline ux-backup-switch" }, [
+            E("ElSwitch", {
+              modelValue: st.enabled,
+              loading: busy("settings"),
+              "aria-label": "定期备份数据库",
+              "onUpdate:modelValue": (v) => saveBackupSettings({ enabled: Boolean(v) }),
+            }),
+            h("span", st.enabled ? "已开启定期备份" : "未开启定期备份"),
+          ]),
+          h("div", { class: "ux-form-row" }, [
+            field(
+              "备份周期",
+              E(
+                "ElSelect",
+                {
+                  modelValue: st.intervalHours,
+                  disabled: !st.enabled,
+                  "aria-label": "备份周期",
+                  "onUpdate:modelValue": (v) => saveBackupSettings({ intervalHours: v }),
+                },
+                () =>
+                  backup.intervalOptions.map((hours) =>
+                    E("ElOption", { value: hours, label: intervalLabel(hours) }),
+                  ),
+              ),
+              "软件运行期间按周期备份；关闭期间到期的备份会在下次启动约 2 分钟后补做。",
+            ),
+            field(
+              "备份方式",
+              h("div", [
+                E(
+                  "ElRadioGroup",
+                  {
+                    modelValue: st.mode,
+                    "aria-label": "备份方式",
+                    "onUpdate:modelValue": (v) => saveBackupSettings({ mode: v }),
+                  },
+                  () => [
+                    E("ElRadio", { value: "rotate" }, () => "保留多份"),
+                    E("ElRadio", { value: "overwrite" }, () => "只保留最新一份"),
+                  ],
+                ),
+                st.mode === "rotate"
+                  ? h("div", { class: "ux-inline" }, [
+                      h("span", { class: "ux-hint" }, "最多保留"),
+                      E("ElInputNumber", {
+                        modelValue: st.keep,
+                        min: backup.keepRange[0],
+                        max: backup.keepRange[1],
+                        size: "small",
+                        controlsPosition: "right",
+                        "aria-label": "最多保留份数",
+                        "onUpdate:modelValue": (v) =>
+                          v && v !== st.keep && saveBackupSettings({ keep: v }),
+                      }),
+                      h("span", { class: "ux-hint" }, "份，更早的自动删除"),
+                    ])
+                  : null,
+              ]),
+              st.mode === "rotate"
+                ? "每次备份生成一个带时间的新文件。"
+                : "每次备份覆盖上一次的 public-latest.db，占用空间最少。",
+            ),
+          ]),
+          field(
+            "备份目录",
+            h("div", { class: "ux-path-row" }, [
+              pathLine(backup.dir),
+              button("更改…", chooseBackupDir, { plain: true, size: "small" }),
+              st.dir
+                ? button("使用默认目录", () => saveBackupSettings({ dir: "" }), {
+                    link: true,
+                    type: "primary",
+                    size: "small",
+                  })
+                : null,
+              button("打开", () => ipc("open-folder", backup.dir), {
+                link: true,
+                type: "primary",
+              }),
+            ]),
+            "默认在数据目录下的 backups 文件夹；建议放到另一块硬盘或同步盘中。",
+            true,
+          ),
+          inline([
+            button("立即备份", runBackupNow, {
+              type: "primary",
+              plain: true,
+              loading: busy("backup"),
+            }),
+            hint(
+              last
+                ? (last.ok
+                    ? `上次备份：${clockTime(last.at)}，${last.name}（${fileSize(last.size)}）`
+                    : `上次备份失败（${clockTime(last.at)}）：${last.error}`) +
+                    (last.trigger === "schedule" ? "，定期备份" : "")
+                : "还没有备份过。",
+            ),
+          ]),
+          backup.backups.length
+            ? h(
+                "ul",
+                { class: "ux-task-list ux-backup-list" },
+                backup.backups.slice(0, 10).map((item) =>
+                  h("li", { class: "ux-task-row" }, [
+                    h("strong", item.name),
+                    h(
+                      "span",
+                      { class: "ux-hint" },
+                      clockTime(item.modifiedAt) + " · " + fileSize(item.size),
+                    ),
+                    h("span", { class: "ux-task-actions" }, [
+                      button("恢复", () => restoreBackup(item), {
+                        link: true,
+                        type: "danger",
+                        disabled: Boolean(dataBusy.value),
+                      }),
+                    ]),
+                  ]),
+                ),
+              )
+            : null,
+          backup.backups.length > 10
+            ? hint(`另有 ${backup.backups.length - 10} 个更早的备份，可在备份目录中查看。`)
+            : null,
+        ], { class: "ux-card ux-data-card" }),
       ];
     }
     function dingtalkConfigured() {

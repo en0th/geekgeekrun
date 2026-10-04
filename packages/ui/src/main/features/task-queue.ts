@@ -21,3 +21,20 @@ export async function yieldIfRequested(beforeExit: () => Promise<unknown> | unkn
     process.exit(TASK_YIELD_EXIT_CODE)
   }
 }
+
+const QUEUED_TASK_NAMES: Record<string, string> = {
+  geekAutoStartWithBossMain: '自动打招呼',
+  readNoReplyAutoReminderMain: '消息跟进',
+  jobStatusPollMain: '检查收藏职位状态'
+}
+
+/** names of BOSS tasks running or waiting; data-folder changes must wait for them */
+export async function getBusyTaskNames(): Promise<string[]> {
+  const status = (await sendToDaemon({ type: 'get-status' }, { needCallback: true })) as {
+    workers?: { workerId: string }[]
+    queue?: { workerId: string }[]
+  } | null
+  return [...(status?.workers ?? []), ...(status?.queue ?? [])]
+    .map((it) => QUEUED_TASK_NAMES[it.workerId])
+    .filter(Boolean)
+}

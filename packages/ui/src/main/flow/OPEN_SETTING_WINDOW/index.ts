@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, globalShortcut } from 'electron'
 import { startJobStatusPollScheduler } from '../../features/job-status-poll'
+import { applyPendingDbRestore, startDbBackupScheduler } from '../../features/db-backup'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { createMainWindow } from '../../window/mainWindow'
 import './app-menu'
@@ -14,6 +15,8 @@ export function openSettingWindow() {
     // TODO: log
     app.exit(0)
   }
+  // a restore chosen in the backup settings is applied before anything opens the database
+  applyPendingDbRestore()
 
   const whenReadyPromise = app.whenReady()
 
@@ -39,6 +42,8 @@ export function openSettingWindow() {
     initIpc()
     // queues a job status poll for favourited jobs on the configured interval
     startJobStatusPollScheduler()
+    // database backups on the configured interval (off unless enabled)
+    startDbBackupScheduler()
 
     app.on('activate', function () {
       // On macOS it's common to re-create a window in the app when the

@@ -3,6 +3,7 @@ import fsPromise from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
 
+import { resolveStorageFolder } from './data-location.mjs'
 import defaultDingtalkConf from './default-config-file/dingtalk.json' assert {type: 'json'}
 import defaultBossConf from './default-config-file/boss.json' assert {type: 'json'}
 import defaultTargetCompanyListConf from './default-config-file/target-company-list.json' assert {type: 'json'}
@@ -124,13 +125,9 @@ const ensureRuntimeFolderPathExist = () => {
   if (!fs.existsSync(runtimeFolderPath)) {
     fs.mkdirSync(runtimeFolderPath)
   }
-  ;['config', 'storage'].forEach(dirPath => {
-    if (!fs.existsSync(
-      path.join(runtimeFolderPath, dirPath)
-    )) {
-      fs.mkdirSync(
-        path.join(runtimeFolderPath, dirPath)
-      )
+  ;[configFolderPath, storageFilePath].forEach(dirPath => {
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true })
     }
   })
 }
@@ -176,10 +173,8 @@ export const readConfigFile = (fileName) => {
   return o
 }
 
-export const storageFilePath = path.join(
-  runtimeFolderPath,
-  'storage'
-)
+// the default <runtime folder>/storage, or the folder chosen in the data location setting
+export const storageFilePath = resolveStorageFolder().path
 export const storageFileNameList = ['boss-cookies.json', 'boss-local-storage.json', 'job-not-suit-reason-code-to-text-cache.json']
 
 const defaultStorageFileContentMap = {

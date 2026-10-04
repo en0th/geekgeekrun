@@ -102,3 +102,23 @@ test('folder counts and poll targets follow the hire status', { skip }, async ()
   // still hiring or never checked, each job once even when saved in two folders
   assert.equal(fav.countJobStatusPollTargets(db), 2)
 })
+
+test('backups are consistent copies and rotation prunes the oldest', { skip }, async () => {
+  const backup = await bundle(
+    '../src/main/flow/OPEN_SETTING_WINDOW/utils/db/worker/backup.ts',
+    'backup.mjs'
+  )
+  const db = await freshDb()
+  db.exec(`INSERT INTO favorite_folder (name, createdAt) VALUES ('a', '2026-01-01')`)
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ggr-backup-'))
+  for (const old of ['public-20200101-000000.db', 'public-20200102-000000.db'])
+    fs.writeFileSync(path.join(dir, old), 'old')
+  const result = await backup.backupDatabase(db, { dir, mode: 'rotate', keep: 2 })
+  assert.deepEqual(result.removed, ['public-20200101-000000.db'])
+  const copy = new Database(path.join(dir, result.name), { readonly: true })
+  assert.equal(copy.prepare('SELECT name FROM favorite_folder').get().name, 'a')
+  copy.close()
+  const latest = await backup.backupDatabase(db, { dir, mode: 'overwrite', keep: 2 })
+  assert.equal(latest.name, 'public-latest.db')
+  assert.ok(!fs.existsSync(path.join(dir, 'public-latest.db.tmp')))
+})

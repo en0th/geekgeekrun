@@ -1792,3 +1792,39 @@ html:not(.replica-child) body {
   font-size: 12px;
   font-weight: 600;
 }
+
+/* data folder & backup settings */
+.ux-path {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--el-fill-color-light);
+  font-size: 12px;
+  word-break: break-all;
+}
+.ux-path-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.ux-path-row .el-button + .el-button {
+  margin-left: 0;
+}
+.ux-path-row .ux-hint {
+  margin: 0;
+}
+.ux-data-target {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ux-backup-switch {
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+.ux-backup-list {
+  margin-top: 10px;
+}
+.ux-card.ux-data-card > .ux-field:first-of-type {
+  max-width: none;
+}
