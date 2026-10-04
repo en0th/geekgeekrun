@@ -28,7 +28,8 @@ export const useTaskManagerStore = defineStore('taskManager', () => {
     runningTasks.value = res.workers ?? []
   }
   const throttledGetRunningTasks = throttle(getRunningTasks, 2000)
-  setInterval(throttledGetRunningTasks, 2 * 1000)
-  getRunningTasks()
-  return { runningTasks, getRunningTasks: throttledGetRunningTasks }
+  // Polling is throttled; start/stop guards must await a fresh daemon snapshot.
+  setInterval(() => throttledGetRunningTasks()?.catch(() => {}), 2 * 1000)
+  getRunningTasks().catch(() => {})
+  return { runningTasks, getRunningTasks }
 })

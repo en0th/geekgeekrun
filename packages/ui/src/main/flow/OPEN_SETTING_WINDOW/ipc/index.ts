@@ -1,4 +1,6 @@
 import { ipcMain, shell, app, dialog, BrowserWindow } from 'electron'
+import { initUxIpc } from '../../../features/ux-config'
+import { modelPair, validModels } from '../../../../common/model-config.mjs'
 import path from 'path'
 import * as childProcess from 'node:child_process'
 import {
@@ -61,6 +63,7 @@ import { waitForCommonJobConditionDone } from '../../../features/common-job-cond
 import { ensureConfigFileExist } from '@geekgeekrun/geek-auto-start-chat-with-boss/runtime-file-utils.mjs'
 
 export default function initIpc() {
+  initUxIpc()
   ipcMain.handle('save-config-file-from-ui', async (ev, payload) => {
     payload = JSON.parse(payload)
     ensureConfigFileExist()
@@ -205,6 +208,7 @@ export default function initIpc() {
         return
       }
       if (message.type === 'worker-exited') {
+        daemonEE.off('message', handler)
         mainWindow?.webContents.send('worker-exited', message)
       }
     })
@@ -219,6 +223,7 @@ export default function initIpc() {
         return
       }
       if (message.type === 'worker-exited') {
+        daemonEE.off('message', handler)
         mainWindow?.webContents.send('worker-exited', message)
       }
     })
@@ -323,7 +328,11 @@ export default function initIpc() {
         defaultPath,
         filters,
         content
-      }: { defaultPath?: string; filters?: Electron.FileFilter[]; content: string | Uint8Array }
+      }: {
+        defaultPath?: string
+        filters?: Electron.FileFilter[]
+        content: string | Uint8Array
+      }
     ) => {
       const win = BrowserWindow.fromWebContents(ev.sender)
       const options = {
@@ -476,6 +485,7 @@ export default function initIpc() {
       defer.resolve()
       resumeEditorWindow?.close()
     }
+    ipcMain.removeHandler('save-resume-content')
     ipcMain.handle('save-resume-content', saveResumeHandler)
     resumeEditorWindow?.once('closed', () => {
       ipcMain.removeHandler('save-resume-content')
@@ -515,18 +525,8 @@ export default function initIpc() {
   })
   ipcMain.handle('check-if-llm-config-list-valid', async () => {
     const llmConfigList = await readConfigFile('llm.json')
-    if (!Array.isArray(llmConfigList) || !llmConfigList?.length) {
-      throw new Error('CANNOT_FIND_VALID_CONFIG')
-    }
-    if (llmConfigList.some((it) => !/^http(s)?:\/\//.test(it.providerCompleteApiUrl))) {
-      throw new Error('CANNOT_FIND_VALID_CONFIG')
-    }
-    if (llmConfigList.length > 1) {
-      const firstEnabledModel = llmConfigList.find((it) => it.enabled)
-      if (!firstEnabledModel) {
-        throw new Error('CANNOT_FIND_VALID_CONFIG')
-      }
-    }
+    const error = validModels(modelPair(llmConfigList))
+    if (error) throw new Error(error)
   })
   ipcMain.on('test-llm-config-effect', (_, { autoReminderConfig } = {}) => {
     createReadNoReplyReminderLlmMockWindow(

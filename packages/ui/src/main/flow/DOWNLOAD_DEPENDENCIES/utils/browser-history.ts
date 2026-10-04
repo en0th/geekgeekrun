@@ -10,7 +10,8 @@ export interface BrowserInfo {
 
 const CONFIG_VERSION = 2
 
-const runtimeFolderPath = path.join(os.homedir(), '.geekgeekrun')
+const runtimeFolderPath =
+  process.env.GEEKGEEKRUN_RUNTIME_DIR || path.join(os.homedir(), '.geekgeekrun')
 export const lastUsedBrowserRecordFilePath = path.join(
   runtimeFolderPath,
   'storage',

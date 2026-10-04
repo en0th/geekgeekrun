@@ -1,3 +1,4 @@
+import { restoreLocalCooldowns } from './local-cooldown'
 import "reflect-metadata";
 import { type DataSource } from "typeorm";
 
@@ -116,7 +117,7 @@ export default class SqlitePlugin {
     )
     hooks.userInfoResponse.tapPromise(
       "SqlitePlugin",
-      async ({ userInfoResponse } = {}) => {
+      async ({ userInfoResponse }: { userInfoResponse?: any } = {}) => {
         if (!userInfoResponse || userInfoResponse.code !== 0) {
           return;
         }
@@ -140,76 +141,20 @@ export default class SqlitePlugin {
         jobNotMatchStrategy,
         jobNotActiveStrategy,
         expectCityNotMatchStrategy,
+        expectSalaryNotMatchStrategy,
+        expectWorkExpNotMatchStrategy,
+        blockCompanyNameRegMatchStrategy,
         posterHrNotMatchStrategy,
         blockJobNotSuit,
         blockBossNotActive,
         blockBossNotNewChat
       }) => {
-        if (
-          jobNotMatchStrategy === MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_LOCAL ||
-          jobNotActiveStrategy === MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_LOCAL ||
-          expectCityNotMatchStrategy === MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_LOCAL ||
-          posterHrNotMatchStrategy === MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_LOCAL
-        ) {
+        {
           const ds = await this.initPromise;
-          const last7DayMarkRecords = (await getNotSuitMarkRecordsInLastSomeDays(ds, 7)) ?? [];
-          if (
-            jobNotMatchStrategy === MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_LOCAL ||
-            jobNotMatchStrategy === MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_BOSS
-          ) {
-            last7DayMarkRecords
-              .filter(it =>
-                [
-                  MarkAsNotSuitReason.JOB_NOT_SUIT,
-                  MarkAsNotSuitReason.USER_MANUAL_OPERATION_WITH_UNKNOWN_REASON
-                ].includes(it.markReason)
-              )
-              .map(
-                it => it.encryptJobId
-              )
-              .forEach(
-                id => blockJobNotSuit.add(id)
-              )
-          }
-          if (
-            jobNotActiveStrategy === MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_LOCAL ||
-            jobNotActiveStrategy === MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_BOSS
-          ) {
-            last7DayMarkRecords
-              .filter(it => it.markReason === MarkAsNotSuitReason.BOSS_INACTIVE)
-              .map(
-                it => it.encryptJobId
-              )
-              .forEach(
-                id => blockJobNotSuit.add(id)
-              )
-          }
-          if (
-            expectCityNotMatchStrategy === MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_LOCAL ||
-            expectCityNotMatchStrategy === MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_BOSS
-          ) {
-            last7DayMarkRecords
-              .filter(it => it.markReason === MarkAsNotSuitReason.JOB_CITY_NOT_SUIT)
-              .map(
-                it => it.encryptJobId
-              )
-              .forEach(
-                id => blockJobNotSuit.add(id)
-              )
-          }
-          if (
-            posterHrNotMatchStrategy === MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_LOCAL ||
-            posterHrNotMatchStrategy === MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_BOSS
-          ) {
-            last7DayMarkRecords
-              .filter(it => it.markReason === MarkAsNotSuitReason.POSTER_TITLE_NOT_SUIT)
-              .map(
-                it => it.encryptJobId
-              )
-              .forEach(
-                id => blockJobNotSuit.add(id)
-              )
-          }
+          const records = (await getNotSuitMarkRecordsInLastSomeDays(ds, 7)) ?? [];
+          restoreLocalCooldowns(records, { jobNotMatchStrategy, jobNotActiveStrategy,
+            expectCityNotMatchStrategy, expectSalaryNotMatchStrategy, expectWorkExpNotMatchStrategy,
+            blockCompanyNameRegMatchStrategy, posterHrNotMatchStrategy }, blockJobNotSuit);
           const last30DayChatStartupRecords = (await getChatStartupRecordsInLastSomeDays(ds, 30)) ?? [];
           const chattedJobIds = last30DayChatStartupRecords.map(it => it.encryptJobId)
           if (chattedJobIds.length === 0) {

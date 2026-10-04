@@ -3,6 +3,8 @@ import minimist from 'minimist'
 import { runCommon } from './features/run-common'
 import { launchDaemon } from './flow/OPEN_SETTING_WINDOW/launch-daemon'
 import { app } from 'electron'
+import path from 'node:path'
+import fs from 'node:fs'
 
 const isUiDev = process.env.NODE_ENV === 'development'
 const enableLogToFile = process.env.GEEKGEEKRUN_ENABLE_LOG_TO_FILE === String(1)
@@ -24,6 +26,30 @@ const commandlineArgs = minimist(isUiDev ? process.argv.slice(2) : process.argv.
 console.log('parsed commandline args:', commandlineArgs)
 
 const runMode = commandlineArgs['mode']
+
+// Keep the GUI profile (including its existing encryption key) in the same place.
+// Headless/background Electron processes must not overwrite the GUI's Local State.
+// BOSS configuration, cookies and databases still use the shared runtime directory.
+const backgroundModes = new Set([
+  'geekAutoStartWithBossMain',
+  'downloadDependenciesForInit',
+  'launchBossZhipinLoginPageWithPreloadExtension',
+  'launchBossSite',
+  'readNoReplyAutoReminderMain',
+  'launchDaemon',
+  'geekAutoStartWithBoss',
+  'readNoReplyAutoReminder'
+])
+const guiProfilePath = process.env.GEEKGEEKRUN_RUNTIME_DIR
+  ? path.join(process.env.GEEKGEEKRUN_RUNTIME_DIR, 'electron-profile')
+  : app.getPath('userData')
+if (backgroundModes.has(runMode) || process.env.GEEKGEEKRUN_RUNTIME_DIR) {
+  const profilePath = backgroundModes.has(runMode)
+    ? path.join(guiProfilePath, 'process-profiles', runMode)
+    : guiProfilePath
+  fs.mkdirSync(profilePath, { recursive: true })
+  app.setPath('userData', profilePath)
+}
 
 ;(async () => {
   switch (runMode) {
@@ -67,7 +93,9 @@ const runMode = commandlineArgs['mode']
     case 'geekAutoStartWithBoss': {
       app.dock?.hide()
       await launchDaemon()
-      const { isAlreadyRunning } = await runCommon({ mode: 'geekAutoStartWithBossMain' })
+      const { isAlreadyRunning } = await runCommon({
+        mode: 'geekAutoStartWithBossMain'
+      })
       if (isAlreadyRunning) {
         process.exit(0)
       }
@@ -76,7 +104,9 @@ const runMode = commandlineArgs['mode']
     case 'readNoReplyAutoReminder': {
       app.dock?.hide()
       await launchDaemon()
-      const { isAlreadyRunning } = await runCommon({ mode: 'readNoReplyAutoReminderMain' })
+      const { isAlreadyRunning } = await runCommon({
+        mode: 'readNoReplyAutoReminderMain'
+      })
       if (isAlreadyRunning) {
         process.exit(0)
       }

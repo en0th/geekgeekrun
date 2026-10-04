@@ -102,7 +102,7 @@
         :icon="Link"
         :loading="openingOnline"
         @click="openSelectedOnline"
-        >打开线上职位</ElButton
+        >在BOSS查看所选职位</ElButton
       >
       <ElButton size="small" link type="danger" :icon="Delete" @click="deleteSelected"
         >删除</ElButton
@@ -534,7 +534,7 @@ async function openSelectedOnline() {
     try {
       await ElMessageBox.confirm(
         `一次最多打开 ${OPEN_ONLINE_LIMIT} 个职位，将只打开前 ${OPEN_ONLINE_LIMIT} 个。`,
-        '打开线上职位',
+        '在BOSS查看所选职位',
         { type: 'warning', confirmButtonText: '继续', cancelButtonText: '取消' }
       )
     } catch {

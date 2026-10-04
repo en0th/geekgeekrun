@@ -47,9 +47,26 @@ const userProcessClients = new Set(); // GUI客户端连接集合
 const stoppedWorkers = new Set(); // 被用户主动停止的workerId集合，用于防止竞态条件
 const pidToProcessInfoMap = new Map()
 const socketToWorkerIdSetMap = new WeakMap()
+const clientSockets = new Set()
+let idleShutdownTimer
+
+// No tray is exposed: after the last client and task have gone, do not leave
+// an invisible daemon running. A new connection cancels this grace period.
+function scheduleIdleShutdown() {
+  clearTimeout(idleShutdownTimer)
+  if (clientSockets.size || workers.size) return
+  idleShutdownTimer = setTimeout(() => {
+    if (clientSockets.size || workers.size) return
+    server.close(() => process.exit(0))
+    ipcWritePipe.end()
+  }, 1500)
+  idleShutdownTimer.unref()
+}
 
 // 创建TCP服务器
 const server = net.createServer((socket) => {
+  clearTimeout(idleShutdownTimer)
+  clientSockets.add(socket)
   console.log('客户端已连接');
 
   // 使用 split2 按行分割流式数据，处理 JSONL 格式（每行一个 JSON）
@@ -84,6 +101,7 @@ const server = net.createServer((socket) => {
   });
 
   socket.on('close', () => {
+    clientSockets.delete(socket)
     console.log('客户端已断开连接');
     // 清理GUI客户端连接
     userProcessClients.delete(socket);
@@ -98,6 +116,7 @@ const server = net.createServer((socket) => {
     ;[...workerIdSet].forEach(workerId => {
       stopWorker(workerId);
     })
+    scheduleIdleShutdown()
   });
 });
 
@@ -143,6 +162,10 @@ function handleMessage(socket, message) {
       return
     }
     case 'worker-to-gui-message': {
+      if (workerInfo && message.data?.type === 'task-progress') {
+        workerInfo.runtimeStorage = workerInfo.runtimeStorage || {}
+        workerInfo.runtimeStorage.taskProgress = message.data
+      }
       // 将 prerequisite step 状态写入 worker 的 runtimeStorage
       if (
         workerInfo &&

@@ -4,13 +4,17 @@ export async function completes(
   {
     baseURL,
     apiKey,
-    model
+    model,
+    timeout = 30000,
+    maxRetries = 0
   },
   messages
 ) {
   const openai = new OpenAI({
     baseURL,
     apiKey,
+    timeout,
+    maxRetries,
   });
 
   const completion = await openai.chat.completions.create({

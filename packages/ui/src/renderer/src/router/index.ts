@@ -4,6 +4,11 @@ import { gtagRenderer } from '@renderer/utils/gtag'
 
 const routes: Array<RouteRecordRaw> = [
   {
+    path: '/ux/:screen(auto|follow|records|library|settings)',
+    component: () => import('@renderer/page/Ux/index.js'),
+    meta: { title: '牛人快跑' }
+  },
+  {
     path: '/first-run-readme',
     component: () => import('@renderer/page/FirstRunReadme/index.vue'),
     meta: {
@@ -69,7 +74,7 @@ const routes: Array<RouteRecordRaw> = [
   {
     path: '/main-layout',
     component: () => import('@renderer/page/MainLayout/index.vue'),
-    redirect: '/main-layout/GeekAutoStartChatWithBoss',
+    redirect: '/ux/auto',
     children: [
       {
         path: 'taskManager',
@@ -80,14 +85,14 @@ const routes: Array<RouteRecordRaw> = [
       },
       {
         path: 'GeekAutoStartChatWithBoss',
-        component: () => import('@renderer/page/MainLayout/GeekAutoStartChatWithBoss/index.vue'),
+        redirect: '/ux/auto',
         meta: {
           title: '自动开聊'
         }
       },
       {
         path: 'ReadNoReplyReminder',
-        component: () => import('@renderer/page/MainLayout/ReadNoReplyReminder.vue'),
+        redirect: '/ux/follow',
         meta: {
           title: '已读不回自动复聊'
         }
