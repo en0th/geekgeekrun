@@ -69,3 +69,13 @@ export function describeListScope(rows, { allow = [], blocked = () => false, ski
   return '当前列表 ' + rows.length + ' 条' + (text ? '；' + text : '，等待逐条检查')
 }
 
+
+/**
+ * The last check before the chat button is clicked: never in collect mode, and only for the
+ * job that passed every condition (not whatever job was looked at last).
+ */
+export function assertCanGreet({ isCollectMode, targetJobIndex, matchedJobId, targetJobId }) {
+  if (isCollectMode) throw new Error('AUTO_CHAT_COLLECT_MODE_CHAT_BLOCKED')
+  if (targetJobIndex < 0 || !matchedJobId || matchedJobId !== targetJobId)
+    throw new Error('AUTO_CHAT_UNMATCHED_JOB_CHAT_BLOCKED')
+}

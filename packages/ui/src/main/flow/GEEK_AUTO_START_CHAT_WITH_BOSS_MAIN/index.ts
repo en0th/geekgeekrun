@@ -7,6 +7,7 @@ import {
 } from '@geekgeekrun/geek-auto-start-chat-with-boss/runtime-file-utils.mjs'
 // import { pipeWriteRegardlessError } from '../utils/pipe'
 import { sleep } from '@geekgeekrun/utils/sleep.mjs'
+import { readRunSettings } from '@geekgeekrun/geek-auto-start-chat-with-boss/run-settings.mjs'
 import { AUTO_CHAT_ERROR_EXIT_CODE } from '../../../common/enums/auto-start-chat'
 import attachListenerForKillSelfOnParentExited from '../../utils/attachListenerForKillSelfOnParentExited'
 import minimist from 'minimist'
@@ -131,7 +132,11 @@ const runAutoChat = async () => {
     })
   )
   hooks.noPositionFoundAfterTraverseAllJob.tap('TaskProgress', () =>
-    taskProgress.update(undefined, '暂时没有可沟通岗位，稍后继续查找', 'waiting')
+    taskProgress.update(
+      undefined,
+      `暂时没有${readRunSettings(readConfigFile('boss.json')).runMode === 'collect' ? '待收集' : '可沟通'}岗位，稍后继续查找`,
+      'waiting'
+    )
   )
   hooks.sageTimeEnter.tapPromise('TaskProgress', async () =>
     taskProgress.update(undefined, '定时休息中', 'resting')
@@ -150,7 +155,7 @@ const runAutoChat = async () => {
     } catch (err) {
       if (err instanceof Error) {
         if (
-          /AUTO_CHAT_(NO_MATCH_BATCH_LIMIT|LIST_STALLED|DETAIL_NOT_READY|NO_USABLE_SOURCE)/.test(
+          /AUTO_CHAT_(NO_MATCH_BATCH_LIMIT|LIST_STALLED|DETAIL_NOT_READY|NO_USABLE_SOURCE|COLLECT_MODE_CHAT_BLOCKED|UNMATCHED_JOB_CHAT_BLOCKED)/.test(
             err.message
           )
         ) {
@@ -159,9 +164,11 @@ const runAutoChat = async () => {
             undefined,
             noMatch
               ? '连续检查5批岗位仍无可处理岗位，已停止；请检查公司名单、岗位分类和经验条件'
-              : err.message.includes('NO_USABLE_SOURCE')
-                ? '没有可用的职位来源：BOSS账号未设置求职期望；请在BOSS中添加求职期望，或启用“推荐职位”“搜索”来源'
-                : '岗位列表或详情无法确认，已停止，未继续发送；请检查BOSS页面后重新开始',
+              : /CHAT_BLOCKED/.test(err.message)
+                ? '已阻止一次不应发生的打招呼（岗位未通过条件检查或处于只收集模式），任务已停止；请反馈此问题'
+                : err.message.includes('NO_USABLE_SOURCE')
+                  ? '没有可用的职位来源：BOSS账号未设置求职期望；请在BOSS中添加求职期望，或启用“推荐职位”“搜索”来源'
+                  : '岗位列表或详情无法确认，已停止，未继续发送；请检查BOSS页面后重新开始',
             'blocked'
           )
           await closeBrowserWindow?.()

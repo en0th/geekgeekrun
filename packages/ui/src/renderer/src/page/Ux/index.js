@@ -3858,7 +3858,7 @@ export default Vue.defineComponent({
               status: ready ? "success" : undefined,
             }),
             ready
-              ? h("p", { class: "ux-rail-state is-ready" }, "已可开始打招呼")
+              ? h("p", { class: "ux-rail-state is-ready" }, draft.value.runMode === "collect" ? "已可开始收集" : "已可开始打招呼")
               : button(
                   "还有 " + todoCount + " 项未完成",
                   () => {

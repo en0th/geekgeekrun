@@ -45,7 +45,7 @@ import {
 } from './poster-title-filter.mjs'
 import { hasIntersection } from '@geekgeekrun/utils/number.mjs';
 import { missingJobFields, scopedMarkStrategy, ExpiringBlockSet, COOLDOWN_MS } from './job-safety.mjs'
-import { NoMatchBatchGuard, loadNextJobBatch, openJobCardForReview, listSkipReason, describeListScope } from './auto-chat-navigation.mjs'
+import { NoMatchBatchGuard, loadNextJobBatch, openJobCardForReview, listSkipReason, describeListScope, assertCanGreet } from './auto-chat-navigation.mjs'
 import { readRunSettings } from './run-settings.mjs'
 const flattedCityList = []
 ;(cityGroupData?.zpData?.cityGroup ?? []).forEach(it => {
@@ -939,7 +939,7 @@ async function toRecommendPage (hooks) {
           return !document.querySelector('.job-recommend-result .job-rec-loading')
         })
         try {
-          const { targetJobIndex, targetJobData } = await new Promise(async (resolve, reject) => {
+          const { targetJobIndex, targetJobData, matchedJobId } = await new Promise(async (resolve, reject) => {
             try {
               const searchGuard = new NoMatchBatchGuard()
               const listSkipReasons = new Map()
@@ -984,6 +984,8 @@ async function toRecommendPage (hooks) {
 
               let hasReachLastPage = false
               let targetJobIndex = -1
+              // the one job that passed every check; only this job may be greeted
+              let matchedJobId = null
               let targetJobData, selectedJobData // they show be same; one is from list, another is from detail
               function checkIfSalarySuit(salaryDesc) {
                 const salaryData = parseSalary(salaryDesc)
@@ -1077,7 +1079,7 @@ async function toRecommendPage (hooks) {
                 let tempTargetJobIndexToCheckDetail = getTempTargetJobIndexToCheckDetail()
                 while (tempTargetJobIndexToCheckDetail < 0 && !hasReachLastPage) {
                   searchGuard.beforeLoad()
-                  autoStartChatEventBus.emit('TASK_PROGRESS', { detail: '当前列表没有可沟通岗位，正在检查下一批；连续5批没有结果会停止', state: 'searching' })
+                  autoStartChatEventBus.emit('TASK_PROGRESS', { detail: `当前列表没有${isCollectMode ? '待收集' : '可沟通'}岗位，正在检查下一批；连续5批没有结果会停止`, state: 'searching' })
                   const nextBatch = await loadNextJobBatch({ page, list: recommendJobListElProxy })
                   hasReachLastPage = !nextBatch.hasMore
                   searchGuard.loadedBatch()
@@ -1562,6 +1564,7 @@ async function toRecommendPage (hooks) {
                     continue continueFind
                   }
                   targetJobIndex = tempTargetJobIndexToCheckDetail
+                  matchedJobId = targetJobData.jobInfo.encryptId
                   //#endregion
                 }
 
@@ -1572,16 +1575,26 @@ async function toRecommendPage (hooks) {
                 }
               }
 
+              // The loop also ends when the last batch is loaded while the job just looked at was
+              // skipped (`continue continueFind` bypasses the last-page check above). That job did
+              // not match, so finding nothing must never fall through to greeting it.
+              if (targetJobIndex < 0 || !matchedJobId) {
+                reject(new Error('CANNOT_FIND_EXCEPT_JOB_IN_THIS_FILTER_CONDITION'))
+                return
+              }
               resolve(
                 {
                   targetJobIndex,
-                  targetJobData
+                  targetJobData,
+                  matchedJobId
                 }
               )
             } catch(err) {
               reject(err)
             }
           })
+          // last line of defence before a message goes out
+          assertCanGreet({ isCollectMode, targetJobIndex, matchedJobId, targetJobId: targetJobData?.jobInfo?.encryptId })
           await waitForSageTimeOrJustContinue({
             tag: 'beforeJobChatStartup',
             hooks
