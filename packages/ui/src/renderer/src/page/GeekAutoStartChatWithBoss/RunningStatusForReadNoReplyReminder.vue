@@ -12,10 +12,11 @@
 </template>
 
 <script setup lang="ts">
+import { toast } from '@renderer/features/Toast'
 import { ref, onUnmounted, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import FlyingCompanyLogoList from '../../features/FlyingCompanyLogoList/index.vue'
-import { ElMessage } from 'element-plus'
+
 import { gtagRenderer } from '@renderer/utils/gtag'
 
 const { ipcRenderer } = electron
@@ -47,11 +48,10 @@ onUnmounted(() => {
 onMounted(async () => {
   try {
     await electron.ipcRenderer.invoke('run-read-no-reply-auto-reminder')
-  }
-  catch (err) {
+  } catch (err) {
     if (err instanceof Error && err.message.includes('NEED_TO_CHECK_RUNTIME_DEPENDENCIES')) {
       gtagRenderer('rnrr_cannot_run_for_corrupt')
-      ElMessage.error({
+      toast.error({
         message: `核心组件损坏，正在尝试修复`
       })
       router.replace('/')

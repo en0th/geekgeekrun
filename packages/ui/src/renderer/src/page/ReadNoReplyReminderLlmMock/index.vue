@@ -43,7 +43,7 @@
               </div>
             </template>
             <!-- eslint-disable-next-line prettier/prettier -->
-            <template v-if="(typeof item.usedLlmConfig !== 'string')">
+            <template v-if="typeof item.usedLlmConfig !== 'string'">
               <div
                 :style="{
                   width: 'fit-content',
@@ -169,9 +169,10 @@
 </template>
 
 <script lang="ts" setup>
+import { toast } from '@renderer/features/Toast'
 import { computed, ref, watch } from 'vue'
 import { sleep } from '@geekgeekrun/utils/sleep.mjs'
-import { ElMessage } from 'element-plus'
+
 import { gtagRenderer } from '@renderer/utils/gtag'
 import {
   OPEN_CONTENT_SOURCE,
@@ -262,10 +263,9 @@ async function sendLlmGeneratedContent() {
           behavior: 'smooth'
         })
       } catch (err) {
-        ElMessage.error({
-          dangerouslyUseHTMLString: true,
-          grouping: true,
-          message: `<div>本次测试所使用的模型不可用</div><div style="margin-top: 10px; white-space: nowrap;">建议在大语言模型配置中关闭相关模型</div>`
+        toast.error({
+          title: '本次测试所使用的模型不可用',
+          message: '建议在大语言模型配置中关闭相关模型'
         })
       } finally {
         isLoading.value = false
@@ -297,10 +297,9 @@ async function sendLlmGeneratedContent() {
           behavior: 'smooth'
         })
       } catch (err) {
-        ElMessage.error({
-          dangerouslyUseHTMLString: true,
-          grouping: true,
-          message: `<div>本次测试所使用的模型不可用</div><div style="margin-top: 10px; white-space: nowrap;">建议在大语言模型配置中关闭相关模型</div>`
+        toast.error({
+          title: '本次测试所使用的模型不可用',
+          message: '建议在大语言模型配置中关闭相关模型'
         })
       } finally {
         isLoading.value = false

@@ -100,7 +100,8 @@
 </template>
 
 <script lang="ts" setup>
-import { ElForm, ElMessage } from 'element-plus'
+import { toast } from '@renderer/features/Toast'
+import { ElForm } from 'element-plus'
 import { ref, onUnmounted, onMounted } from 'vue'
 import { checkCookieListFormat } from '../../../../common/utils/cookie'
 import { useRouter } from 'vue-router'
@@ -205,7 +206,7 @@ const handleSubmit = async () => {
     fileName: 'boss-cookies.json',
     data: formContent.value.collectedCookies
   })
-  ElMessage.success('BOSS直聘 Cookie 保存成功')
+  toast.success('BOSS直聘 Cookie 保存成功')
   gtagRenderer('save_cookie_done')
 
   window.electron.ipcRenderer.send('cookie-saved')

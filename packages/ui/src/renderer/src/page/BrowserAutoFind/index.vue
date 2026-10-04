@@ -13,8 +13,9 @@
 </template>
 
 <script lang="ts" setup>
+import { toast } from '@renderer/features/Toast'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+
 import { gtagRenderer as baseGtagRenderer } from '@renderer/utils/gtag'
 
 const { ipcRenderer } = electron
@@ -33,7 +34,7 @@ async function autoDetectPuppeteerExecutable() {
   const result = await ipcRenderer.invoke('get-any-available-puppeteer-executable')
   if (!result) {
     gtagRenderer('first-run-auto-detect-pptr-exe-fail')
-    ElMessage({
+    toast({
       message: '未找到可用浏览器的可执行文件，请尝试手动配置',
       type: 'warning',
       grouping: true

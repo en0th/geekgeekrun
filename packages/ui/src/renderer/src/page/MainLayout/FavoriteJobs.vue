@@ -128,13 +128,13 @@
 </template>
 
 <script setup lang="ts">
+import { toast } from '@renderer/features/Toast'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import {
   ElButton,
   ElDropdown,
   ElDropdownItem,
   ElDropdownMenu,
-  ElMessage,
   ElMessageBox,
   ElOption,
   ElSelect,
@@ -218,7 +218,7 @@ async function loadFolders() {
     if (selectedFolderId.value !== null && !data.some((f) => f.id === selectedFolderId.value))
       selectedFolderId.value = null
   } catch (err) {
-    ElMessage.error(`读取收藏夹失败：${ipcErrorMessage(err)}`)
+    toast.error(`读取收藏夹失败：${ipcErrorMessage(err)}`)
   }
 }
 
@@ -246,7 +246,7 @@ async function createFolder() {
     await loadFolders()
     selectedFolderId.value = data.id
   } catch (err) {
-    ElMessage.error(ipcErrorMessage(err))
+    toast.error(ipcErrorMessage(err))
   }
 }
 
@@ -259,7 +259,7 @@ async function handleFolderCommand(command: string, folder: FavoriteFolder) {
       await loadFolders()
       tableKey.value++
     } catch (err) {
-      ElMessage.error(ipcErrorMessage(err))
+      toast.error(ipcErrorMessage(err))
     }
     return
   }
@@ -283,7 +283,7 @@ async function handleFolderCommand(command: string, folder: FavoriteFolder) {
     await loadFolders()
     tableKey.value++
   } catch (err) {
-    ElMessage.error(ipcErrorMessage(err))
+    toast.error(ipcErrorMessage(err))
   }
 }
 
@@ -311,7 +311,7 @@ async function loadPollInfo() {
     intervalOptions.value = info.intervalOptions
     lastRun.value = info.lastRun
   } catch (err) {
-    ElMessage.error(`读取检查设置失败：${ipcErrorMessage(err)}`)
+    toast.error(`读取检查设置失败：${ipcErrorMessage(err)}`)
   }
 }
 
@@ -323,7 +323,7 @@ async function savePollSettings(patch: Partial<PollSettings>) {
       ...patch
     })) as PollSettings
   } catch (err) {
-    ElMessage.error(`保存失败：${ipcErrorMessage(err)}`)
+    toast.error(`保存失败：${ipcErrorMessage(err)}`)
   } finally {
     savingPoll.value = false
   }
@@ -354,7 +354,7 @@ async function ensureBossLogin() {
     electron.ipcRenderer.invoke('boss-login-status') as Promise<{ status: string; detail: string }>
   const result = await check()
   if (result.status === 'valid' || result.status === 'unknown') return true
-  ElMessage.error(
+  toast.error(
     result.status === 'missing'
       ? '还没有登录BOSS直聘，请先完成登录'
       : `BOSS直聘登录已失效（${result.detail}），请重新登录`
@@ -376,7 +376,7 @@ async function runPollNow() {
       queuePosition?: number
       isAlreadyRunning?: boolean
     }
-    ElMessage.success(
+    toast.success(
       result.isAlreadyRunning
         ? '检查任务已在运行或排队中'
         : result.queued
@@ -385,7 +385,7 @@ async function runPollNow() {
     )
     await taskStore.getRunningTasks()
   } catch (err) {
-    ElMessage.error(`启动检查失败：${ipcErrorMessage(err)}`)
+    toast.error(`启动检查失败：${ipcErrorMessage(err)}`)
   } finally {
     startingPoll.value = false
   }

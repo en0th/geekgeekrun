@@ -1,5 +1,6 @@
+import { sendToast } from '../utils/toast'
 import { ChildProcess } from 'child_process'
-import { BrowserWindow, dialog, ipcMain } from 'electron'
+import { BrowserWindow, ipcMain } from 'electron'
 import path from 'path'
 import * as childProcess from 'node:child_process'
 import * as JSONStream from 'JSONStream'
@@ -73,10 +74,10 @@ export function createCookieAssistantWindow(
       puppeteerExecutable = await getLastUsedAndAvailableBrowser()
     }
     if (!puppeteerExecutable) {
-      await dialog.showMessageBox({
-        type: `error`,
-        message: `未找到可用的浏览器`,
-        detail: `请重新运行本程序，按照提示安装、配置浏览器`
+      sendToast({
+        type: 'error',
+        title: '未找到可用的浏览器',
+        message: '请在“设置 → 浏览器”中配置浏览器后重试'
       })
       return
     }

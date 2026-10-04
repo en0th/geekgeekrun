@@ -47,15 +47,16 @@
 </template>
 
 <script lang="ts" setup>
+import { toast } from '@renderer/features/Toast'
 import { gtagRenderer } from '@renderer/utils/gtag'
-import { ElMessage } from 'element-plus'
+
 import { TopRight, QuestionFilled } from '@element-plus/icons-vue'
 
 const handleClickBrowserSetting = async () => {
   gtagRenderer('browser_setting_clicked')
   try {
     await electron.ipcRenderer.invoke('config-with-browser-assistant')
-    ElMessage({
+    toast({
       type: 'success',
       message: '浏览器偏好保存成功'
     })

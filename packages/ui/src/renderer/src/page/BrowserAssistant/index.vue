@@ -201,10 +201,11 @@
 </template>
 
 <script lang="ts" setup>
+import { toast } from '@renderer/features/Toast'
 import { useRouter } from 'vue-router'
 import { nextTick, onMounted, ref } from 'vue'
 import debounce from 'lodash/debounce'
-import { ElMessage } from 'element-plus'
+
 import { gtagRenderer as baseGtagRenderer } from '@renderer/utils/gtag'
 import { EXPECT_CHROMIUM_BUILD_ID } from '../../../../common/constant'
 import { sleep } from '@geekgeekrun/utils/sleep.mjs'
@@ -263,7 +264,7 @@ async function autoDetectPuppeteerExecutable() {
     })
     if (!result) {
       gtagRenderer('auto_detect_pptr_exe_not_found')
-      ElMessage({
+      toast({
         message: '未检测到可用浏览器的可执行文件',
         type: 'warning',
         grouping: true
@@ -277,7 +278,7 @@ async function autoDetectPuppeteerExecutable() {
       executableName: result.executablePath?.split(/\/|\\/).pop() ?? ''
     })
     formData.value.browserPath = result.executablePath
-    ElMessage({
+    toast({
       message: '已找到可用浏览器，可执行文件路径已填入输入框',
       type: 'success',
       grouping: true
@@ -358,14 +359,14 @@ const handleClickLaunchBrowserDownloader = async () => {
     downloadedBrowserPath = await electron.ipcRenderer.invoke('download-browser-with-downloader')
     if (downloadedBrowserPath) {
       formData.value.browserPath = downloadedBrowserPath
-      ElMessage({
+      toast({
         message: '浏览器下载成功，可执行文件路径已填入输入框',
         type: 'success',
         grouping: true
       })
       gtagRenderer('browser_downloader_done_with_path')
     } else {
-      ElMessage({
+      toast({
         message:
           '浏览器下载成功，但未返回可执行文件路径。请点击自动检测，或手动选择~/.geekgeekrun/cache/chrome文件夹下的文件，或重新下载',
         type: 'success',

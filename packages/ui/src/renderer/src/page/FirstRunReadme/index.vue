@@ -35,7 +35,8 @@
               本程序需要存储您的登录凭据，即Cookie，来模拟您在BOSS直聘上开聊BOSS的行为；本程序仅会把您的Cookie存储在本地，并在您访问BOSS直聘时将其传输到BOSS直聘，<b
                 class="color-red"
                 >不会泄露给第三方</b
-              >，也不会进行除自动开聊BOSS以外的行为；<b class="color-red">请勿向他人泄漏您的Cookie</b
+              >，也不会进行除自动开聊BOSS以外的行为；<b class="color-red"
+                >请勿向他人泄漏您的Cookie</b
               >。
             </ElCheckbox>
             <ElCheckbox :label="2" :class="[unreadItemsAfterClickSubmit[2] ? 'unread' : '']">
@@ -117,7 +118,8 @@
 </template>
 
 <script lang="ts" setup>
-import { ElCheckbox, ElCheckboxGroup, ElMessage } from 'element-plus'
+import { toast } from '@renderer/features/Toast'
+import { ElCheckbox, ElCheckboxGroup } from 'element-plus'
 import { ref, onMounted, onBeforeMount } from 'vue'
 import { gtagRenderer as baseGtagRenderer } from '@renderer/utils/gtag'
 import { sleep } from '@geekgeekrun/utils/sleep.mjs'
@@ -144,7 +146,7 @@ const handleSubmit = () => {
   const COUNT = 10
   if (readmeItemCheckStatusList.value.length !== COUNT) {
     gtagRenderer('agreement_not_finish_read_tip_displayed')
-    ElMessage.warning({
+    toast.warning({
       message: `您还有${COUNT - readmeItemCheckStatusList.value.length}条没有读完，读完就打勾标记一下吧`,
       grouping: true
     })

@@ -1894,3 +1894,62 @@ html:not(.replica-child) body {
 .ux-data-card .el-select {
   max-width: 360px;
 }
+
+/* the field an unfinished item points to: ring, pulse and a "在这里填写" tag */
+.ux-spotlight {
+  position: relative;
+  border-radius: 8px;
+  outline: 2px solid var(--el-color-danger);
+  outline-offset: 6px;
+  background: rgba(245, 108, 108, 0.06);
+  box-shadow: 0 0 0 6px rgba(245, 108, 108, 0.06);
+  animation: ux-spotlight-pulse 1.1s ease-out 3;
+  scroll-margin: 80px;
+}
+.ux-spotlight::before {
+  content: attr(data-spotlight) " ↓";
+  position: absolute;
+  top: -20px;
+  right: 0;
+  z-index: 3;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--el-color-danger);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 22px;
+  white-space: nowrap;
+  box-shadow: 0 3px 10px rgba(245, 108, 108, 0.35);
+  animation: ux-spotlight-tag 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.3);
+  pointer-events: none;
+}
+@keyframes ux-spotlight-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(245, 108, 108, 0.45);
+  }
+  100% {
+    box-shadow: 0 0 0 18px rgba(245, 108, 108, 0);
+  }
+}
+@keyframes ux-spotlight-tag {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.9);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ux-spotlight,
+  .ux-spotlight::before {
+    animation: none;
+  }
+}
+
+/* 自己逛 opens the BOSS site; the small arrow marks it as leaving the app */
+.ux-nav .link-list a.ux-nav-browse .ux-nav-external {
+  margin-left: -4px;
+  opacity: 0.6;
+}
+.ux-data-card .el-input-number {
+  width: 140px;
+}

@@ -1,4 +1,5 @@
 /* Task-oriented UI migrated from the accepted prototype. All execution uses native IPC. */
+import { toast } from "../../features/Toast";
 import * as Vue from "vue";
 import {
   modelPair,
@@ -8,7 +9,7 @@ import {
   AI_MAX_RETRIES_RANGE,
 } from "../../../../common/model-config.mjs";
 import { followIssues } from "../../../../common/ux-validation.mjs";
-import { ElMessage, ElMessageBox, ElImageViewer } from "element-plus";
+import { ElMessageBox, ElImageViewer } from "element-plus";
 import JobLibrary from "../MainLayout/JobLibrary.vue";
 import BossLibrary from "../MainLayout/BossLibrary.vue";
 import CompanyLibrary from "../MainLayout/CompanyLibrary.vue";
@@ -26,6 +27,8 @@ import {
   Collection,
   List,
   Setting,
+  Compass,
+  TopRight,
 } from "@element-plus/icons-vue";
 import RunningOverlay from "../../features/RunningOverlay/index.vue";
 import {
@@ -63,7 +66,7 @@ import {
 export default Vue.defineComponent({
   name: "UxWorkspace",
   async setup() {
-    const R = { ...Vue, message: ElMessage },
+    const R = { ...Vue, message: toast },
       h = R.h,
       ref = R.ref;
     const clone = (x) => JSON.parse(JSON.stringify(x));
@@ -457,8 +460,7 @@ export default Vue.defineComponent({
       dingtalkBusy = ref(false),
       browserError = ref("");
     const promptKind = ref("rechat"),
-      promptText = ref(""),
-      notice = ref("");
+      promptText = ref("");
     const nav = [
       ["auto", "自动打招呼"],
       ["follow", "消息跟进"],
@@ -1170,24 +1172,14 @@ export default Vue.defineComponent({
         let undoToast;
         undoToast = R.message({
           type: "success",
-          offset: 70,
           duration: 8000,
-          showClose: true,
-          customClass: "ux-template-undo",
-          message: inline([
-            h("span", "已删除模板“" + deleted.item.name + "”"),
-            button(
-              "撤销",
-              async () => {
-                if (await restoreTemplate(deleted)) undoToast?.close();
-              },
-              {
-                link: true,
-                type: "primary",
-                "aria-label": "撤销删除模板" + deleted.item.name,
-              },
-            ),
-          ]),
+          message: "已删除模板“" + deleted.item.name + "”",
+          action: {
+            label: "撤销",
+            onClick: async () => {
+              if (await restoreTemplate(deleted)) undoToast?.close();
+            },
+          },
         });
       } else
         R.message({
@@ -1982,6 +1974,7 @@ export default Vue.defineComponent({
               document.querySelector('[data-condition="' + extra + '"]'))) ||
           document.getElementById("validation-summary");
         target?.scrollIntoView({ block: "center", behavior: "auto" });
+        spotlight(target);
         const control = target?.querySelector(
           e.field?.startsWith("follow-") &&
             ["follow-categories", "follow-excluded"].includes(e.field)
@@ -1990,6 +1983,31 @@ export default Vue.defineComponent({
         );
         (control || target)?.focus({ preventScroll: true });
       });
+    }
+    // Marks the field an unfinished item points to until the user starts on it, so it is
+    // obvious where to fill in after the page has scrolled there.
+    let spotlit = null,
+      spotlightTimer;
+    function clearSpotlight() {
+      clearTimeout(spotlightTimer);
+      spotlit?.classList.remove("ux-spotlight");
+      spotlit?.removeAttribute("data-spotlight");
+      spotlit = null;
+    }
+    function spotlight(el, label = "在这里填写") {
+      if (!el || el.id === "validation-summary") return;
+      clearSpotlight();
+      // restart the pulse when the same field is pointed at again
+      void el.offsetWidth;
+      el.classList.add("ux-spotlight");
+      el.setAttribute("data-spotlight", label);
+      spotlit = el;
+      for (const type of ["input", "change", "click"])
+        el.addEventListener(type, () => spotlit === el && clearSpotlight(), {
+          once: true,
+          capture: true,
+        });
+      spotlightTimer = setTimeout(clearSpotlight, 10 * 1000);
     }
     function syncValidationAccessibility() {
       document.querySelectorAll("[data-validation-field]").forEach((area) => {
@@ -2075,7 +2093,7 @@ export default Vue.defineComponent({
           if (!modelDirty.value)
             modelForm.value = formModels(s.config["llm.json"]);
         } catch {
-          notice.value = "无法重新读取设置，请重试。";
+          R.message({ type: "warning", message: "无法重新读取设置，请重试。" });
         }
       }
     }
@@ -3504,14 +3522,27 @@ export default Vue.defineComponent({
         running.value[task] = !result.queued;
         queued.value[task] = Boolean(result.queued);
         modal.value = "";
-        notice.value = result.queued
-          ? "其他任务正在运行，本任务已加入队列，轮到时会自动开始。"
-          : "任务已启动。运行中修改的条件用于下次开始，不改变本次任务使用的配置。";
+        R.message(
+          result.queued
+            ? {
+                type: "info",
+                title: "已加入任务队列",
+                message: "其他任务正在运行，轮到时会自动开始。",
+              }
+            : {
+                type: "success",
+                title: "任务已启动",
+                message: "运行中修改的条件用于下次开始，不改变本次任务使用的配置。",
+              },
+        );
         await taskStore.getRunningTasks();
         if (!result.queued) R.nextTick(() => showRuntime(task));
       } catch (error) {
-        R.message({ type: "error", message: "任务启动失败：" + error.message });
-        notice.value = "任务未启动，请修复错误后重试。";
+        R.message({
+          type: "error",
+          title: "任务未启动",
+          message: error.message + "。请修复后重试。",
+        });
       } finally {
         starting.value = false;
       }
@@ -3535,11 +3566,11 @@ export default Vue.defineComponent({
           taskProgress.value[task].stoppedAt = Date.now();
           taskProgress.value[task].detail = "已移出队列，未开始运行";
         }
-        notice.value = running.value[task]
-          ? "停止请求已发送，等待任务退出。"
-          : wasQueued
-            ? "已移出队列。"
-            : "任务已停止。";
+        R.message(
+          running.value[task]
+            ? { type: "info", message: "停止请求已发送，等待任务退出。" }
+            : { type: "success", message: wasQueued ? "已移出队列。" : "任务已停止。" },
+        );
       } catch (error) {
         R.message({ type: "error", message: "停止失败：" + error.message });
       } finally {
@@ -3737,7 +3768,7 @@ export default Vue.defineComponent({
       const d = effective();
       const issues = validation(d);
       const failing = (fields) => issues.some((i) => fields.includes(i.field));
-      const check = (label, fields) => ({ label, done: !failing(fields) });
+      const check = (label, fields) => ({ label, fields, done: !failing(fields) });
       const search = d.sourceList?.find((s) => s.type === "search" && s.enabled);
       const legacyLabels = {
         categories: "岗位类别",
@@ -3853,7 +3884,21 @@ export default Vue.defineComponent({
                     activeAutoSection.value === section.id ? "location" : undefined,
                   onClick: (event) => {
                     event.preventDefault();
-                    jumpAutoSection(section.id);
+                    // an unfinished section goes straight to its first missing field
+                    const issue = complete
+                      ? null
+                      : issues.find((i) =>
+                          todo.some((c) => c.fields?.includes(i.field)),
+                        );
+                    if (!issue) {
+                      jumpAutoSection(section.id);
+                      return;
+                    }
+                    activeAutoSection.value = section.id;
+                    validationAttempted.value = true;
+                    validationTask = "auto";
+                    errors.value = taskErrors("auto");
+                    focusError(issue);
                   },
                 },
                 [
@@ -5033,6 +5078,34 @@ export default Vue.defineComponent({
       if (ok) R.message({ type: "success", message: "登录成功，继续开始任务。" });
       return ok;
     }
+    let browsing = false;
+    async function browseBossSelf() {
+      if (browsing) return;
+      browsing = true;
+      try {
+        const result = await refreshLoginStatus();
+        if (result.status === "invalid" || result.status === "missing") {
+          R.message({
+            type: "error",
+            message:
+              result.status === "missing"
+                ? "还没有登录BOSS直聘，请先完成登录。"
+                : "BOSS直聘登录已失效，请重新登录。",
+          });
+          if (!(await goToLoginSetup())) return;
+        }
+        await ipc("open-site-with-boss-cookie", { url: "https://www.zhipin.com/" });
+        R.message({
+          type: "success",
+          title: "已打开BOSS直聘",
+          message: "你浏览过的职位、发起的开聊和标记的不合适都会记录到资料库。",
+        });
+      } catch (error) {
+        R.message({ type: "error", message: "打开BOSS直聘失败：" + error.message });
+      } finally {
+        browsing = false;
+      }
+    }
     async function checkLoginNow() {
       await withDataBusy("login", async () => {
         const result = await refreshLoginStatus();
@@ -5135,6 +5208,25 @@ export default Vue.defineComponent({
             "只保存所选级别及更严重的记录：跟踪 < 调试 < 信息 < 警告 < 错误。排查问题时可临时调到“调试”，日志会明显变多。",
           ),
           field(
+            "保存时长",
+            h("div", { class: "ux-inline" }, [
+              E("ElInputNumber", {
+                modelValue: st.retentionDays,
+                min: info.retentionRange[0],
+                max: info.retentionRange[1],
+                step: 1,
+                stepStrictly: true,
+                disabled: !st.enabled,
+                controlsPosition: "right",
+                "aria-label": "日志保存天数",
+                "onUpdate:modelValue": (v) =>
+                  v && v !== st.retentionDays && saveLogSettings({ retentionDays: v }),
+              }),
+              h("span", { class: "ux-hint" }, "天"),
+            ]),
+            "超过时长的日志文件会自动删除，默认保存一周。",
+          ),
+          field(
             "日志目录",
             h("div", { class: "ux-path-row" }, [
               pathLine(info.dir),
@@ -5143,7 +5235,7 @@ export default Vue.defineComponent({
                 type: "primary",
               }),
             ]),
-            `每天一个文件，保留最近 ${info.retentionDays} 天。修改后几秒内对所有正在运行的任务生效。日志可能包含职位、公司和聊天内容，分享前请检查。`,
+            "每天一个文件。修改后几秒内对所有正在运行的任务生效。日志可能包含职位、公司和聊天内容，分享前请检查。",
             true,
           ),
         ],
@@ -6165,7 +6257,8 @@ export default Vue.defineComponent({
                 h(
                   "div",
                   { class: "link-list", "data-v-e836690d": "" },
-                  nav.map(([key, label]) =>
+                  [
+                    ...nav.map(([key, label]) =>
                     h(
                       "a",
                       {
@@ -6199,6 +6292,38 @@ export default Vue.defineComponent({
                       ],
                     ),
                   ),
+                    // 自己逛: the user's own BOSS session in a browser; what they view, chat
+                    // and mark is still recorded in the library
+                    h(
+                      "a",
+                      {
+                        href: "#",
+                        "data-v-e836690d": "",
+                        class: "ux-nav-browse",
+                        "aria-label": navCollapsed.value
+                          ? "自己逛（打开BOSS直聘）"
+                          : undefined,
+                        title: navCollapsed.value
+                          ? "自己逛"
+                          : "打开已登录的BOSS直聘自己浏览；浏览、开聊、标记都会记录到资料库",
+                        onClick: (e) => {
+                          e.preventDefault();
+                          browseBossSelf();
+                        },
+                      },
+                      [
+                        E("ElIcon", { class: "ux-nav-icon", size: 16 }, () =>
+                          h(Compass),
+                        ),
+                        h("span", { class: "ux-nav-label" }, "自己逛"),
+                        E(
+                          "ElIcon",
+                          { class: "ux-nav-label ux-nav-external", size: 12 },
+                          () => h(TopRight),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -6301,9 +6426,6 @@ export default Vue.defineComponent({
                   ],
                 },
                 [
-                  notice.value
-                    ? h("div", { role: "status" }, hint(notice.value))
-                    : null,
                   ...(route.value === "auto"
                     ? autoPage()
                     : route.value === "follow"
@@ -6493,20 +6615,31 @@ export default Vue.defineComponent({
                 : "请修复问题后重新开始；不会从原位置续跑";
         }
         const labels = exitCodeLabels;
-        notice.value =
-          message.code === 0
-            ? "任务已结束。"
-            : ([88, 89].includes(message.code)
-                ? "任务已停止："
-                : "任务异常结束：") +
-              (labels[message.code] || "退出码 " + message.code) +
-              "。请修复后重新开始。";
+        const name = task === "follow" ? "消息跟进" : "自动打招呼";
+        // a stop the user asked for was already confirmed by stop()
+        if (message.restarting)
+          R.message({
+            type: "warning",
+            title: name + "遇到异常",
+            message: "正在自动重新开始，不保证从原位置续跑。",
+          });
+        else if (message.code === 0) {
+          if (!requestedStop[task])
+            R.message({ type: "success", title: name + "已结束", message: "任务已正常结束。" });
+        } else
+          R.message({
+            type: [88, 89].includes(message.code) ? "warning" : "error",
+            title: name + ([88, 89].includes(message.code) ? "已停止" : "异常结束"),
+            message:
+              (labels[message.code] || "退出码 " + message.code) + "。请修复后重新开始。",
+          });
       },
     );
     R.onUnmounted(() => {
       aiFooterObserver?.disconnect();
       clearTimeout(draftSaveTimer);
       clearInterval(progressTimer);
+      clearSpotlight();
       unlistenProgress();
       unwatch();
       unlisten();

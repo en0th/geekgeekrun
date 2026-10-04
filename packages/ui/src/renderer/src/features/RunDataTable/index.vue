@@ -216,6 +216,7 @@
 </template>
 
 <script setup lang="ts">
+import { toast } from '@renderer/features/Toast'
 import { computed, h, onBeforeUnmount, onMounted, reactive, ref, useSlots, watch } from 'vue'
 import {
   ElBadge,
@@ -224,7 +225,6 @@ import {
   ElDropdownItem,
   ElDropdownMenu,
   ElInput,
-  ElMessage,
   ElMessageBox,
   ElPagination,
   ElTable,
@@ -458,7 +458,7 @@ function applyJump() {
   if (!target) return
   clearAllConditions()
   advancedRows.value = target.rows as FilterRow[]
-  ElMessage.success(`已筛选：${target.label}`)
+  toast.success(`已筛选：${target.label}`)
 }
 applyJump()
 watch(() => jumpStore.pending, applyJump)
@@ -499,7 +499,7 @@ async function fetchData() {
     if (seq !== requestSeq) return
     gtagRenderer(`${props.gtagPrefix}_request_error`, { err, ...eventParams })
     console.log(err)
-    ElMessage.error(`加载数据失败：${(err as Error)?.message ?? err}`)
+    toast.error(`加载数据失败：${(err as Error)?.message ?? err}`)
     tableData.value = []
   } finally {
     if (seq === requestSeq) {
@@ -554,7 +554,7 @@ async function exportSelected(format: ExportFormat) {
     const res = await exportRows(props.dataset, selection.value, format, '-选中')
     notifySaved(res)
   } catch (err) {
-    ElMessage.error(`导出失败：${(err as Error)?.message ?? err}`)
+    toast.error(`导出失败：${(err as Error)?.message ?? err}`)
   }
 }
 
@@ -567,9 +567,9 @@ async function copySelected() {
   )
   try {
     await navigator.clipboard.writeText(text)
-    ElMessage.success(`已复制 ${selection.value.length} 行（可直接粘贴到 Excel）`)
+    toast.success(`已复制 ${selection.value.length} 行（可直接粘贴到 Excel）`)
   } catch (err) {
-    ElMessage.error(`复制失败：${(err as Error)?.message ?? err}`)
+    toast.error(`复制失败：${(err as Error)?.message ?? err}`)
   }
 }
 
@@ -577,7 +577,7 @@ const openingOnline = ref(false)
 async function openSelectedOnline() {
   const ids = [...new Set(selection.value.map((r) => r.encryptJobId).filter(Boolean))] as string[]
   if (!ids.length) {
-    ElMessage.warning('选中的记录中没有可打开的职位')
+    toast.warning('选中的记录中没有可打开的职位')
     return
   }
   let toOpen = ids
@@ -651,12 +651,12 @@ async function deleteSelected() {
         keys: selection.value.map((r) => r[datasetDef.value.rowKey])
       })
     )) as { data: { deleted: number } }
-    ElMessage.success(`已删除 ${data.deleted} 条记录`)
+    toast.success(`已删除 ${data.deleted} 条记录`)
     clearSelection()
     fetchData()
     emit('changed')
   } catch (err) {
-    ElMessage.error(`删除失败：${(err as Error)?.message ?? err}`)
+    toast.error(`删除失败：${(err as Error)?.message ?? err}`)
   }
 }
 
@@ -666,7 +666,7 @@ const favoriteJobIds = ref<string[]>([])
 function openFavoritePicker() {
   const ids = [...new Set(selection.value.map((r) => r.encryptJobId).filter(Boolean))] as string[]
   if (!ids.length) {
-    ElMessage.warning('选中的记录中没有可收藏的职位')
+    toast.warning('选中的记录中没有可收藏的职位')
     return
   }
   trackAction('favorite_selected', { count: ids.length })
@@ -683,7 +683,7 @@ function handleFavoritesSaved() {
 const exporting = ref(false)
 function notifySaved(res: { canceled: boolean; filePath?: string }) {
   if (res.canceled || !res.filePath) return
-  ElMessage({
+  toast({
     type: 'success',
     message: `已导出到 ${res.filePath}`,
     duration: 5000,
@@ -700,15 +700,15 @@ async function exportAll(format: ExportFormat) {
       toPlain(query.value)
     )) as { data: RunDataRow[] }
     if (!rows.length) {
-      ElMessage.warning('没有可导出的数据')
+      toast.warning('没有可导出的数据')
       return
     }
     if (rows.length < pagination.value.totalItemCount) {
-      ElMessage.warning(`数据量过大，仅导出前 ${rows.length} 条`)
+      toast.warning(`数据量过大，仅导出前 ${rows.length} 条`)
     }
     notifySaved(await exportRows(props.dataset, rows, format))
   } catch (err) {
-    ElMessage.error(`导出失败：${(err as Error)?.message ?? err}`)
+    toast.error(`导出失败：${(err as Error)?.message ?? err}`)
   } finally {
     exporting.value = false
   }
@@ -741,7 +741,7 @@ function handleDrill({
   if (!field) return
   const filter = drillToFilter(group, raw)
   if (filter.kind === 'unsupported') {
-    ElMessage.info('按小时、星期统计的项暂不支持筛选')
+    toast.info('按小时、星期统计的项暂不支持筛选')
     return
   }
   trackAction('stats_drill', { field: group.field, bucket: group.bucket ?? '' })
@@ -752,7 +752,7 @@ function handleDrill({
     advancedRows.value = [...advancedRows.value, ...filter.rows]
   }
   statsVisible.value = false
-  ElMessage.success(`已添加筛选：${field.label} ${label}`)
+  toast.success(`已添加筛选：${field.label} ${label}`)
 }
 
 // ---------- fullscreen ----------

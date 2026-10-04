@@ -10,15 +10,21 @@ export const LOG_LEVEL_LABELS = {
   warning: '警告（warning）',
   error: '错误（error）'
 }
-export const DEFAULT_LOG_SETTINGS = { enabled: true, level: 'info' }
-// daily files older than this are removed
-export const LOG_RETENTION_DAYS = 14
+// daily files older than retentionDays are removed
+export const LOG_RETENTION_RANGE = [1, 365]
+export const DEFAULT_LOG_SETTINGS = { enabled: true, level: 'info', retentionDays: 7 }
 
 export function readLogSettings(saved) {
   saved = saved && typeof saved === 'object' ? saved : {}
   return {
     enabled: typeof saved.enabled === 'boolean' ? saved.enabled : DEFAULT_LOG_SETTINGS.enabled,
-    level: LOG_LEVELS.includes(saved.level) ? saved.level : DEFAULT_LOG_SETTINGS.level
+    level: LOG_LEVELS.includes(saved.level) ? saved.level : DEFAULT_LOG_SETTINGS.level,
+    retentionDays:
+      Number.isInteger(saved.retentionDays) &&
+      saved.retentionDays >= LOG_RETENTION_RANGE[0] &&
+      saved.retentionDays <= LOG_RETENTION_RANGE[1]
+        ? saved.retentionDays
+        : DEFAULT_LOG_SETTINGS.retentionDays
   }
 }
 
@@ -31,9 +37,9 @@ const pad = (n) => String(n).padStart(2, '0')
 export const logFileName = (date) =>
   `app-${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}.log`
 
-/** daily log files past the retention period, given today's date */
-export function expiredLogFiles(names, today, days = LOG_RETENTION_DAYS) {
-  const cutoff = new Date(today.getFullYear(), today.getMonth(), today.getDate() - days)
+/** daily log files past the retention period, given today's date; today counts as day 1 */
+export function expiredLogFiles(names, today, days = DEFAULT_LOG_SETTINGS.retentionDays) {
+  const cutoff = new Date(today.getFullYear(), today.getMonth(), today.getDate() - days + 1)
   const keepFrom = logFileName(cutoff)
   return names.filter((n) => /^app-\d{4}-\d{2}-\d{2}\.log$/.test(n) && n < keepFrom)
 }

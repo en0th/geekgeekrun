@@ -1,5 +1,5 @@
 import DingtalkPlugin from '@geekgeekrun/dingtalk-plugin/index.mjs'
-import { app, dialog } from 'electron'
+import { app } from 'electron'
 import { SyncHook, AsyncSeriesHook } from 'tapable'
 import {
   readConfigFile,
@@ -61,11 +61,6 @@ const runAutoChat = async () => {
     puppeteerExecutable = await getLastUsedAndAvailableBrowser()
   }
   if (!puppeteerExecutable) {
-    await dialog.showMessageBox({
-      type: `error`,
-      message: `未找到可用的浏览器`,
-      detail: `请重新运行本程序，按照提示安装、配置浏览器`
-    })
     sendToDaemon({
       type: 'worker-to-gui-message',
       workerId: process.env.GEEKGEEKRUND_WORKER_ID,
@@ -98,7 +93,9 @@ const runAutoChat = async () => {
     '@geekgeekrun/geek-auto-start-chat-with-boss/index.mjs'
   )
   const taskProgress = createTaskProgress()
-  autoStartChatEventBus.on('TASK_PROGRESS', ({ kind, detail, state, listSummary }) => taskProgress.update(kind, detail, state || 'running', { listSummary }))
+  autoStartChatEventBus.on('TASK_PROGRESS', ({ kind, detail, state, listSummary }) =>
+    taskProgress.update(kind, detail, state || 'running', { listSummary })
+  )
   taskProgress.update(undefined, '准备查找岗位')
   process.on('disconnect', () => {
     closeBrowserWindow()
@@ -133,37 +130,49 @@ const runAutoChat = async () => {
       await closeBrowserWindow?.()
     })
   )
-  hooks.noPositionFoundAfterTraverseAllJob.tap('TaskProgress', () => taskProgress.update(undefined, '暂时没有可沟通岗位，稍后继续查找', 'waiting'))
-  hooks.sageTimeEnter.tapPromise('TaskProgress', async () => taskProgress.update(undefined, '定时休息中', 'resting'))
-  hooks.sageTimeExit.tapPromise('TaskProgress', async () => taskProgress.update(undefined, '休息结束，继续查找'))
+  hooks.noPositionFoundAfterTraverseAllJob.tap('TaskProgress', () =>
+    taskProgress.update(undefined, '暂时没有可沟通岗位，稍后继续查找', 'waiting')
+  )
+  hooks.sageTimeEnter.tapPromise('TaskProgress', async () =>
+    taskProgress.update(undefined, '定时休息中', 'resting')
+  )
+  hooks.sageTimeExit.tapPromise('TaskProgress', async () =>
+    taskProgress.update(undefined, '休息结束，继续查找')
+  )
 
   gtag('run_auto_chat_with_boss_main_ready')
 
-  autoStartChatEventBus.once('LOGIN_STATUS_INVALID', () => {
-  })
+  autoStartChatEventBus.once('LOGIN_STATUS_INVALID', () => {})
 
   while (true) {
     try {
       await mainLoop(hooks)
     } catch (err) {
       if (err instanceof Error) {
-        if (/AUTO_CHAT_(NO_MATCH_BATCH_LIMIT|LIST_STALLED|DETAIL_NOT_READY|NO_USABLE_SOURCE)/.test(err.message)) {
+        if (
+          /AUTO_CHAT_(NO_MATCH_BATCH_LIMIT|LIST_STALLED|DETAIL_NOT_READY|NO_USABLE_SOURCE)/.test(
+            err.message
+          )
+        ) {
           const noMatch = err.message.includes('NO_MATCH_BATCH_LIMIT')
-          taskProgress.update(undefined, noMatch
-            ? '连续检查5批岗位仍无可处理岗位，已停止；请检查公司名单、岗位分类和经验条件'
-            : err.message.includes('NO_USABLE_SOURCE')
-              ? '没有可用的职位来源：BOSS账号未设置求职期望；请在BOSS中添加求职期望，或启用“推荐职位”“搜索”来源'
-              : '岗位列表或详情无法确认，已停止，未继续发送；请检查BOSS页面后重新开始', 'blocked')
+          taskProgress.update(
+            undefined,
+            noMatch
+              ? '连续检查5批岗位仍无可处理岗位，已停止；请检查公司名单、岗位分类和经验条件'
+              : err.message.includes('NO_USABLE_SOURCE')
+                ? '没有可用的职位来源：BOSS账号未设置求职期望；请在BOSS中添加求职期望，或启用“推荐职位”“搜索”来源'
+                : '岗位列表或详情无法确认，已停止，未继续发送；请检查BOSS页面后重新开始',
+            'blocked'
+          )
           await closeBrowserWindow?.()
-          process.exit(noMatch ? AUTO_CHAT_ERROR_EXIT_CODE.NO_MATCHING_JOBS : AUTO_CHAT_ERROR_EXIT_CODE.JOB_PAGE_NOT_READY)
+          process.exit(
+            noMatch
+              ? AUTO_CHAT_ERROR_EXIT_CODE.NO_MATCHING_JOBS
+              : AUTO_CHAT_ERROR_EXIT_CODE.JOB_PAGE_NOT_READY
+          )
           return
         }
         if (err.message.includes('LOGIN_STATUS_INVALID')) {
-          await dialog.showMessageBox({
-            type: `error`,
-            message: `登录状态无效`,
-            detail: `请重新登录BOSS直聘`
-          })
           process.exit(AUTO_CHAT_ERROR_EXIT_CODE.LOGIN_STATUS_INVALID)
           break
         }
@@ -175,7 +184,10 @@ const runAutoChat = async () => {
           process.exit(AUTO_CHAT_ERROR_EXIT_CODE.ACCESS_IS_DENIED)
           break
         }
-        if (err.message.includes(`Could not find Chrome`) || err.message.includes(`no executable was found`)) {
+        if (
+          err.message.includes(`Could not find Chrome`) ||
+          err.message.includes(`no executable was found`)
+        ) {
           process.exit(AUTO_CHAT_ERROR_EXIT_CODE.PUPPETEER_IS_NOT_EXECUTABLE)
           break
         }

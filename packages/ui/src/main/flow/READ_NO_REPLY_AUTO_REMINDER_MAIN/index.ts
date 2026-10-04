@@ -4,7 +4,7 @@ import { Browser, Page } from 'puppeteer'
 import { getGptContent, sendLookForwardReplyEmotion, sendMessage } from './boss-operation'
 import { sleep, sleepWithRandomDelay } from '@geekgeekrun/utils/sleep.mjs'
 import { waitForPage } from '@geekgeekrun/utils/puppeteer/wait.mjs'
-import { app, dialog } from 'electron'
+import { app } from 'electron'
 import { initDb } from '@geekgeekrun/sqlite-plugin'
 import {
   getPublicDbFilePath,
@@ -322,11 +322,6 @@ const mainLoop = async () => {
       bossCookies = readStorageFile('boss-cookies.json')
       cookieCheckResult = checkCookieListFormat(bossCookies)
     } catch (err) {
-      await dialog.showMessageBox({
-        type: `error`,
-        message: `登录状态无效`,
-        detail: `请重新登录BOSS直聘`
-      })
       sendToDaemon({
         type: 'worker-to-gui-message',
         workerId: process.env.GEEKGEEKRUND_WORKER_ID,
@@ -385,11 +380,6 @@ const mainLoop = async () => {
         await app.dock?.hide()
       }
     } catch (err) {
-      await dialog.showMessageBox({
-        type: `error`,
-        message: `登录状态无效`,
-        detail: `请重新登录BOSS直聘`
-      })
       sendToDaemon({
         type: 'worker-to-gui-message',
         workerId: process.env.GEEKGEEKRUND_WORKER_ID,
@@ -743,11 +733,6 @@ export async function runEntry() {
     puppeteerExecutable = await getLastUsedAndAvailableBrowser()
   }
   if (!puppeteerExecutable) {
-    await dialog.showMessageBox({
-      type: `error`,
-      message: `未找到可用的浏览器`,
-      detail: `请重新运行本程序，按照提示安装、配置浏览器`
-    })
     sendToDaemon({
       type: 'worker-to-gui-message',
       workerId: process.env.GEEKGEEKRUND_WORKER_ID,
@@ -793,7 +778,11 @@ export async function runEntry() {
       // handle error
       if (err instanceof Error) {
         if (err.message.includes('SEND_CONFIRMATION_UNCERTAIN')) {
-          taskProgress.update(undefined, '发送结果未确认，请在BOSS中核对后重新开始；不会自动补发', 'error')
+          taskProgress.update(
+            undefined,
+            '发送结果未确认，请在BOSS中核对后重新开始；不会自动补发',
+            'error'
+          )
           process.exit(AUTO_CHAT_ERROR_EXIT_CODE.MESSAGE_SEND_UNCONFIRMED)
         }
         if (err.message.includes('LOGIN_STATUS_INVALID')) {
@@ -818,12 +807,6 @@ export async function runEntry() {
         }
         if (err.message === 'CANNOT_FIND_A_USABLE_MODEL') {
           gtag('cannot_find_a_usable_model')
-          await dialog.showMessageBox({
-            type: 'error',
-            message:
-              '未找到可以使用的模型，请确定您所配置的模型均可使用。重启本程序或许可以解决这个问题',
-            buttons: ['退出']
-          })
           process.exit(AUTO_CHAT_ERROR_EXIT_CODE.LLM_UNAVAILABLE)
           break
         }

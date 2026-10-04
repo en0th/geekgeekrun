@@ -1574,7 +1574,10 @@
                       >
                     </div>
                     <el-form-item
-                      v-if="!formContent.fieldsForUseCommonConfig.jobDetail && formContent.isPosterHrFilterEnabled"
+                      v-if="
+                        !formContent.fieldsForUseCommonConfig.jobDetail &&
+                        formContent.isPosterHrFilterEnabled
+                      "
                       mb0
                       prop="posterHrTitleRegExpStr"
                       class="col-span-2"
@@ -1596,7 +1599,10 @@
                       />
                     </el-form-item>
                     <el-form-item
-                      v-else-if="formContent.fieldsForUseCommonConfig.jobDetail && commonJobConditionConfig.isPosterHrFilterEnabled"
+                      v-else-if="
+                        formContent.fieldsForUseCommonConfig.jobDetail &&
+                        commonJobConditionConfig.isPosterHrFilterEnabled
+                      "
                       mb0
                       class="col-span-2"
                     >
@@ -1667,9 +1673,9 @@
                   </el-form-item>
                   <div
                     v-if="
-                      (!formContent.fieldsForUseCommonConfig.jobDetail
+                      !formContent.fieldsForUseCommonConfig.jobDetail
                         ? formContent.isPosterHrFilterEnabled
-                        : commonJobConditionConfig.isPosterHrFilterEnabled)
+                        : commonJobConditionConfig.isPosterHrFilterEnabled
                     "
                     class="mt10px lh-2em font-size-12px"
                   >
@@ -1677,15 +1683,17 @@
                   </div>
                   <el-form-item
                     v-if="
-                      (!formContent.fieldsForUseCommonConfig.jobDetail
+                      !formContent.fieldsForUseCommonConfig.jobDetail
                         ? formContent.isPosterHrFilterEnabled
-                        : commonJobConditionConfig.isPosterHrFilterEnabled)
+                        : commonJobConditionConfig.isPosterHrFilterEnabled
                     "
                     mb0
                   >
                     <el-select
                       v-model="formContent.posterHrNotMatchStrategy"
-                      @change="(value) => gtagRenderer('poster_hr_not_match_strategy_changed', { value })"
+                      @change="
+                        (value) => gtagRenderer('poster_hr_not_match_strategy_changed', { value })
+                      "
                     >
                       <el-option
                         v-for="op in strategyOptionWhenCurrentJobNotMatch"
@@ -1817,8 +1825,9 @@
 </template>
 
 <script setup lang="ts">
+import { toast } from '@renderer/features/Toast'
 import { computed, onBeforeUnmount, ref, watch, onUnmounted, onMounted } from 'vue'
-import { ElForm, ElMessage } from 'element-plus'
+import { ElForm } from 'element-plus'
 import { QuestionFilled, ArrowDown } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import AnyCombineBossRecommendFilter from '@renderer/features/AnyCombineBossRecommendFilter/index.vue'
@@ -2010,7 +2019,8 @@ electron.ipcRenderer.invoke('fetch-config-file-content').then((res) => {
   formContent.value.expectJobNameRegExpStr = res.config['boss.json'].expectJobNameRegExpStr?.trim()
   formContent.value.expectJobTypeRegExpStr = res.config['boss.json'].expectJobTypeRegExpStr?.trim()
   formContent.value.expectJobDescRegExpStr = res.config['boss.json'].expectJobDescRegExpStr?.trim()
-  formContent.value.isPosterHrFilterEnabled = res.config['boss.json']?.isPosterHrFilterEnabled ?? false
+  formContent.value.isPosterHrFilterEnabled =
+    res.config['boss.json']?.isPosterHrFilterEnabled ?? false
   // configs from before this option existed have no rule; show the default that will apply
   formContent.value.posterHrTitleRegExpStr = resolvePosterHrTitleRegExpStr(
     res.config['boss.json']?.posterHrTitleRegExpStr
@@ -2253,7 +2263,7 @@ const handleSubmit = async () => {
   try {
     await formRef.value!.validate()
   } catch (err) {
-    ElMessage.error({
+    toast.error({
       message: '表单校验失败，请检查有误的内容',
       grouping: true
     })
@@ -2280,7 +2290,7 @@ const handleSubmit = async () => {
   } catch (err) {
     if (err instanceof Error && err.message.includes('NEED_TO_CHECK_RUNTIME_DEPENDENCIES')) {
       gtagRenderer('gascwb_cannot_run_for_corrupt')
-      ElMessage.error({
+      toast.error({
         message: `核心组件损坏，正在尝试修复`
       })
       router.replace('/')
@@ -2312,7 +2322,7 @@ const handleSave = async () => {
   try {
     await formRef.value!.validate()
   } catch (err) {
-    ElMessage.error({
+    toast.error({
       message: '表单校验失败，请检查有误的内容',
       grouping: true
     })
@@ -2326,7 +2336,7 @@ const handleSave = async () => {
   delete clonedFormContent.__jobSourceList
   await electron.ipcRenderer.invoke('save-config-file-from-ui', JSON.stringify(clonedFormContent))
   mittBus.emit('auto-start-chat-with-boss-config-saved')
-  ElMessage.success('配置保存成功')
+  toast.success('配置保存成功')
   gtagRenderer('config_saved')
 }
 

@@ -98,11 +98,17 @@ export default function overrideConsole() {
 
   // one process is enough to tidy up; the UI process starts first and runs longest
   if (!process.argv.some((it) => it.startsWith('--mode='))) {
-    try {
-      for (const name of expiredLogFiles(fs.readdirSync(logDirPath), new Date()))
-        fs.rmSync(path.join(logDirPath, name), { force: true })
-    } catch {
-      // no log folder yet
-    }
+    cleanupLogs()
+    setInterval(() => cleanupLogs(), 6 * 60 * 60 * 1000).unref?.()
+  }
+}
+
+/** removes daily log files older than the retention setting */
+export function cleanupLogs(retentionDays = loadSettings().retentionDays) {
+  try {
+    for (const name of expiredLogFiles(fs.readdirSync(logDirPath), new Date(), retentionDays))
+      fs.rmSync(path.join(logDirPath, name), { force: true })
+  } catch {
+    // no log folder yet
   }
 }

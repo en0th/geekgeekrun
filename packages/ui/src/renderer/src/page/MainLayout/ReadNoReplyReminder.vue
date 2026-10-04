@@ -351,8 +351,9 @@
 </template>
 
 <script setup lang="ts">
+import { toast } from '@renderer/features/Toast'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { dayjs, ElForm, ElMessage, ElMessageBox, ElSelect, ElOption } from 'element-plus'
+import { dayjs, ElForm, ElMessageBox, ElSelect, ElOption } from 'element-plus'
 import { useRouter } from 'vue-router'
 import {
   OPEN_CONTENT_SOURCE,
@@ -560,7 +561,7 @@ async function checkIsCanRun() {
         })
     } else {
       gtagRenderer('cannot_launch_for_check_llm_config_error', { err })
-      ElMessage({
+      toast({
         type: 'error',
         message: '大模型配置检查未通过，请重试'
       })
@@ -596,7 +597,7 @@ async function checkIsCanRun() {
         })
     } else {
       gtagRenderer('cannot_launch_for_check_prompt_error', { err })
-      ElMessage({
+      toast({
         type: 'error',
         message: '用于生成自动提醒消息的提示词检查未通过，请重试'
       })
@@ -638,7 +639,8 @@ const handleSubmit = async () => {
       formContent.value.autoReminder.onlyRemindBossWithoutBlockCompanyName,
     rechat_llm_fallback: formContent.value.autoReminder.rechatLlmFallback,
     open_content_source: formContent.value.autoReminder.openContentSource,
-    constant_open_content_text_length: formContent.value.autoReminder.constantOpenContent.length ?? 0
+    constant_open_content_text_length:
+      formContent.value.autoReminder.constantOpenContent.length ?? 0
   })
   await formRef.value!.validate()
   await electron.ipcRenderer.invoke('save-config-file-from-ui', JSON.stringify(formContent.value))
@@ -681,7 +683,7 @@ const handleSubmit = async () => {
   } catch (err) {
     if (err instanceof Error && err.message.includes('NEED_TO_CHECK_RUNTIME_DEPENDENCIES')) {
       gtagRenderer('rnrr_cannot_run_for_corrupt')
-      ElMessage.error({
+      toast.error({
         message: `核心组件损坏，正在尝试修复`
       })
       router.replace('/')
@@ -707,7 +709,7 @@ function handleThrottleIntervalMinutesBlur() {
 const restoreDefaultTemplate = async ({ type, gaEvName }) => {
   gtagRenderer(gaEvName)
   await electron.ipcRenderer.invoke('overwrite-auto-remind-prompt-with-default', { type })
-  ElMessage({
+  toast({
     type: 'success',
     message: '模板还原成功'
   })

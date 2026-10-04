@@ -137,13 +137,13 @@
 </template>
 
 <script setup lang="ts">
+import { toast } from '@renderer/features/Toast'
 import { computed, ref } from 'vue'
 import {
   ElAlert,
   ElButton,
   ElDialog,
   ElIcon,
-  ElMessage,
   ElProgress,
   ElResult,
   ElTable,
@@ -210,7 +210,7 @@ async function handleFile(file?: File | null) {
   try {
     parsed.value = await parseImportFile(props.dataset, file)
   } catch (err) {
-    ElMessage.error(`解析文件失败：${(err as Error)?.message ?? err}`)
+    toast.error(`解析文件失败：${(err as Error)?.message ?? err}`)
   } finally {
     parsing.value = false
   }
@@ -253,7 +253,7 @@ async function handleImport() {
     result.value = total
     emit('imported', total)
   } catch (err) {
-    ElMessage.error(`导入失败：${(err as Error)?.message ?? err}`)
+    toast.error(`导入失败：${(err as Error)?.message ?? err}`)
     if (total.inserted || total.updated) {
       // earlier chunks were committed
       result.value = total

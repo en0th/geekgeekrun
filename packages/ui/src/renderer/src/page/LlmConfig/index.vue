@@ -243,6 +243,7 @@
 </template>
 
 <script lang="ts" setup>
+import { toast } from '@renderer/features/Toast'
 import {
   ElForm,
   ElDropdown,
@@ -250,8 +251,7 @@ import {
   ElDropdownItem,
   ElIcon,
   ElButton,
-  ElInput,
-  ElMessage
+  ElInput
 } from 'element-plus'
 import { ArrowUp, ArrowDown, Delete } from '@element-plus/icons-vue'
 import { ref, onMounted, watch, nextTick, computed } from 'vue'
@@ -334,20 +334,16 @@ const handleSubmit = async () => {
   await formRef.value?.validate()
   if (!formContent.value.length) {
     gtagRenderer('empty_model_list')
-    ElMessage.warning({
+    toast.warning({
       message: '可选模型列表为空，请出现填写'
     })
     formContent.value = [getNewConfigItem()]
     return
   } else if (formContent.value.length > 1) {
-    const firstEnabledModel = formContent.value.find(it => it.enabled)
+    const firstEnabledModel = formContent.value.find((it) => it.enabled)
     if (!firstEnabledModel) {
       gtagRenderer('no_enabled_model_find_in_model_list')
-      ElMessage.warning({
-        dangerouslyUseHTMLString: true,
-        grouping: true,
-        message: '<div style="white-space: nowrap">所有模型均被禁用；请至少启用一个模型</div>'
-      })
+      toast.warning('所有模型均被禁用；请至少启用一个模型')
       return
     }
   }

@@ -41,8 +41,9 @@
 </template>
 
 <script setup lang="ts">
+import { toast } from '@renderer/features/Toast'
 import { ref } from 'vue'
-import { ElButton, ElDialog, ElInput, ElMessage, ElRadio, ElRadioGroup } from 'element-plus'
+import { ElButton, ElDialog, ElInput, ElRadio, ElRadioGroup } from 'element-plus'
 import { ipcErrorMessage } from './format'
 
 interface FavoriteFolder {
@@ -73,7 +74,7 @@ async function load() {
     folders.value = data
     if (!folders.value.some((f) => f.id === folderId.value)) folderId.value = data[0]?.id
   } catch (err) {
-    ElMessage.error(`读取收藏夹失败：${ipcErrorMessage(err)}`)
+    toast.error(`读取收藏夹失败：${ipcErrorMessage(err)}`)
   } finally {
     loading.value = false
   }
@@ -90,7 +91,7 @@ async function createFolder() {
     await load()
     folderId.value = data.id
   } catch (err) {
-    ElMessage.error(ipcErrorMessage(err))
+    toast.error(ipcErrorMessage(err))
   } finally {
     creating.value = false
   }
@@ -105,14 +106,14 @@ async function save() {
       jobIds: [...props.jobIds]
     })) as { data: { added: number; alreadySaved: number } }
     const folder = folders.value.find((f) => f.id === folderId.value)?.name
-    ElMessage.success(
+    toast.success(
       `已收藏 ${data.added} 个职位到“${folder}”` +
         (data.alreadySaved ? `，${data.alreadySaved} 个此前已在该收藏夹中` : '')
     )
     emit('saved')
     emit('update:visible', false)
   } catch (err) {
-    ElMessage.error(`收藏失败：${ipcErrorMessage(err)}`)
+    toast.error(`收藏失败：${ipcErrorMessage(err)}`)
   } finally {
     saving.value = false
   }

@@ -64,8 +64,9 @@
 </template>
 
 <script setup lang="ts">
+import { toast } from '@renderer/features/Toast'
 import { ref } from 'vue'
-import { ElButton, ElDrawer, ElDialog, ElMessage } from 'element-plus'
+import { ElButton, ElDrawer, ElDialog } from 'element-plus'
 import { type VChatStartupLog } from '@geekgeekrun/sqlite-plugin/src/entity/VChatStartupLog'
 import { type JobInfoChangeLog } from '@geekgeekrun/sqlite-plugin/src/entity/JobInfoChangeLog'
 import JobInfoSnapshot from '../../features/JobInfoSnapshot/index.vue'
@@ -119,7 +120,7 @@ async function handleViewJobHistoryButtonClick(record: VChatStartupLog) {
       record.encryptJobId
     )
   } catch {
-    ElMessage.error('读取历史变化失败，请稍后重试。')
+    toast.error('读取历史变化失败，请稍后重试。')
     return
   }
   let { data: historyList } = historyResponse
@@ -174,7 +175,7 @@ async function handleViewJobHistoryButtonClick(record: VChatStartupLog) {
 
   if (!historyList.length) {
     gtagRenderer('job_history_is_not_found')
-    ElMessage.warning({
+    toast.warning({
       message: '此职位暂无已保存的历史变化。'
     })
     return

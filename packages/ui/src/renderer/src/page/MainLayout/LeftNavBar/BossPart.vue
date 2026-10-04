@@ -95,16 +95,17 @@
 </template>
 
 <script lang="ts" setup>
+import { toast } from '@renderer/features/Toast'
 import { gtagRenderer } from '@renderer/utils/gtag'
 import { debounce } from 'lodash'
-import { ElMessage } from 'element-plus'
+
 import { TopRight, QuestionFilled } from '@element-plus/icons-vue'
 
 const handleClickLaunchBossLogin = async () => {
   gtagRenderer('launch_login_clicked')
   try {
     await electron.ipcRenderer.invoke('login-with-cookie-assistant')
-    ElMessage({
+    toast({
       type: 'success',
       message: '登录凭据保存成功'
     })

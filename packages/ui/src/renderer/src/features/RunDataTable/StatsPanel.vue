@@ -117,8 +117,9 @@
 </template>
 
 <script setup lang="ts">
+import { toast } from '@renderer/features/Toast'
 import { computed, reactive, ref } from 'vue'
-import { ElButton, ElDrawer, ElInputNumber, ElMessage, ElOption, ElSelect } from 'element-plus'
+import { ElButton, ElDrawer, ElInputNumber, ElOption, ElSelect } from 'element-plus'
 import EChart from './EChart.vue'
 import {
   runDataDatasets,
@@ -164,7 +165,7 @@ async function loadStats() {
   try {
     stats.value = await fetchStats(props.preset.charts, true)
   } catch (err) {
-    ElMessage.error(`统计失败：${(err as Error)?.message ?? err}`)
+    toast.error(`统计失败：${(err as Error)?.message ?? err}`)
   } finally {
     loading.value = false
   }
@@ -198,7 +199,7 @@ async function loadCustom() {
     customChart.value = chart
     customData.value = data.groups.custom ?? []
   } catch (err) {
-    ElMessage.error(`统计失败：${(err as Error)?.message ?? err}`)
+    toast.error(`统计失败：${(err as Error)?.message ?? err}`)
   } finally {
     customLoading.value = false
   }

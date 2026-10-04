@@ -62,6 +62,7 @@
 </template>
 
 <script setup lang="ts">
+import { toast } from '@renderer/features/Toast'
 import { computed, ref } from 'vue'
 import {
   ElButton,
@@ -69,7 +70,6 @@ import {
   ElCheckboxGroup,
   ElIcon,
   ElInput,
-  ElMessage,
   ElPopover,
   ElScrollbar
 } from 'element-plus'
@@ -127,7 +127,7 @@ async function loadOptions() {
       }
     }
   } catch (err) {
-    ElMessage.error(`加载筛选项失败：${(err as Error)?.message ?? err}`)
+    toast.error(`加载筛选项失败：${(err as Error)?.message ?? err}`)
   } finally {
     loading.value = false
   }

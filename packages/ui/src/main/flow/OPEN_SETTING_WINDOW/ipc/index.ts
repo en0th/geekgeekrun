@@ -1,3 +1,4 @@
+import { sendToast } from '../../../utils/toast'
 import { ipcMain, shell, app, dialog, BrowserWindow } from 'electron'
 import { initUxIpc } from '../../../features/ux-config'
 import {
@@ -9,11 +10,11 @@ import { modelPair, validModels } from '../../../../common/model-config.mjs'
 import { startJobStatusPoll, JOB_STATUS_POLL_MODE } from '../../../features/job-status-poll'
 import { JOB_STATUS_POLL_LAST_RUN_FILE } from '../../../features/job-hire-status'
 import { checkBossLoginStatus } from '../../../features/boss-login-check'
-import { logDirPath } from '../../../utils/overrideConsole'
+import { cleanupLogs, logDirPath } from '../../../utils/overrideConsole'
 import {
   LOG_LEVELS,
   LOG_LEVEL_LABELS,
-  LOG_RETENTION_DAYS,
+  LOG_RETENTION_RANGE,
   LOG_SETTINGS_FILE,
   readLogSettings
 } from '../../../../common/log-settings.mjs'
@@ -419,13 +420,15 @@ export default function initIpc() {
       settings: readLogSettings(readConfigFile(LOG_SETTINGS_FILE)),
       levels: LOG_LEVELS.map((value) => ({ value, label: LOG_LEVEL_LABELS[value] })),
       dir: logDirPath,
-      retentionDays: LOG_RETENTION_DAYS
+      retentionRange: LOG_RETENTION_RANGE
     }
   })
   ipcMain.handle('log-settings-save', async (_, payload) => {
     const settings = readLogSettings(payload)
     // every process picks the change up within a few seconds
     await writeConfigFile(LOG_SETTINGS_FILE, settings)
+    // a shorter retention applies right away
+    cleanupLogs(settings.retentionDays)
     return settings
   })
   ipcMain.handle('db-backup-save-settings', (_, payload) => saveDbBackupSettings(payload))
@@ -497,10 +500,10 @@ export default function initIpc() {
         }
       }
       if (!puppeteerExecutable) {
-        await dialog.showMessageBox({
-          type: `error`,
-          message: `未找到可用的浏览器`,
-          detail: `请重新运行本程序，按照提示安装、配置浏览器`
+        sendToast({
+          type: 'error',
+          title: '未找到可用的浏览器',
+          message: '请在“设置 → 浏览器”中配置浏览器后重试'
         })
         return
       }

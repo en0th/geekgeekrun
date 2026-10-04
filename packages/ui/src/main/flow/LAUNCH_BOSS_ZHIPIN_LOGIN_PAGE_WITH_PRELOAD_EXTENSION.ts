@@ -1,4 +1,4 @@
-import { app, dialog } from 'electron'
+import { app } from 'electron'
 import {
   main,
   loginEventBus
@@ -33,11 +33,8 @@ export const launchBossZhipinLoginPageWithPreloadExtension = async () => {
     puppeteerExecutable = await getLastUsedAndAvailableBrowser()
   }
   if (!puppeteerExecutable) {
-    await dialog.showMessageBox({
-      type: `error`,
-      message: `未找到可用的浏览器`,
-      detail: `请重新运行本程序，按照提示安装、配置浏览器`
-    })
+    // the cookie assistant window checks for a browser before starting this process
+    console.error('未找到可用的浏览器，无法打开BOSS登录页')
     app.exit(1)
   }
   const { initPuppeteer } = await import('@geekgeekrun/geek-auto-start-chat-with-boss/index.mjs')
