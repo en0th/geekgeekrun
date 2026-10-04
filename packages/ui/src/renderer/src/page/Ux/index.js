@@ -1,6 +1,11 @@
 /* Task-oriented UI migrated from the accepted prototype. All execution uses native IPC. */
 import * as Vue from "vue";
-import { modelPair } from "../../../../common/model-config.mjs";
+import {
+  modelPair,
+  AI_REQUEST_DEFAULTS,
+  AI_TIMEOUT_SECONDS_RANGE,
+  AI_MAX_RETRIES_RANGE,
+} from "../../../../common/model-config.mjs";
 import { followIssues } from "../../../../common/ux-validation.mjs";
 import { ElMessage, ElImageViewer } from "element-plus";
 import JobLibrary from "../MainLayout/JobLibrary.vue";
@@ -18,6 +23,13 @@ import {
   missingJobFields,
   scopedMarkStrategy,
 } from "@geekgeekrun/geek-auto-start-chat-with-boss/job-safety.mjs";
+import {
+  readRunSettings,
+  waitSeconds,
+  DEFAULT_JOB_LIST_LOAD_WAIT_SECONDS,
+  DEFAULT_JOB_DETAIL_VIEW_WAIT_SECONDS,
+  MAX_WAIT_SECONDS,
+} from "@geekgeekrun/geek-auto-start-chat-with-boss/run-settings.mjs";
 import {
   createNativeState,
   validModelList,
@@ -260,6 +272,12 @@ export default Vue.defineComponent({
     };
     const draft = ref(cached?.draft || adopted),
       shared = ref(cached?.shared || commonDraft);
+    // Run settings were added after drafts could be cached; fill them from the saved config.
+    {
+      const runSettings = readRunSettings(original);
+      for (const key of Object.keys(runSettings))
+        if (draft.value[key] === undefined) draft.value[key] = runSettings[key];
+    }
     // Previously unchecked salary fields were inactive drafts, not constraints.
     for (const d of [draft.value, shared.value])
       if (!d.salary) {
@@ -403,6 +421,10 @@ export default Vue.defineComponent({
     const otherModelsOpen = ref(false),
       browserForm = ref({ path: initial.browser?.executablePath || "" }),
       browserBusy = ref(false),
+      dingtalkForm = ref({
+        token: initial.config["dingtalk.json"]?.groupRobotAccessToken || "",
+      }),
+      dingtalkBusy = ref(false),
       browserError = ref("");
     const promptKind = ref("rechat"),
       promptText = ref(""),
@@ -650,7 +672,8 @@ export default Vue.defineComponent({
           ),
         ];
       obj[key] = value;
-      if (obj === browserForm.value) return;
+      // standalone settings forms with their own save buttons; don't mark the AI form dirty
+      if (obj === browserForm.value || obj === dingtalkForm.value) return;
       if (["low", "high"].includes(key))
         obj.salary = obj.low != null || obj.high != null;
       if (
@@ -1127,8 +1150,12 @@ export default Vue.defineComponent({
         else delete drafts[activeTemplate.value];
       }
       const saved = keywordDraft(clone(t.snapshot)),
-        next = keywordDraft(clone(drafts[id] || saved)),
-        baseline = JSON.stringify(saved);
+        next = keywordDraft(clone(drafts[id] || saved));
+      // templates saved before the run settings existed keep the current values
+      for (const target of [saved, next])
+        for (const key of Object.keys(readRunSettings({})))
+          if (target[key] === undefined) target[key] = draft.value[key];
+      const baseline = JSON.stringify(saved);
       if (
         !(await writeTemplateState(templates.value, id, baseline, next, drafts))
       )
@@ -1582,6 +1609,15 @@ export default Vue.defineComponent({
             .posterHrTitleRegExpStr,
         isSageTimeEnabled: d.pause,
         ...(d.pause ? { sageTimeOpTimes: d.actions, sageTimePauseMinute: d.minutes } : {}),
+        skipUnparseableSalaryJob: d.skipUnparseableSalaryJob !== false,
+        jobListLoadWaitSeconds: waitSeconds(
+          d.jobListLoadWaitSeconds,
+          DEFAULT_JOB_LIST_LOAD_WAIT_SECONDS,
+        ),
+        jobDetailViewWaitSeconds: waitSeconds(
+          d.jobDetailViewWaitSeconds,
+          DEFAULT_JOB_DETAIL_VIEW_WAIT_SECONDS,
+        ),
         expectWorkExpList: d.experience
           .map(
             (v) =>
@@ -2315,6 +2351,20 @@ export default Vue.defineComponent({
             "salary",
           ),
         ]),
+        // a run setting kept in this task's own config, so it binds to the draft even when
+        // salary is shared with the common conditions; not part of the common-condition editor
+        sharedMode
+          ? null
+          : h("div", { class: "ux-wide ux-skip-unparseable-salary" }, [
+              check(
+                draft.value,
+                "skipUnparseableSalaryJob",
+                "跳过兼职、日结、实习等无法识别薪资的岗位",
+              ),
+              hint(
+                "取消勾选后会向这类岗位打招呼；填写了期望薪资时，这类岗位因无法比较薪资仍会跳过。",
+              ),
+            ]),
       ];
       const basicFilters = [],
         keywordFilters = [],
@@ -2493,6 +2543,7 @@ export default Vue.defineComponent({
         "仅控制名称、分类和描述；城市、薪资、公司仍需符合。",
       );
       const [titleField, ...otherFields] = content[0].children;
+      const skipUnparseableSalary = content[1];
       const group = (title, items, note) =>
         h("div", { class: "ux-preference-group" }, [
           h("h3", title),
@@ -2505,6 +2556,7 @@ export default Vue.defineComponent({
           ...otherFields,
           ...basicFilters,
           ...moreFilters,
+          skipUnparseableSalary,
         ]),
         group(
           "公司偏好",
@@ -2991,6 +3043,34 @@ export default Vue.defineComponent({
             "操作包括加载列表、查看详情和打招呼，不是成功打招呼次数。休息不保证避免平台限制。",
           ),
         ]),
+        h("div", { class: "ux-field", "data-condition": "pace" }, [
+          h("label", "操作节奏"),
+          h("div", { class: "ux-rhythm-line" }, [
+            h("span", "加载下一批岗位后等待"),
+            number(d, "jobListLoadWaitSeconds", {
+              min: 0,
+              max: MAX_WAIT_SECONDS,
+              step: 0.5,
+              precision: 1,
+              "aria-label": "加载下一批岗位后等待秒数",
+            }),
+            h("span", "秒"),
+          ]),
+          h("div", { class: "ux-rhythm-line" }, [
+            h("span", "查看岗位详情后等待"),
+            number(d, "jobDetailViewWaitSeconds", {
+              min: 0,
+              max: MAX_WAIT_SECONDS,
+              step: 0.5,
+              precision: 1,
+              "aria-label": "查看岗位详情后等待秒数",
+            }),
+            h("span", "秒，另加 0–1 秒随机时间"),
+          ]),
+          hint(
+            `默认分别为 ${DEFAULT_JOB_LIST_LOAD_WAIT_SECONDS} 秒和 ${DEFAULT_JOB_DETAIL_VIEW_WAIT_SECONDS} 秒。调短会更快，但更容易被平台限制；留空使用默认值。`,
+          ),
+        ]),
       ];
     }
     function evaluate(originalRow, d) {
@@ -3109,6 +3189,12 @@ export default Vue.defineComponent({
             : d.excluded.some((t) => test(escape(t), row.companyName, "公司"))
       )
         reject("company", "命中排除公司");
+      if (
+        !d.salary &&
+        d.skipUnparseableSalaryJob !== false &&
+        (row.salaryLow == null || row.salaryHigh == null)
+      )
+        unknown.push("薪资无法识别（兼职、日结、实习等）");
       if (d.salary) {
         if (row.salaryLow == null || row.salaryHigh == null)
           unknown.push("薪资信息不足");
@@ -3978,6 +4064,7 @@ export default Vue.defineComponent({
             ["account", "账号与登录"],
             ["browser", "浏览器"],
             ["ai", "AI模型配置"],
+            ["notify", "钉钉通知"],
           ],
           (v) => (settingTab.value = v),
         ),
@@ -4109,7 +4196,56 @@ export default Vue.defineComponent({
           : null,
         tab === "ai" ? aiSettings() : null,
         tab === "ai" ? aiFooter() : null,
+        tab === "notify"
+          ? card("钉钉通知", [
+              alert(
+                native.state().config["dingtalk.json"]?.groupRobotAccessToken
+                  ? "钉钉通知已开启"
+                  : "钉钉通知未开启",
+                native.state().config["dingtalk.json"]?.groupRobotAccessToken
+                  ? "success"
+                  : "info",
+              ),
+              field(
+                "群机器人 AccessToken",
+                input(dingtalkForm.value, "token", {
+                  type: "password",
+                  showPassword: true,
+                  autocomplete: "off",
+                  "aria-label": "钉钉群机器人 AccessToken",
+                  placeholder: "机器人 Webhook 地址中 access_token= 后面的部分",
+                }),
+                "自动打招呼运行时，开聊记录和运行错误会每 2 分钟合并发送到该群。请勿使用公司内部群。留空并保存即关闭通知。",
+              ),
+              inline([
+                button("保存钉钉配置", saveDingtalk, {
+                  type: "primary",
+                  loading: dingtalkBusy.value,
+                }),
+              ]),
+              hint("修改后从下次开始任务起生效。"),
+            ])
+          : null,
       ];
+    }
+    async function saveDingtalk() {
+      let token = dingtalkForm.value.token.trim();
+      // accept a pasted webhook URL as well as the bare token
+      const fromUrl = /access_token=([^&\s]+)/.exec(token);
+      if (fromUrl) token = fromUrl[1];
+      dingtalkBusy.value = true;
+      try {
+        await native.saveDingtalk(token);
+        dingtalkForm.value.token = token;
+        R.message({
+          type: "success",
+          message: token ? "钉钉通知已保存" : "钉钉通知已关闭",
+        });
+      } catch (error) {
+        R.message({ type: "error", message: "保存失败：" + error.message });
+      } finally {
+        dingtalkBusy.value = false;
+      }
     }
     async function validateBrowserPath() {
       const path = browserForm.value.path.trim();
@@ -4132,7 +4268,13 @@ export default Vue.defineComponent({
       browser.value = true;
       R.message({ type: "success", message: "浏览器配置已保存" });
     }
+    // request settings are edited once (on the primary) and apply to both models
+    function syncRequestSettings() {
+      const [primary, backup] = modelForm.value;
+      for (const key of Object.keys(AI_REQUEST_DEFAULTS)) backup[key] = primary[key];
+    }
     async function saveModels() {
+      syncRequestSettings();
       const err = validModelList(modelForm.value);
       if (err) {
         R.message({ type: "error", message: err });
@@ -4174,6 +4316,7 @@ export default Vue.defineComponent({
       resize();
     }
     async function testModels() {
+      syncRequestSettings();
       const error = validModelList(modelForm.value);
       if (error) {
         R.message({ type: "error", message: error });
@@ -4251,7 +4394,7 @@ export default Vue.defineComponent({
                     m.preset = value;
                     const samples = {
                       deepseek: [
-                        "deepseek-chat",
+                        "deepseek-v4-pro",
                         "https://api.deepseek.com/v1",
                       ],
                       volcano: [
@@ -4341,6 +4484,40 @@ export default Vue.defineComponent({
             modelForm.value[1].enabled
               ? modelEditor(modelForm.value[1], 1)
               : null,
+          ]),
+          h("section", { class: "ux-ai-model", "data-model-role": "request" }, [
+            h("h3", "请求设置"),
+            hint("对首选和备用模型同时生效。"),
+            h("div", { class: "ux-rhythm-line" }, [
+              h("span", "请求超时"),
+              number(modelForm.value[0], "requestTimeoutSeconds", {
+                min: AI_TIMEOUT_SECONDS_RANGE[0],
+                max: AI_TIMEOUT_SECONDS_RANGE[1],
+                step: 10,
+                disabled: locked,
+                "aria-label": "AI请求超时秒数",
+              }),
+              h("span", "秒"),
+            ]),
+            h("div", { class: "ux-rhythm-line" }, [
+              h("span", "失败后重试"),
+              number(modelForm.value[0], "maxRetries", {
+                min: AI_MAX_RETRIES_RANGE[0],
+                max: AI_MAX_RETRIES_RANGE[1],
+                disabled: locked,
+                "aria-label": "AI请求失败重试次数",
+              }),
+              h("span", "次"),
+            ]),
+            hint(
+              `默认超时 ${AI_REQUEST_DEFAULTS.requestTimeoutSeconds} 秒、重试 ${AI_REQUEST_DEFAULTS.maxRetries} 次；超时、限流和服务端错误会自动重试，“测试连接”不重试。`,
+            ),
+            check(modelForm.value[0], "thinkingEnabled", "开启思考模式", {
+              disabled: locked,
+            }),
+            hint(
+              "DeepSeek、火山引擎按此开关切换；阿里云百炼的接口只支持关闭；其他服务商使用模型自身的默认设置。开启后回复更慢，建议超时不低于 60 秒。",
+            ),
           ]),
           modelResults.value.length
             ? h(

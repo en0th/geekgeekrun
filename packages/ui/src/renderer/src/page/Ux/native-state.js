@@ -55,6 +55,13 @@ export async function createNativeState() {
     async testModels(models) {
       return ipc.invoke('ux-test-models', clone(models))
     },
+    async saveDingtalk(token) {
+      await ipc.invoke('ux-save-dingtalk', token)
+      current.config['dingtalk.json'] = {
+        ...(current.config['dingtalk.json'] || {}),
+        groupRobotAccessToken: token.trim()
+      }
+    },
     async readPrompt(type) {
       return ipc.invoke('ux-read-prompt', { type })
     },

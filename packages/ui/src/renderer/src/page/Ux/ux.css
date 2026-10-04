@@ -1423,3 +1423,8 @@ html:not(.replica-child) body {
     font-size: 17px;
   }
 }
+
+/* run pace settings sit right under the rest-time hint */
+.ux-field[data-condition="pace"] {
+  margin-top: 12px;
+}

@@ -17,6 +17,7 @@ import { openBrowserDownloadWindow } from './open-browser-download-window'
 import { defaultPromptMap } from '../flow/READ_NO_REPLY_AUTO_REMINDER_MAIN/boss-operation'
 import { validModelList, followErrors, normalizeCache } from '../../common/ux-validation.mjs'
 import { completes } from '@geekgeekrun/utils/gpt-request.mjs'
+import { aiRequestSettings, completionOptions } from '../../common/model-config.mjs'
 
 const stateFile = path.join(storageFilePath, 'ux-workspace.json')
 const closeDraftFile = path.join(storageFilePath, 'ux-close-draft.json')
@@ -189,7 +190,8 @@ export function initUxIpc() {
         'boss.json',
         'common-job-condition-config.json',
         'llm.json',
-        'target-company-list.json'
+        'target-company-list.json',
+        'dingtalk.json'
       ])
         config[name] = readConfigFile(name)
       const prompts = {}
@@ -301,13 +303,14 @@ export function initUxIpc() {
         [
           path.join(configFolderPath, 'llm.json'),
           models.map(
-            ({ id, model, providerCompleteApiUrl, providerApiSecret, enabled }, index) => ({
+            ({ id, model, providerCompleteApiUrl, providerApiSecret, enabled, ...rest }, index) => ({
               id,
               model,
               providerCompleteApiUrl,
               providerApiSecret,
               role: index === 0 ? 'primary' : 'backup',
-              enabled
+              enabled,
+              ...aiRequestSettings(rest)
             })
           )
         ]
@@ -323,8 +326,12 @@ export function initUxIpc() {
     for (const [index, model] of models.entries()) {
       if (!model.enabled) continue
       try {
+        // same timeout and thinking mode as real requests, but no retries so problems show at once
         const result = await completes(
-          { baseURL: model.providerCompleteApiUrl, apiKey: model.providerApiSecret || 'local', model: model.model, timeout: 15000, maxRetries: 0 },
+          {
+            ...completionOptions({ ...model, providerApiSecret: model.providerApiSecret || 'local' }),
+            maxRetries: 0
+          },
           [{ role: 'user', content: '只回复 OK。' }]
         )
         if (!result?.choices?.[0]?.message?.content?.trim()) throw Error('服务返回空内容')
@@ -350,6 +357,20 @@ export function initUxIpc() {
       if (type === 'rechat' && !text.includes('__REPLACE_REAL_RESUME_HERE__'))
         throw Error('请保留简历占位符')
       await writeBatch([[path.join(storageFilePath, info.fileName), text]])
+    })
+  )
+  // dingtalk.json isn't part of the draft signature, so saving it never discards a draft
+  ipcMain.handle('ux-save-dingtalk', (_, token) =>
+    exclusive(async () => {
+      if (typeof token !== 'string' || token.length > 200) throw Error('钉钉机器人令牌无效')
+      ensureConfigFileExist()
+      const current = readConfigFile('dingtalk.json') || {}
+      await writeBatch([
+        [
+          path.join(configFolderPath, 'dingtalk.json'),
+          { ...current, groupRobotAccessToken: token.trim() }
+        ]
+      ])
     })
   )
   ipcMain.handle('ux-find-browser', () =>

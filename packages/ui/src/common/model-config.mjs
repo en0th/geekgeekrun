@@ -1,4 +1,34 @@
 const copy = value => JSON.parse(JSON.stringify(value))
+// request settings live on each llm.json entry; the settings page edits them once for both models
+export const AI_REQUEST_DEFAULTS = { requestTimeoutSeconds: 120, maxRetries: 3, thinkingEnabled: true }
+export const AI_TIMEOUT_SECONDS_RANGE = [10, 600]
+export const AI_MAX_RETRIES_RANGE = [0, 10]
+const intInRange = (value, [min, max]) => {
+  if (value === null || value === undefined || value === '') return null
+  const n = Number(value)
+  return Number.isInteger(n) && n >= min && n <= max ? n : null
+}
+export function aiRequestSettings(model = {}) {
+  return {
+    requestTimeoutSeconds:
+      intInRange(model.requestTimeoutSeconds, AI_TIMEOUT_SECONDS_RANGE) ?? AI_REQUEST_DEFAULTS.requestTimeoutSeconds,
+    maxRetries: intInRange(model.maxRetries, AI_MAX_RETRIES_RANGE) ?? AI_REQUEST_DEFAULTS.maxRetries,
+    thinkingEnabled:
+      typeof model.thinkingEnabled === 'boolean' ? model.thinkingEnabled : AI_REQUEST_DEFAULTS.thinkingEnabled
+  }
+}
+// options for packages/utils/gpt-request.mjs completes()
+export function completionOptions(model) {
+  const settings = aiRequestSettings(model)
+  return {
+    baseURL: model.providerCompleteApiUrl,
+    apiKey: model.providerApiSecret,
+    model: model.model,
+    timeout: settings.requestTimeoutSeconds * 1000,
+    maxRetries: settings.maxRetries,
+    thinking: settings.thinkingEnabled
+  }
+}
 export function blankModel(role = 'primary') {
   return { id: 'model-' + role, role, enabled: role === 'primary', model: '', providerCompleteApiUrl: '', providerApiSecret: '', preset: 'custom' }
 }
@@ -15,6 +45,7 @@ export function modelPair(list = []) {
     result.role = index === 0 ? 'primary' : 'backup'
     result.enabled = index === 0 || Boolean(model.enabled)
     result.id = result.id || 'model-' + result.role
+    Object.assign(result, aiRequestSettings(result))
     return result
   })
   if (pair[0].id === pair[1].id) pair[1].id = pair[0].id + '-backup'
@@ -38,6 +69,10 @@ export function validModels(list) {
       const url = new URL(model.providerCompleteApiUrl)
       if (!['http:', 'https:'].includes(url.protocol) || !url.hostname) throw Error()
     } catch { return label + '需填写完整的 http(s) 接口地址。' }
+    if (model.requestTimeoutSeconds != null && intInRange(model.requestTimeoutSeconds, AI_TIMEOUT_SECONDS_RANGE) === null)
+      return `请求超时需为 ${AI_TIMEOUT_SECONDS_RANGE[0]}–${AI_TIMEOUT_SECONDS_RANGE[1]} 秒的整数。`
+    if (model.maxRetries != null && intInRange(model.maxRetries, AI_MAX_RETRIES_RANGE) === null)
+      return `重试次数需为 ${AI_MAX_RETRIES_RANGE[0]}–${AI_MAX_RETRIES_RANGE[1]} 的整数。`
   }
   return ''
 }

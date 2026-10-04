@@ -11,7 +11,11 @@ import {
   writeStorageFile,
 } from "@geekgeekrun/geek-auto-start-chat-with-boss/runtime-file-utils.mjs";
 import { formatResumeJsonToMarkdown } from "../../../common/utils/resume";
-import { pickModel, parseAiMessage } from "../../../common/model-config.mjs";
+import {
+  pickModel,
+  parseAiMessage,
+  completionOptions,
+} from "../../../common/model-config.mjs";
 import { LlmModelUsageRecord } from "@geekgeekrun/sqlite-plugin/dist/entity/LlmModelUsageRecord";
 
 export const sendLookForwardReplyEmotion = async (page: Page) => {
@@ -190,14 +194,8 @@ export const requestNewMessageContent = async (
       requestScene,
     });
     try {
-      const completion = await completes(
-        {
-          baseURL: llmConfig.providerCompleteApiUrl,
-          apiKey: llmConfig.providerApiSecret,
-          model: llmConfig.model,
-        },
-        chatList,
-      );
+      // timeout, retries and thinking mode come from the AI settings page
+      const completion = await completes(completionOptions(llmConfig), chatList);
       Object.assign(llmRequestRecord, {
         completionTokens: completion.usage?.completion_tokens ?? null,
         promptCacheHitTokens: completion.usage?.prompt_cache_hit_tokens ?? null,

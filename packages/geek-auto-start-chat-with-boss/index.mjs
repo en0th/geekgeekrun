@@ -46,6 +46,7 @@ import {
 import { hasIntersection } from '@geekgeekrun/utils/number.mjs';
 import { missingJobFields, scopedMarkStrategy, ExpiringBlockSet, COOLDOWN_MS } from './job-safety.mjs'
 import { NoMatchBatchGuard, loadNextJobBatch, openJobCardForReview, listSkipReason, describeListScope } from './auto-chat-navigation.mjs'
+import { readRunSettings } from './run-settings.mjs'
 const flattedCityList = []
 ;(cityGroupData?.zpData?.cityGroup ?? []).forEach(it => {
   const firstChar = it.firstChar
@@ -241,6 +242,11 @@ if (
   jobDetailRegExpMatchLogic = JobDetailRegExpMatchLogic.EVERY
 }
 const posterHrNotMatchStrategy = readConfigFile('boss.json').posterHrNotMatchStrategy ?? MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_LOCAL
+const {
+  skipUnparseableSalaryJob,
+  jobListLoadWaitSeconds,
+  jobDetailViewWaitSeconds
+} = readRunSettings(readConfigFile('boss.json'))
 
 let {
   jobSourceList
@@ -935,13 +941,15 @@ async function toRecommendPage (hooks) {
                 if (!Array.isArray(jobListData)) throw new Error('AUTO_CHAT_LIST_STALLED')
                 for (const row of jobListData) {
                   const salary = parseSalary(row.salaryDesc || '')
-                  // unparseable salaries are 兼职、日结、实习 etc.; skip them whether or not the salary filter is on
-                  const reason = (salary.low == null || salary.high == null ? '薪资无法识别（兼职、日结、实习等）' : '') || listSkipReason(row, {
+                  // unparseable salaries are 兼职、日结、实习 etc.; skipped by default whether or not the
+                  // salary filter is on (when it is on, listSkipReason still skips them)
+                  const unparseableSalary = salary.low == null || salary.high == null
+                  const reason = (skipUnparseableSalaryJob && unparseableSalary ? '薪资无法识别（兼职、日结、实习等）' : '') || listSkipReason(row, {
                     cities: expectCityList, cityStrategy: expectCityNotMatchStrategy,
                     experiences: expectWorkExpList, experienceStrategy: expectWorkExpNotMatchStrategy,
                     salaryEnabled: !!isSalaryFilterEnabled, salaryStrategy: expectSalaryNotMatchStrategy,
                     salaryMatches: checkIfSalarySuit(row.salaryDesc || ''),
-                    invalidSalary: salary.low == null || salary.high == null
+                    invalidSalary: unparseableSalary
                   })
                   if (reason) { blockJobNotSuit.add(row.encryptJobId); listSkipReasons.set(row.encryptJobId, reason) }
                 }
@@ -1050,8 +1058,8 @@ async function toRecommendPage (hooks) {
                   hasReachLastPage = !nextBatch.hasMore
                   searchGuard.loadedBatch()
                   await waitForSageTimeOrJustContinue({ tag: 'afterJobListPageFetched', hooks })
-                  // keep the original human-like pace; faster paging raises the risk of BOSS rate limiting
-                  await sleep(5000)
+                  // user-adjustable pace; faster paging raises the risk of BOSS rate limiting
+                  await sleep(jobListLoadWaitSeconds * 1000)
                   await updateJobListData()
                   tempTargetJobIndexToCheckDetail = getTempTargetJobIndexToCheckDetail()
                 }
@@ -1079,7 +1087,8 @@ async function toRecommendPage (hooks) {
                     page, list: recommendJobListElProxy, index: tempTargetJobIndexToCheckDetail,
                     jobId: jobListData[tempTargetJobIndexToCheckDetail]?.encryptJobId
                   })
-                  await sleepWithRandomDelay(2000)
+                  // sleepWithRandomDelay adds up to 1s on top, so the wait never looks fixed
+                  await sleepWithRandomDelay(jobDetailViewWaitSeconds * 1000)
                   await waitForSageTimeOrJustContinue({
                     tag: 'afterJobDetailFetched',
                     hooks
