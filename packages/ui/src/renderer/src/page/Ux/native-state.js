@@ -48,18 +48,23 @@ export async function createNativeState() {
     },
     async saveModels(models) {
       const result = await ipc.invoke('ux-save-models', clone(models))
-      current.config['llm.json'] = clone(models)
+      // the main process returns the saved list with keys blanked
+      current.config['llm.json'] = result.models
       current.modelDraft = null
       return result
+    },
+    async listModels(model) {
+      return ipc.invoke('ux-list-models', clone(model))
     },
     async testModels(models) {
       return ipc.invoke('ux-test-models', clone(models))
     },
-    async saveDingtalk(token) {
-      await ipc.invoke('ux-save-dingtalk', token)
+    async saveDingtalk({ token = '', clear = false }) {
+      const result = await ipc.invoke('ux-save-dingtalk', { token, clear })
       current.config['dingtalk.json'] = {
         ...(current.config['dingtalk.json'] || {}),
-        groupRobotAccessToken: token.trim()
+        groupRobotAccessToken: '',
+        hasGroupRobotAccessToken: result.hasGroupRobotAccessToken
       }
     },
     async readPrompt(type) {

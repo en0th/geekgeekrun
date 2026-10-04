@@ -1,4 +1,5 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { redactConfigForRenderer } from '../features/config-secrets'
 import gtag from './gtag'
 import buildInfo from '../../common/build-info.json'
 import os from 'node:os'
@@ -124,6 +125,8 @@ export default function initPublicIpc() {
     configFileNameList.forEach((fileName, index) => {
       result.config[fileName] = configFileContentList[index]
     })
+    // API keys and tokens stay in the main process
+    result.config = redactConfigForRenderer(result.config)
 
     return result
   })

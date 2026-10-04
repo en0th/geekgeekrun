@@ -16,8 +16,15 @@ import { getAnyAvailablePuppeteerExecutable } from '../flow/DOWNLOAD_DEPENDENCIE
 import { openBrowserDownloadWindow } from './open-browser-download-window'
 import { defaultPromptMap } from '../flow/READ_NO_REPLY_AUTO_REMINDER_MAIN/boss-operation'
 import { validModelList, followErrors, normalizeCache } from '../../common/ux-validation.mjs'
-import { completes } from '@geekgeekrun/utils/gpt-request.mjs'
+import { completes, listModels } from '@geekgeekrun/utils/gpt-request.mjs'
 import { aiRequestSettings, completionOptions } from '../../common/model-config.mjs'
+import {
+  keepAutoReminderSecrets,
+  llmSecretsLostByHostChange,
+  redactConfigForRenderer,
+  redactLlmConfigList,
+  restoreLlmSecrets
+} from './config-secrets'
 
 const stateFile = path.join(storageFilePath, 'ux-workspace.json')
 const closeDraftFile = path.join(storageFilePath, 'ux-close-draft.json')
@@ -42,9 +49,10 @@ function writeCloseDraft(draft) {
   }
   const encrypted = safeStorage.isEncryptionAvailable()
   const captured = JSON.parse(JSON.stringify(draft))
-  // Never put an unsaved API secret into a plaintext fallback file.
-  if (!encrypted && captured.models) {
-    captured.secretOmitted = captured.models.some((model) => model.providerApiSecret)
+  // Unsaved API secrets are never kept: the draft is handed back to the renderer on restore.
+  if (captured.models) {
+    captured.secretOmitted =
+      captured.secretOmitted || captured.models.some((model) => model.providerApiSecret)
     for (const model of captured.models) model.providerApiSecret = ''
   }
   const text = JSON.stringify(captured)
@@ -198,8 +206,17 @@ export function initUxIpc() {
       for (const type of ['open', 'rechat'])
         prompts[type] =
           readStorageFile(promptType(type).fileName, { isJson: false }) || promptType(type).content
+      // drafts written before secrets were stripped may still hold one
+      const draftModels = Array.isArray(closeDraft?.models)
+        ? redactLlmConfigList(closeDraft.models).map((model) => ({
+            ...model,
+            hasProviderApiSecret: redactLlmConfigList(config['llm.json']).some(
+              (saved) => saved.id === model.id && saved.hasProviderApiSecret
+            )
+          }))
+        : null
       return {
-        config,
+        config: redactConfigForRenderer(config),
         cookie:
           Array.isArray(readStorageFile('boss-cookies.json')) &&
           readStorageFile('boss-cookies.json').length
@@ -209,11 +226,15 @@ export function initUxIpc() {
         prompts,
         datasets: { jobLibrary: [] },
         uxState: state,
-        modelDraft: Array.isArray(closeDraft?.models) ? closeDraft.models : null,
+        modelDraft: draftModels,
         pendingDraft: closeDraft?.state
           ? { autoDirty: closeDraft.autoDirty, followDirty: closeDraft.followDirty }
           : null,
-        draftSecretOmitted: Boolean(closeDraft?.models && closeDraft?.secretOmitted),
+        draftSecretOmitted: Boolean(
+          closeDraft?.models &&
+            (closeDraft?.secretOmitted ||
+              closeDraft.models.some((model) => model?.providerApiSecret))
+        ),
         revision: saved.revision || 0
       }
     })
@@ -262,6 +283,8 @@ export function initUxIpc() {
           patch.expectSalaryLow > patch.expectSalaryHigh
         )
           throw Error('薪资上限不能低于下限')
+        if (patch.autoReminder)
+          patch.autoReminder = keepAutoReminderSecrets(patch.autoReminder, boss.autoReminder)
         Object.assign(boss, patch)
         delete boss.expectCompanies
         entries.push([path.join(configFolderPath, 'boss.json'), boss])
@@ -284,12 +307,16 @@ export function initUxIpc() {
       return { revision }
     })
   })
-  ipcMain.handle('ux-save-models', (_, models) => {
+  ipcMain.handle('ux-save-models', (_, incoming) => {
     const requestedAt = Date.now()
     return exclusive(async () => {
-      const error = validModelList(models)
+      const error = validModelList(incoming)
       if (error) throw Error(error)
       const previousModels = readConfigFile('llm.json')
+      if (llmSecretsLostByHostChange(incoming, previousModels))
+        throw Error('更换接口地址后，请重新填写该模型的 API 密钥。')
+      // blank secrets mean "keep the saved one"; the renderer never receives them
+      const models = restoreLlmSecrets(incoming, previousModels)
       const legacyBackedUp = Array.isArray(previousModels) && previousModels.length > 2
       if (legacyBackedUp) {
         if (!safeStorage.isEncryptionAvailable()) throw Error('无法安全备份旧模型配置，请稍后重试。旧配置未改动。')
@@ -316,12 +343,16 @@ export function initUxIpc() {
         ]
       ])
       discardCloseDraft('models', requestedAt)
-      return { legacyBackedUp }
+      return { legacyBackedUp, models: redactLlmConfigList(readConfigFile('llm.json')) }
     })
   })
-  ipcMain.handle('ux-test-models', async (_, models) => {
-    const error = validModelList(models)
+  ipcMain.handle('ux-test-models', async (_, incoming) => {
+    const error = validModelList(incoming)
     if (error) throw Error(error)
+    const savedModels = readConfigFile('llm.json')
+    if (llmSecretsLostByHostChange(incoming, savedModels))
+      throw Error('更换接口地址后，请重新填写该模型的 API 密钥。')
+    const models = restoreLlmSecrets(incoming, savedModels)
     const results: Array<{ role: 'primary' | 'backup'; ok: boolean; error?: string }> = []
     for (const [index, model] of models.entries()) {
       if (!model.enabled) continue
@@ -344,6 +375,30 @@ export function initUxIpc() {
     }
     return results
   })
+  // model list for the model name picker; the key is resolved here and never leaves main
+  ipcMain.handle('ux-list-models', async (_, incoming) => {
+    const savedModels = readConfigFile('llm.json')
+    if (llmSecretsLostByHostChange([incoming], savedModels))
+      throw Error('更换接口地址后，请先填写该接口的 API 密钥。')
+    const [model] = restoreLlmSecrets([incoming], savedModels)
+    let url
+    try {
+      url = new URL(String(model.providerCompleteApiUrl ?? ''))
+      if (!['http:', 'https:'].includes(url.protocol)) throw Error()
+    } catch {
+      throw Error('请先填写完整的 http(s) 接口地址。')
+    }
+    try {
+      return await listModels({
+        baseURL: url.toString(),
+        apiKey: model.providerApiSecret || 'local'
+      })
+    } catch (error) {
+      let message = String((error as Error).message || '获取失败').slice(0, 300)
+      if (model.providerApiSecret) message = message.split(model.providerApiSecret).join('[密钥已隐藏]')
+      throw Error(message)
+    }
+  })
   ipcMain.handle(
     'ux-read-prompt',
     (_, { type }) =>
@@ -360,17 +415,20 @@ export function initUxIpc() {
     })
   )
   // dingtalk.json isn't part of the draft signature, so saving it never discards a draft
-  ipcMain.handle('ux-save-dingtalk', (_, token) =>
+  // the renderer never gets the token back; it only learns whether one is set
+  ipcMain.handle('ux-save-dingtalk', (_, { token = '', clear = false } = {}) =>
     exclusive(async () => {
       if (typeof token !== 'string' || token.length > 200) throw Error('钉钉机器人令牌无效')
+      if (!clear && !token.trim()) throw Error('请填写钉钉机器人令牌')
       ensureConfigFileExist()
       const current = readConfigFile('dingtalk.json') || {}
       await writeBatch([
         [
           path.join(configFolderPath, 'dingtalk.json'),
-          { ...current, groupRobotAccessToken: token.trim() }
+          { ...current, groupRobotAccessToken: clear ? '' : token.trim() }
         ]
       ])
+      return { hasGroupRobotAccessToken: !clear }
     })
   )
   ipcMain.handle('ux-find-browser', () =>

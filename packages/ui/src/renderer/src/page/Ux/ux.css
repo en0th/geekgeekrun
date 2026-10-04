@@ -1428,3 +1428,122 @@ html:not(.replica-child) body {
 .ux-field[data-condition="pace"] {
   margin-top: 12px;
 }
+
+/* auto-greeting page: content on the left, a floating section rail with progress on the right */
+.ux-inner.ux-inner--with-rail {
+  max-width: 1360px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 208px;
+  column-gap: 20px;
+  align-items: start;
+}
+.ux-inner--with-rail > * {
+  grid-column: 1;
+  min-width: 0;
+}
+.ux-inner--with-rail > .ux-section-rail {
+  grid-column: 2;
+  grid-row: 1 / span 30;
+  position: sticky;
+  top: 16px;
+}
+.ux-section-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-bg-color);
+  box-shadow: 0 2px 12px #0000000f;
+}
+.ux-rail-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+}
+.ux-rail-title strong {
+  font-size: 20px;
+  color: var(--el-text-color-primary);
+}
+.ux-rail-state {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+.ux-rail-state.is-ready {
+  color: var(--el-color-success);
+}
+.ux-section-rail-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid var(--el-border-color-lighter);
+  padding-top: 8px;
+}
+.ux-rail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border-radius: 6px;
+  color: var(--el-text-color-regular);
+  text-decoration: none;
+}
+.ux-rail-item:hover,
+.ux-rail-item:focus-visible {
+  background: var(--el-fill-color-light);
+}
+.ux-rail-item[aria-current="location"] {
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+}
+.ux-rail-item-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+}
+.ux-rail-label {
+  flex: 1;
+  font-weight: 600;
+}
+.ux-rail-count {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.ux-rail-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--el-color-danger);
+}
+.ux-rail-item.is-complete .ux-rail-dot {
+  background: var(--el-color-success);
+}
+.ux-rail-extra {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
+}
+.ux-rail-item.is-missing .ux-rail-extra {
+  color: var(--el-color-danger);
+}
+/* narrow windows: the rail goes back above the content as a horizontal strip */
+@media (max-width: 960px) {
+  .ux-inner.ux-inner--with-rail {
+    display: block;
+  }
+  .ux-inner--with-rail > .ux-section-rail {
+    position: static;
+    margin-bottom: 12px;
+  }
+  .ux-section-rail-nav {
+    flex-direction: row;
+  }
+  .ux-rail-item {
+    flex: 1;
+  }
+}

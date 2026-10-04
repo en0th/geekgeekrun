@@ -10,7 +10,7 @@
   >
     <div v-loading="loading" class="stats-panel">
       <div class="text-12px color-#909399 mb12px">
-        统计范围为当前搜索与过滤条件下的全部记录（不受分页影响）。
+        统计范围为当前搜索与过滤条件下的全部记录（不受分页影响）。点击柱子或扇区，可按该项筛选表格。
       </div>
       <div class="stats-panel__cards">
         <div class="stats-panel__card">
@@ -42,7 +42,11 @@
         >
           <div class="stats-panel__chart-title">{{ chart.title }}</div>
           <div class="stats-panel__chart-body">
-            <EChart v-if="stats?.groups[chart.id]?.length" :option="presetOptions[chart.id]" />
+            <EChart
+              v-if="stats?.groups[chart.id]?.length"
+              :option="presetOptions[chart.id]"
+              @item-click="(index) => drill(chart, stats!.groups[chart.id], index)"
+            />
             <div v-else-if="stats" class="stats-panel__empty">暂无数据</div>
           </div>
         </div>
@@ -98,7 +102,11 @@
           >
         </div>
         <div class="stats-panel__chart-body">
-          <EChart v-if="customOption" :option="customOption" />
+          <EChart
+            v-if="customOption"
+            :option="customOption"
+            @item-click="(index) => drill(customChart!, customData, index)"
+          />
           <div v-else class="stats-panel__empty">
             {{ customChart ? '暂无数据' : '选择字段后点击“生成”' }}
           </div>
@@ -128,7 +136,11 @@ const props = defineProps<{
   query: RunDataQuery
   preset: RunDataStatsPreset
 }>()
-const emit = defineEmits<{ 'update:visible': [value: boolean] }>()
+const emit = defineEmits<{
+  'update:visible': [value: boolean]
+  // a clicked bar / slice, as the raw grouped value (not the display label)
+  drill: [item: { group: RunDataChart['group']; raw: unknown; label: string }]
+}>()
 
 const datasetDef = computed(() => runDataDatasets[props.dataset])
 const loading = ref(false)
@@ -204,6 +216,13 @@ function displayName(chart: RunDataChart, name: unknown) {
 
 const formatNumber = (n: number | null | undefined) =>
   n === null || n === undefined ? '-' : Number.isInteger(n) ? String(n) : n.toFixed(1)
+
+function drill(chart: RunDataChart, rows: { name: unknown; value: number }[], index: number) {
+  // horizontal bars are drawn in reverse so the largest sits on top
+  const row = rows[chart.type === 'hbar' ? rows.length - 1 - index : index]
+  if (!row) return
+  emit('drill', { group: chart.group, raw: row.name, label: displayName(chart, row.name) })
+}
 
 function buildOption(chart: RunDataChart, rawData = stats.value?.groups[chart.id] ?? []) {
   const data = rawData.map((it) => ({ name: displayName(chart, it.name), value: it.value }))

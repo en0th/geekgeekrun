@@ -2,6 +2,7 @@
 import * as Vue from "vue";
 import {
   modelPair,
+  DEFAULT_MODEL,
   AI_REQUEST_DEFAULTS,
   AI_TIMEOUT_SECONDS_RANGE,
   AI_MAX_RETRIES_RANGE,
@@ -415,15 +416,23 @@ export default Vue.defineComponent({
     const requestedStop = { auto: false, follow: false };
     const login = ref(initial.cookie.length > 0),
       browser = ref(Boolean(initial.browser?.executablePath));
+    // empty entries (e.g. a fresh install's llm.json) show the default model in the form only;
+    // the run itself still treats them as unconfigured until saved
+    const formModels = (list) =>
+      modelPair(list).map((m) =>
+        !m.model && !m.providerCompleteApiUrl ? { ...m, ...DEFAULT_MODEL } : m,
+      );
     const modelForm = ref(
-      modelPair(initial.modelDraft || initial.config["llm.json"]),
+      formModels(initial.modelDraft || initial.config["llm.json"]),
     );
     const otherModelsOpen = ref(false),
       browserForm = ref({ path: initial.browser?.executablePath || "" }),
       browserBusy = ref(false),
-      dingtalkForm = ref({
-        token: initial.config["dingtalk.json"]?.groupRobotAccessToken || "",
-      }),
+      dingtalkForm = ref({ token: "" }),
+      // model ids fetched from each model's API, keyed by role
+      modelLists = ref({}),
+      modelListLoading = ref({}),
+      modelListError = ref({}),
       dingtalkBusy = ref(false),
       browserError = ref("");
     const promptKind = ref("rechat"),
@@ -2006,7 +2015,7 @@ export default Vue.defineComponent({
           browser.value = Boolean(s.browser?.executablePath);
           browserForm.value.path = s.browser?.executablePath || "";
           if (!modelDirty.value)
-            modelForm.value = modelPair(s.config["llm.json"]);
+            modelForm.value = formModels(s.config["llm.json"]);
         } catch {
           notice.value = "无法重新读取设置，请重试。";
         }
@@ -3562,9 +3571,10 @@ export default Vue.defineComponent({
         activeAutoSection.value = "job-policy";
         return;
       }
+      // the section nav now floats on the right, so measure from the top of the scroller
       const top =
-        document.querySelector(".ux-section-nav")?.getBoundingClientRect()
-          .bottom || 64;
+        (document.querySelector(".ux-main")?.getBoundingClientRect().top || 0) +
+        64;
       const ids = ["job-preferences", "job-sources", "job-policy"];
       activeAutoSection.value =
         ids
@@ -3582,27 +3592,7 @@ export default Vue.defineComponent({
         templateBar(),
         problems(errors.value),
         runPanel("auto"),
-        h("nav", { class: "ux-section-nav", "aria-label": "配置分组" }, [
-          ...[
-            ["job-preferences", "求职条件"],
-            ["job-sources", "职位来源"],
-            ["job-policy", "处理方式"],
-          ].map(([id, label]) =>
-            h(
-              "a",
-              {
-                href: "#" + id,
-                "aria-current":
-                  activeAutoSection.value === id ? "location" : undefined,
-                onClick: (event) => {
-                  event.preventDefault();
-                  jumpAutoSection(id);
-                },
-              },
-              label,
-            ),
-          ),
-        ]),
+        sectionRail(),
         card("我的求职条件", prefs(draft.value), {
           id: "job-preferences",
           tabIndex: -1,
@@ -3624,6 +3614,163 @@ export default Vue.defineComponent({
         ),
         footer("auto"),
       ];
+    }
+    // Checklist behind the section rail. Only required and validated items count towards
+    // completion: optional conditions left empty mean 不限, which is a valid choice.
+    function autoProgress() {
+      const d = effective();
+      const issues = validation(d);
+      const failing = (fields) => issues.some((i) => fields.includes(i.field));
+      const check = (label, fields) => ({ label, done: !failing(fields) });
+      const search = d.sourceList?.find((s) => s.type === "search" && s.enabled);
+      const legacyLabels = {
+        categories: "岗位类别",
+        description: "岗位描述",
+        excluded: "排除公司",
+        companies: "只看公司",
+      };
+      const sections = [
+        {
+          id: "job-preferences",
+          label: "求职条件",
+          checks: [
+            check("目标岗位", ["titles", "regexTitle", "regexType", "regexDesc"]),
+            ...(d.salary ? [check("期望薪资", ["salary"])] : []),
+            ...(needsCompanyList(d) ? [check("公司名单", ["companies"])] : []),
+            ...(d.regexMode && d.regexExclude
+              ? [check("排除公司规则", ["regexExclude"])]
+              : []),
+            ...Object.entries(legacyLabels)
+              .filter(([key]) =>
+                issues.some((i) => i.field === key && key !== "companies"),
+              )
+              .map(([key, label]) => check("确认原有条件：" + label, [key])),
+          ],
+          extra: (() => {
+            const n = [
+              d.cities.length,
+              d.salary,
+              d.experience.length,
+              d.activity !== "不限",
+              d.hr,
+              d.companies.length,
+              d.excluded.length,
+              d.categories.length,
+              d.description.length,
+            ].filter(Boolean).length;
+            return n ? `已设置 ${n} 项条件` : "其余条件不限";
+          })(),
+        },
+        {
+          id: "job-sources",
+          label: "职位来源",
+          checks: [
+            check("职位来源", ["source-selection"]),
+            ...(search ? [check("搜索关键词", ["source"])] : []),
+          ],
+          extra: `已启用 ${(d.sourceList || []).filter((s) => s.enabled).length} 个来源`,
+        },
+        {
+          id: "job-policy",
+          label: "处理方式",
+          checks: [
+            { label: "默认处理方式", done: Boolean(d.strategy) },
+            ...(d.pause ? [check("定时休息", ["rhythm"])] : []),
+          ],
+          extra: (() => {
+            const n = Object.values(d.overrides || {}).filter(Boolean).length;
+            return n ? `单独处理 ${n} 种情况` : "全部按默认方式处理";
+          })(),
+        },
+      ];
+      const all = sections.flatMap((section) => section.checks);
+      const done = all.filter((c) => c.done).length;
+      // an issue no checklist item covers still keeps the total below 100%
+      const ready = !issues.length;
+      const percent = ready ? 100 : Math.min(99, Math.round((done / all.length) * 100));
+      // count what the rail lists; one item can stand for several validation issues
+      const todoCount = all.length - done || issues.length;
+      return { sections, issues, ready, percent, todoCount };
+    }
+    function sectionRail() {
+      const { sections, issues, ready, percent, todoCount } = autoProgress();
+      return h(
+        "aside",
+        { class: "ux-section-rail", "aria-label": "配置完成度与分组导航" },
+        [
+          h("div", { class: "ux-rail-summary" }, [
+            h("div", { class: "ux-rail-title" }, [
+              h("span", "配置完成度"),
+              h("strong", percent + "%"),
+            ]),
+            E("ElProgress", {
+              percentage: percent,
+              showText: false,
+              strokeWidth: 6,
+              status: ready ? "success" : undefined,
+            }),
+            ready
+              ? h("p", { class: "ux-rail-state is-ready" }, "已可开始打招呼")
+              : button(
+                  "还有 " + todoCount + " 项未完成",
+                  () => {
+                    presentErrors(taskErrors("auto"), "auto");
+                    focusError(issues[0]);
+                  },
+                  { link: true, type: "danger", class: "ux-rail-state" },
+                ),
+          ]),
+          h(
+            "nav",
+            { class: "ux-section-rail-nav", "aria-label": "配置分组" },
+            sections.map((section) => {
+              const doneCount = section.checks.filter((c) => c.done).length;
+              const complete = doneCount === section.checks.length;
+              const todo = section.checks.filter((c) => !c.done);
+              return h(
+                "a",
+                {
+                  href: "#" + section.id,
+                  class: ["ux-rail-item", complete ? "is-complete" : "is-missing"],
+                  "aria-current":
+                    activeAutoSection.value === section.id ? "location" : undefined,
+                  onClick: (event) => {
+                    event.preventDefault();
+                    jumpAutoSection(section.id);
+                  },
+                },
+                [
+                  h("span", { class: "ux-rail-item-head" }, [
+                    h("span", { class: "ux-rail-dot", "aria-hidden": "true" }),
+                    h("span", { class: "ux-rail-label" }, section.label),
+                    h(
+                      "span",
+                      {
+                        class: "ux-rail-count",
+                        "aria-label": `必填 ${doneCount} / ${section.checks.length} 项已完成`,
+                      },
+                      doneCount + "/" + section.checks.length,
+                    ),
+                  ]),
+                  E("ElProgress", {
+                    percentage: Math.round((doneCount / section.checks.length) * 100),
+                    showText: false,
+                    strokeWidth: 4,
+                    status: complete ? "success" : "exception",
+                  }),
+                  h(
+                    "span",
+                    { class: "ux-rail-extra" },
+                    complete
+                      ? section.extra
+                      : "待完善：" + todo.map((c) => c.label).join("、"),
+                  ),
+                ],
+              );
+            }),
+          ),
+        ],
+      );
     }
     function heading(title, desc) {
       return h("header", [
@@ -4199,12 +4346,8 @@ export default Vue.defineComponent({
         tab === "notify"
           ? card("钉钉通知", [
               alert(
-                native.state().config["dingtalk.json"]?.groupRobotAccessToken
-                  ? "钉钉通知已开启"
-                  : "钉钉通知未开启",
-                native.state().config["dingtalk.json"]?.groupRobotAccessToken
-                  ? "success"
-                  : "info",
+                dingtalkConfigured() ? "钉钉通知已开启" : "钉钉通知未开启",
+                dingtalkConfigured() ? "success" : "info",
               ),
               field(
                 "群机器人 AccessToken",
@@ -4213,33 +4356,48 @@ export default Vue.defineComponent({
                   showPassword: true,
                   autocomplete: "off",
                   "aria-label": "钉钉群机器人 AccessToken",
-                  placeholder: "机器人 Webhook 地址中 access_token= 后面的部分",
+                  placeholder: dingtalkConfigured()
+                    ? "已保存（不显示），输入新的令牌可替换"
+                    : "机器人 Webhook 地址，或其中 access_token= 后面的部分",
                 }),
-                "自动打招呼运行时，开聊记录和运行错误会每 2 分钟合并发送到该群。请勿使用公司内部群。留空并保存即关闭通知。",
+                "自动打招呼运行时，开聊记录和运行错误会每 2 分钟合并发送到该群。请勿使用公司内部群。令牌只保存在本机，界面不会读取。",
               ),
               inline([
-                button("保存钉钉配置", saveDingtalk, {
+                button("保存钉钉配置", () => saveDingtalk(false), {
                   type: "primary",
                   loading: dingtalkBusy.value,
+                  disabled: !dingtalkForm.value.token.trim(),
                 }),
+                dingtalkConfigured()
+                  ? button("关闭通知", () => saveDingtalk(true), {
+                      plain: true,
+                      disabled: dingtalkBusy.value,
+                    })
+                  : null,
               ]),
               hint("修改后从下次开始任务起生效。"),
             ])
           : null,
       ];
     }
-    async function saveDingtalk() {
-      let token = dingtalkForm.value.token.trim();
+    function dingtalkConfigured() {
+      return Boolean(
+        native.state().config["dingtalk.json"]?.hasGroupRobotAccessToken,
+      );
+    }
+    async function saveDingtalk(clear) {
+      let token = clear ? "" : dingtalkForm.value.token.trim();
       // accept a pasted webhook URL as well as the bare token
       const fromUrl = /access_token=([^&\s]+)/.exec(token);
       if (fromUrl) token = fromUrl[1];
       dingtalkBusy.value = true;
       try {
-        await native.saveDingtalk(token);
-        dingtalkForm.value.token = token;
+        await native.saveDingtalk({ token, clear });
+        // the token leaves the page once saved
+        dingtalkForm.value.token = "";
         R.message({
           type: "success",
-          message: token ? "钉钉通知已保存" : "钉钉通知已关闭",
+          message: clear ? "钉钉通知已关闭" : "钉钉通知已保存",
         });
       } catch (error) {
         R.message({ type: "error", message: "保存失败：" + error.message });
@@ -4284,6 +4442,8 @@ export default Vue.defineComponent({
       modelBusy.value = true;
       try {
         const result = await native.saveModels(modelForm.value);
+        // typed keys leave the page once saved; only "has a key" comes back
+        modelForm.value = formModels(result.models);
         modelDirty.value = false;
         R.message({
           type: "success",
@@ -4314,6 +4474,29 @@ export default Vue.defineComponent({
       aiFooterObserver = new ResizeObserver(resize);
       aiFooterObserver.observe(el);
       resize();
+    }
+    async function loadModelList(m, role, force = false) {
+      const url = String(m.providerCompleteApiUrl || "").trim();
+      // a typed key and the saved key may list different models
+      const source = url + "|" + (m.providerApiSecret ? "typed" : "saved");
+      if (!url || modelListLoading.value[role]) return;
+      if (!force && modelLists.value[role]?.source === source) return;
+      modelListLoading.value = { ...modelListLoading.value, [role]: true };
+      modelListError.value = { ...modelListError.value, [role]: "" };
+      try {
+        const ids = await native.listModels(clone(m));
+        modelLists.value = { ...modelLists.value, [role]: { source, ids } };
+      } catch (error) {
+        modelListError.value = {
+          ...modelListError.value,
+          [role]: String(error.message || error).replace(
+            /^Error invoking remote method '[^']+': (Error: )?/,
+            "",
+          ),
+        };
+      } finally {
+        modelListLoading.value = { ...modelListLoading.value, [role]: false };
+      }
     }
     async function testModels() {
       syncRequestSettings();
@@ -4351,7 +4534,7 @@ export default Vue.defineComponent({
             button(
               "清空配置",
               () => {
-                modelForm.value = modelPair([]);
+                modelForm.value = formModels([]);
                 modelDirty.value = true;
                 modelResults.value = [];
               },
@@ -4426,13 +4609,42 @@ export default Vue.defineComponent({
             ),
             field(
               "模型名称",
-              input(m, "model", {
-                id: id("model"),
-                "aria-label": "模型名称 " + index,
-                placeholder: "填写服务商提供的模型标识",
-                disabled: locked,
-              }),
-              "",
+              inline([
+                E(
+                  "ElSelect",
+                  {
+                    id: id("model"),
+                    modelValue: m.model,
+                    filterable: true,
+                    allowCreate: true,
+                    defaultFirstOption: true,
+                    placeholder: "选择或输入模型名称",
+                    loading: Boolean(modelListLoading.value[role]),
+                    disabled: locked,
+                    "aria-label": "模型名称 " + index,
+                    "onUpdate:modelValue": (value) => update(m, "model", value),
+                    onVisibleChange: (open) => open && loadModelList(m, role),
+                  },
+                  [
+                    ...new Set([
+                      ...(m.model ? [m.model] : []),
+                      ...(modelLists.value[role]?.ids || []),
+                    ]),
+                  ].map((value) => E("ElOption", { value, label: value })),
+                ),
+                button("获取列表", () => loadModelList(m, role, true), {
+                  plain: true,
+                  size: "small",
+                  loading: Boolean(modelListLoading.value[role]),
+                  disabled: locked,
+                  "aria-label": "获取模型列表 " + index,
+                }),
+              ]),
+              modelListError.value[role]
+                ? "获取模型列表失败：" +
+                    modelListError.value[role] +
+                    "。可以直接输入模型名称。"
+                : "展开时自动从接口获取可用模型，也可以直接输入。",
               false,
               id("model"),
             ),
@@ -4456,9 +4668,14 @@ export default Vue.defineComponent({
                 showPassword: true,
                 autocomplete: "off",
                 "aria-label": "API密钥 " + index,
+                placeholder: m.hasProviderApiSecret
+                  ? "已保存（不显示），留空则保持不变"
+                  : "",
                 disabled: locked,
               }),
-              "密钥保存在本机。",
+              m.hasProviderApiSecret
+                ? "密钥只保存在本机，界面不会读取；更换接口地址后需重新填写。"
+                : "密钥保存在本机。",
               false,
               id("key"),
             ),
@@ -4997,6 +5214,7 @@ export default Vue.defineComponent({
                     (route.value === "settings" && settingTab.value === "ai")
                       ? "ux-inner--config"
                       : "",
+                    route.value === "auto" ? "ux-inner--with-rail" : "",
                     ["library", "records"].includes(route.value)
                       ? "ux-inner--data"
                       : "",

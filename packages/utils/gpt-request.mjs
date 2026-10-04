@@ -21,6 +21,16 @@ export function thinkingParams(baseURL, thinking) {
   return match ? match[1](thinking) : {};
 }
 
+// model ids offered by an OpenAI-compatible provider (GET {baseURL}/models)
+export async function listModels({ baseURL, apiKey, timeout = 15000 }) {
+  const openai = new OpenAI({ baseURL, apiKey, timeout, maxRetries: 0 });
+  const ids = [];
+  for await (const model of openai.models.list()) {
+    if (model?.id) ids.push(String(model.id));
+  }
+  return [...new Set(ids)].sort();
+}
+
 export async function completes(
   {
     baseURL,

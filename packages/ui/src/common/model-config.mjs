@@ -29,8 +29,10 @@ export function completionOptions(model) {
     thinking: settings.thinkingEnabled
   }
 }
+// a new model starts as DeepSeek's deepseek-v4-pro; only the API key needs filling in
+export const DEFAULT_MODEL = { preset: 'deepseek', model: 'deepseek-v4-pro', providerCompleteApiUrl: 'https://api.deepseek.com/v1' }
 export function blankModel(role = 'primary') {
-  return { id: 'model-' + role, role, enabled: role === 'primary', model: '', providerCompleteApiUrl: '', providerApiSecret: '', preset: 'custom' }
+  return { id: 'model-' + role, role, enabled: role === 'primary', providerApiSecret: '', ...DEFAULT_MODEL }
 }
 // Existing arrays are interpreted in saved order, with explicit roles taking precedence.
 // Reading never overwrites the original file; excess legacy entries are backed up on save.
@@ -41,6 +43,9 @@ export function modelPair(list = []) {
   const backup = remaining.find(m => m.role === 'backup') || remaining.find(m => m.enabled) || remaining[0]
   const pair = [primary || blankModel(), backup || blankModel('backup')].map((model, index) => {
     const result = copy(model)
+    // a filled-in default, not a saved model; never picked for requests (and never saved, since
+    // ux-save-models only writes known fields)
+    if (model !== primary && model !== backup) result.placeholder = true
     delete result.serveWeight
     result.role = index === 0 ? 'primary' : 'backup'
     result.enabled = index === 0 || Boolean(model.enabled)
@@ -53,7 +58,7 @@ export function modelPair(list = []) {
 }
 export function pickModel(list, blocked = new Set(), allowedIds) {
   const candidates = modelPair(list)
-  return candidates.find(m => m.enabled && m.model?.trim() && m.providerCompleteApiUrl?.trim() && (!allowedIds?.length || allowedIds.includes(m.id)) && !blocked.has(m.id)) || null
+  return candidates.find(m => !m.placeholder && m.enabled && m.model?.trim() && m.providerCompleteApiUrl?.trim() && (!allowedIds?.length || allowedIds.includes(m.id)) && !blocked.has(m.id)) || null
 }
 export function validModels(list) {
   if (!Array.isArray(list) || !list.length) return '请填写首选模型。'

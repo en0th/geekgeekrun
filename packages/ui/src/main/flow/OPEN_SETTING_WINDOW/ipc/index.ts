@@ -1,5 +1,10 @@
 import { ipcMain, shell, app, dialog, BrowserWindow } from 'electron'
 import { initUxIpc } from '../../../features/ux-config'
+import {
+  keepAutoReminderSecrets,
+  redactLlmConfigList,
+  restoreLlmSecrets
+} from '../../../features/config-secrets'
 import { modelPair, validModels } from '../../../../common/model-config.mjs'
 import path from 'path'
 import * as childProcess from 'node:child_process'
@@ -71,7 +76,8 @@ export default function initIpc() {
     const promiseArr: Array<Promise<unknown>> = []
 
     const dingtalkConfig = readConfigFile('dingtalk.json')
-    if (hasOwn(payload, 'dingtalkRobotAccessToken')) {
+    // the token is never sent to the page, so a blank value means "unchanged"
+    if (hasOwn(payload, 'dingtalkRobotAccessToken') && payload.dingtalkRobotAccessToken) {
       dingtalkConfig.groupRobotAccessToken = payload.dingtalkRobotAccessToken
     }
     promiseArr.push(writeConfigFile('dingtalk.json', dingtalkConfig))
@@ -109,7 +115,7 @@ export default function initIpc() {
       bossConfig.jobNotActiveStrategy = payload.jobNotActiveStrategy
     }
     if (hasOwn(payload, 'autoReminder')) {
-      bossConfig.autoReminder = payload.autoReminder
+      bossConfig.autoReminder = keepAutoReminderSecrets(payload.autoReminder, bossConfig.autoReminder)
     }
 
     // city
@@ -453,7 +459,8 @@ export default function initIpc() {
     })
     const defer = Promise.withResolvers()
     async function saveLlmConfigHandler(_, configToSave) {
-      await writeConfigFile('llm.json', configToSave)
+      // the page only sees blanked keys; keep the saved ones it didn't replace
+      await writeConfigFile('llm.json', restoreLlmSecrets(configToSave, readConfigFile('llm.json')))
       defer.resolve()
       ipcMain.removeHandler('save-llm-config')
       llmConfigWindow?.close()
@@ -550,7 +557,7 @@ export default function initIpc() {
       ipcMain.removeHandler('request-llm-for-test')
     })
     async function getLlmConfigList() {
-      return await readConfigFile('llm.json')
+      return redactLlmConfigList(await readConfigFile('llm.json'))
     }
     ipcMain.handle('get-llm-config-for-test', getLlmConfigList)
     readNoReplyReminderLlmMockWindow?.once('closed', () => {

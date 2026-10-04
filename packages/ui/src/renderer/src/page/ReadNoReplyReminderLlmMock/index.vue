@@ -136,7 +136,7 @@
           >
             <div>{{ it.model }}</div>
             <div class="font-size-12px color-#bbb">
-              {{ formatApiSecret(it.providerApiSecret) || '' }}
+              {{ it.hasProviderApiSecret ? 'API Secret 已设置' : '' }}
             </div>
           </div>
           <div
@@ -318,19 +318,6 @@ async function sendLlmGeneratedContent() {
 
 function closeWindow() {
   electron.ipcRenderer.send(`close-read-no-reply-reminder-llm-mock-window`)
-}
-
-function formatApiSecret(text) {
-  if (typeof text !== 'string' || !text?.trim()) {
-    return ''
-  }
-  if (text === 'ollama') {
-    return text
-  }
-  if (text.length >= 8) {
-    return `${text.slice(0, 4)}***${text.slice(-4)}`
-  }
-  return `***`
 }
 
 gtagRenderer('enter_mock_chat_page')

@@ -160,6 +160,7 @@
               <el-form-item prop="providerApiSecret" label="从服务提供商处获取的 API Secret">
                 <el-input
                   v-model="conf.providerApiSecret"
+                  :placeholder="conf.hasProviderApiSecret ? '已保存（不显示），留空则保持不变' : ''"
                   :autosize="{
                     minRows: 10,
                     maxRows: 10
@@ -360,7 +361,8 @@ onMounted(async () => {
   if (!savedFileContent?.length) {
     return
   }
-  const keyOfItem = Object.keys(getNewConfigItem())
+  // keys are never sent here; hasProviderApiSecret says one is saved
+  const keyOfItem = [...Object.keys(getNewConfigItem()), 'hasProviderApiSecret']
   formContent.value = savedFileContent.map((it) => {
     const conf: any = {}
     for (const k of keyOfItem) {

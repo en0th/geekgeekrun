@@ -93,3 +93,59 @@ export function describeFilterRow(row: FilterRow, field: RunDataField) {
   }
   return `${field.label} ${op} ${fmt(row.value)}`
 }
+
+export type DrillFilter =
+  | { kind: 'column'; field: string; values: (string | number | null)[] }
+  | { kind: 'rows'; rows: FilterRow[] }
+  | { kind: 'unsupported' }
+
+// local [start, end] of a strftime bucket: day YYYY-MM-DD, month YYYY-MM, week YYYY-Www
+// (SQLite %W: weeks start on Monday, week 00 is the days before the first Monday)
+export function bucketRange(bucket: string, name: string): [Date, Date] | null {
+  if (bucket === 'day' || bucket === 'month') {
+    const unit = bucket
+    const d = dayjs(name)
+    return d.isValid() ? [d.startOf(unit).toDate(), d.endOf(unit).toDate()] : null
+  }
+  if (bucket === 'week') {
+    const m = /^(\d{4})-W(\d{2})$/.exec(name)
+    if (!m) return null
+    const jan1 = dayjs(`${m[1]}-01-01`)
+    const firstMonday = jan1.add((8 - jan1.day()) % 7, 'day')
+    const week = Number(m[2])
+    const start = week === 0 ? jan1 : firstMonday.add(week - 1, 'week')
+    const end = (week === 0 ? firstMonday : start.add(1, 'week')).subtract(1, 'millisecond')
+    return [start.toDate(), end.toDate()]
+  }
+  return null
+}
+
+/** Turn a clicked stats item into table filters. */
+export function drillToFilter(
+  group: { field: string; bucket?: string },
+  raw: unknown
+): DrillFilter {
+  const { field, bucket } = group
+  if (!bucket) return { kind: 'column', field, values: [raw as string | number | null] }
+  if (['day', 'week', 'month'].includes(bucket)) {
+    const range = bucketRange(bucket, String(raw))
+    return range ? { kind: 'rows', rows: [{ field, op: 'between', value: range }] } : { kind: 'unsupported' }
+  }
+  if (bucket === 'numberRange') {
+    // labels from the stats query: "<a", "a-b" (a <= v < b) or "a+"
+    const text = String(raw)
+    let m
+    if ((m = /^<(-?[\d.]+)$/.exec(text))) return { kind: 'rows', rows: [{ field, op: 'lt', value: Number(m[1]) }] }
+    if ((m = /^(-?[\d.]+)\+$/.exec(text))) return { kind: 'rows', rows: [{ field, op: 'gte', value: Number(m[1]) }] }
+    if ((m = /^(-?[\d.]+)-(-?[\d.]+)$/.exec(text)))
+      return {
+        kind: 'rows',
+        rows: [
+          { field, op: 'gte', value: Number(m[1]) },
+          { field, op: 'lt', value: Number(m[2]) }
+        ]
+      }
+  }
+  // hour of day / weekday have no matching filter
+  return { kind: 'unsupported' }
+}

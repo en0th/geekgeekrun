@@ -26,6 +26,7 @@ echarts.use([
 ])
 
 const props = defineProps<{ option: echarts.EChartsCoreOption }>()
+const emit = defineEmits<{ itemClick: [dataIndex: number] }>()
 const el = ref<HTMLElement>()
 let chart: echarts.ECharts | null = null
 let ro: ResizeObserver | null = null
@@ -33,6 +34,9 @@ let ro: ResizeObserver | null = null
 onMounted(() => {
   chart = echarts.init(el.value!)
   chart.setOption(props.option)
+  chart.on('click', (params) => {
+    if (typeof params.dataIndex === 'number') emit('itemClick', params.dataIndex)
+  })
   ro = new ResizeObserver(() => chart?.resize())
   ro.observe(el.value!)
 })

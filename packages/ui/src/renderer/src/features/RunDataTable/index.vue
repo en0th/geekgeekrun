@@ -189,6 +189,7 @@
       :dataset="dataset"
       :query="query"
       :preset="statsPreset"
+      @drill="handleDrill"
     />
     <ImportDialog v-model:visible="importVisible" :dataset="dataset" @imported="fetchData" />
   </div>
@@ -236,7 +237,13 @@ import { gtagRenderer } from '@renderer/utils/gtag'
 import type { RunDataColumn, RunDataRow, RunDataStatsPreset } from './types'
 import { useRunDataTablePrefs } from './prefs'
 import { enumLabel, formatFieldValue, toPlain } from './format'
-import { type FilterRow, describeFilterRow, isFilterRowComplete, toServerFilter } from './filters'
+import {
+  type FilterRow,
+  describeFilterRow,
+  drillToFilter,
+  isFilterRowComplete,
+  toServerFilter
+} from './filters'
 import { exportFormatOptions, exportRows, rowsToTsv, type ExportFormat } from './io'
 import ColumnHeaderFilter from './ColumnHeaderFilter.vue'
 import ColumnSettings from './ColumnSettings.vue'
@@ -650,6 +657,34 @@ function openStats() {
 function openImport() {
   trackAction('open_import')
   importVisible.value = true
+}
+
+// ---------- stats drill-down ----------
+function handleDrill({
+  group,
+  raw,
+  label
+}: {
+  group: { field: string; bucket?: string }
+  raw: unknown
+  label: string
+}) {
+  const field = fieldByKey(group.field)
+  if (!field) return
+  const filter = drillToFilter(group, raw)
+  if (filter.kind === 'unsupported') {
+    ElMessage.info('按小时、星期统计的项暂不支持筛选')
+    return
+  }
+  trackAction('stats_drill', { field: group.field, bucket: group.bucket ?? '' })
+  if (filter.kind === 'column') {
+    // replaces any value filter on that column, like picking it in the header filter
+    columnFilters[filter.field] = filter.values
+  } else {
+    advancedRows.value = [...advancedRows.value, ...filter.rows]
+  }
+  statsVisible.value = false
+  ElMessage.success(`已添加筛选：${field.label} ${label}`)
 }
 
 // ---------- fullscreen ----------
