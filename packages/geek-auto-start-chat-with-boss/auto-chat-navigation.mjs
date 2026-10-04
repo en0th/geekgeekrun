@@ -24,8 +24,10 @@ export async function loadNextJobBatch({ page, list, timeoutMs = 15000, pause = 
   const height = await page.evaluate('window.innerHeight')
   await page.mouse.move(box.x + box.width / 2, height / 2)
   const deadline = now() + timeoutMs
+  // randomised per batch like the original scroller, so the scrolling isn't uniform
+  const increase = 40 + Math.floor(30 * Math.random())
   while (now() < deadline) {
-    await page.mouse.wheel({ deltaY: 60 })
+    await page.mouse.wheel({ deltaY: increase })
     await pause(100)
     const next = await readListSnapshot(page)
     if (!next) throw new Error('AUTO_CHAT_LIST_STALLED')

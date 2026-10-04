@@ -935,7 +935,8 @@ async function toRecommendPage (hooks) {
                 if (!Array.isArray(jobListData)) throw new Error('AUTO_CHAT_LIST_STALLED')
                 for (const row of jobListData) {
                   const salary = parseSalary(row.salaryDesc || '')
-                  const reason = listSkipReason(row, {
+                  // unparseable salaries are 兼职、日结、实习 etc.; skip them whether or not the salary filter is on
+                  const reason = (salary.low == null || salary.high == null ? '薪资无法识别（兼职、日结、实习等）' : '') || listSkipReason(row, {
                     cities: expectCityList, cityStrategy: expectCityNotMatchStrategy,
                     experiences: expectWorkExpList, experienceStrategy: expectWorkExpNotMatchStrategy,
                     salaryEnabled: !!isSalaryFilterEnabled, salaryStrategy: expectSalaryNotMatchStrategy,
@@ -967,8 +968,9 @@ async function toRecommendPage (hooks) {
                   return hasIntersection(theirSalaryInterval, ourSalaryInterval)
                 }
                 else if (expectSalaryCalculateWay === SalaryCalculateWay.ANNUAL_PACKAGE) {
-                  if (salaryData.low == null || salaryData.high == null || !salaryData.month) return false
-                  const salaryDataMonth = salaryData.month
+                  if (salaryData.low == null || salaryData.high == null) return false
+                  // most listings don't state 薪数; assume 12 as before
+                  const salaryDataMonth = salaryData.month || 12
                   let ourSalaryInterval = [expectSalaryLow ?? null, expectSalaryHigh ?? null]
                   if (ourSalaryInterval.every(it => !isNaN(parseFloat(it)))) {
                     ourSalaryInterval = ourSalaryInterval.sort((a, b) => a - b)
@@ -1048,7 +1050,8 @@ async function toRecommendPage (hooks) {
                   hasReachLastPage = !nextBatch.hasMore
                   searchGuard.loadedBatch()
                   await waitForSageTimeOrJustContinue({ tag: 'afterJobListPageFetched', hooks })
-                  await sleep(500)
+                  // keep the original human-like pace; faster paging raises the risk of BOSS rate limiting
+                  await sleep(5000)
                   await updateJobListData()
                   tempTargetJobIndexToCheckDetail = getTempTargetJobIndexToCheckDetail()
                 }
@@ -1071,12 +1074,12 @@ async function toRecommendPage (hooks) {
                   `)
 
                   await sleepWithRandomDelay(200)
-
+                  await sleep(500)
                   await openJobCardForReview({
                     page, list: recommendJobListElProxy, index: tempTargetJobIndexToCheckDetail,
                     jobId: jobListData[tempTargetJobIndexToCheckDetail]?.encryptJobId
                   })
-                  await sleepWithRandomDelay(200)
+                  await sleepWithRandomDelay(2000)
                   await waitForSageTimeOrJustContinue({
                     tag: 'afterJobDetailFetched',
                     hooks
@@ -1098,9 +1101,7 @@ async function toRecommendPage (hooks) {
                   }, { title: !!expectJobNameRegExpStr?.trim(), category: !!expectJobTypeRegExpStr?.trim(),
                     description: !!expectJobDescRegExpStr?.trim(), city: !!expectCityList.length,
                     company: enableCompanyAllowList || !!blockCompanyNameRegExp, experience: !!expectWorkExpList.length,
-                    hr: isPosterHrFilterEnabled, salary: !!isSalaryFilterEnabled,
-                    annual: expectSalaryCalculateWay === SalaryCalculateWay.ANNUAL_PACKAGE,
-                    activity: markAsNotActiveSelectedTimeRange > 0, activeLabels: activeDescList })
+                    hr: isPosterHrFilterEnabled, salary: !!isSalaryFilterEnabled })
                   if (missing.length) {
                     blockJobNotSuit.add(targetJobData.jobInfo.encryptId)
                     autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'skipped', detail: missing.join('；') + '，不发送、不标记' })

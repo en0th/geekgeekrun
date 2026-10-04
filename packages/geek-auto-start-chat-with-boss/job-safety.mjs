@@ -12,11 +12,11 @@ export function missingJobFields(row, rules) {
   requireText(rules.company, row.companyName, '公司')
   requireText(rules.experience, row.experienceName, '经验')
   requireText(rules.hr, row.bossTitle, '招聘者身份')
+  // a missing 薪数 counts as 12 months, and an unknown or unrecognised active status is not
+  // treated as inactive; most listings omit both, so requiring them would skip most jobs
   if (rules.salary) {
     if (row.salaryLow == null || row.salaryHigh == null || !Number.isFinite(Number(row.salaryLow)) || !Number.isFinite(Number(row.salaryHigh))) missing.push('薪资信息不足')
-    if (rules.annual && !(Number(row.salaryMonth) > 0)) missing.push('薪数缺失，年薪无法确认')
   }
-  if (rules.activity && (row.active == null || !rules.activeLabels?.includes(row.active || '半年前活跃'))) missing.push('招聘者活跃状态无法确认')
   return missing
 }
 export function scopedMarkStrategy(strategy, scope, companies, companyName) {

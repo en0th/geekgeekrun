@@ -3022,7 +3022,6 @@ export default Vue.defineComponent({
           experience: d.experience.length,
           hr: d.hr,
           salary: d.salary,
-          annual: d.unit === "year",
         }),
         reasonKeys = [];
       function reject(key, text) {
@@ -3113,10 +3112,9 @@ export default Vue.defineComponent({
       if (d.salary) {
         if (row.salaryLow == null || row.salaryHigh == null)
           unknown.push("薪资信息不足");
-        else if (d.unit === "year" && !row.salaryMonth)
-          unknown.push("薪数缺失，年薪无法确认");
         else {
-          const scale = d.unit === "year" ? row.salaryMonth / 10 : 1000;
+          // same as the run: a missing 薪数 counts as 12 months
+          const scale = d.unit === "year" ? (row.salaryMonth || 12) / 10 : 1000;
           if (
             (d.low != null && row.salaryHigh * scale < d.low) ||
             (d.high != null && row.salaryLow * scale > d.high)
@@ -3142,15 +3140,13 @@ export default Vue.defineComponent({
               ? JSON.parse(row.extInfo)
               : row.extInfo || {};
         } catch {}
+        // same as the run: a missing or unrecognised status is not treated as inactive
         const active = row.bossActiveTimeDesc || info.bossActiveTimeDesc;
-        if (active == null) unknown.push("缺少招聘者活跃状态");
-        else {
-          const index = activeLabels.indexOf(active || "半年前活跃"),
-            threshold = Math.max(0, activeLabels.indexOf(d.activity) - 1);
-          if (index < 0) unknown.push("无法识别活跃状态");
-          else if (index > 0 && index <= threshold)
-            reject("activity", "招聘者活跃状态较旧");
-        }
+        const index =
+            active == null ? -1 : activeLabels.indexOf(active || "半年前活跃"),
+          threshold = Math.max(0, activeLabels.indexOf(d.activity) - 1);
+        if (index > 0 && index <= threshold)
+          reject("activity", "招聘者活跃状态较旧");
       }
       const actionCodes = [
         ...new Set(
