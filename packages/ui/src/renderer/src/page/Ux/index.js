@@ -910,8 +910,6 @@ export default Vue.defineComponent({
       return key ? errors.value.filter((issue) => issue.field === key) : [];
     }
     function requiredNote(key) {
-      if (key === "titles")
-        return effective().regexMode ? "岗位规则至少一项" : "必填";
       if (key === "source-selection") return "必选 · 至少一项";
       if (/^ai-(primary|backup)-(model|url)$/.test(key)) return "必填";
       if (key === "template-name") return "创建时必填";
@@ -1984,16 +1982,7 @@ export default Vue.defineComponent({
                 text: `${label}正则格式错误，请检查括号或转义符。`,
               });
             }
-        if (!d.regexTitle && !d.regexType && !d.regexDesc)
-          a.push({
-            field: "titles",
-            text: "请填写目标岗位，或在高级模式设置至少一条岗位规则。",
-          });
-      } else if (!d.titles.length && !d.legacyPatterns?.titles)
-        a.push({
-          field: "titles",
-          text: "请添加目标岗位关键词，输入后按回车确认。",
-        });
+      }
       if (needsCompanyList(d) && !d.companies.length)
         a.push({
           field: "companies",
@@ -2529,7 +2518,7 @@ export default Vue.defineComponent({
               }),
               review(target, "titles"),
             ]),
-            "包含任一关键词即可，如“工程师”可匹配不同工程师岗位。",
+            "选填，不填则不限岗位名称。包含任一关键词即可，如“工程师”可匹配不同工程师岗位。",
             false,
             "titles",
           ),
@@ -4199,7 +4188,9 @@ export default Vue.defineComponent({
           label: "求职条件",
           skipped: collectAll,
           checks: collectAll ? [] : [
-            check("目标岗位", ["titles", "regexTitle", "regexType", "regexDesc"]),
+            ...(d.regexMode
+              ? [check("岗位规则格式", ["regexTitle", "regexType", "regexDesc"])]
+              : []),
             ...(d.salary ? [check("期望薪资", ["salary"])] : []),
             ...(needsCompanyList(d) ? [check("公司名单", ["companies"])] : []),
             ...(d.regexMode && d.regexExclude
@@ -5870,7 +5861,7 @@ export default Vue.defineComponent({
           "目标岗位",
           sn.regexMode
             ? "高级规则：" + (sn.regexTitle || "—")
-            : list(sn.titles) || (sn.legacyPatterns?.titles ? "沿用原有条件" : "未设置"),
+            : list(sn.titles) || (sn.legacyPatterns?.titles ? "沿用原有条件" : "不限"),
         ],
         ["职位分类", list(sn.categories) || "不限"],
         ["岗位描述包含", list(sn.description) || "不限"],
@@ -7253,7 +7244,7 @@ export default Vue.defineComponent({
         title = "使用说明";
         content = [
           h("ol", { class: "ux-summary" }, [
-            h("li", "填写目标岗位、城市与可选薪资；需要时再添加其它条件。"),
+            h("li", "按需填写目标岗位、城市与薪资；不填的条件即不限。"),
             h("li", "预览已采集职位，检查具体匹配原因。"),
             h("li", "检查账号和浏览器，再确认开始；运行中可以停止。"),
           ]),
