@@ -40,6 +40,7 @@ import buildInfo from "../../../../common/build-info.json";
 import "./filter-data.js";
 import "./keyword-examples.js";
 import "./ux.css";
+import { refractionMap } from "./glass.js";
 import {
   missingJobFields,
   scopedMarkStrategy,
@@ -6578,6 +6579,105 @@ export default Vue.defineComponent({
         { default: () => content, footer: () => inline(footerNodes) },
       );
     }
+    // macOS liquid-glass nav (see glass.js): a wallpaper behind the panel is blurred, refracted at
+    // the rim and colour-mixed by an SVG backdrop filter; the pointer adds a moving reflection and a
+    // slight parallax on the wallpaper so the material reacts as things move behind it
+    const vibrant = window.electron?.process?.platform === "darwin";
+    const GLASS_INSET = 8;
+    let glassNav, glassObserver, glassFrame, glassSize = "";
+    function attachGlass(el) {
+      if (!vibrant || el === glassNav) return;
+      glassObserver?.disconnect();
+      cancelAnimationFrame(glassFrame);
+      glassNav = el;
+      glassSize = "";
+      if (!el) return;
+      glassObserver = new ResizeObserver(() => {
+        cancelAnimationFrame(glassFrame);
+        glassFrame = requestAnimationFrame(updateGlassFilter);
+      });
+      glassObserver.observe(el);
+      updateGlassFilter();
+    }
+    function updateGlassFilter() {
+      const el = glassNav;
+      if (!el) return;
+      const w = Math.round(el.clientWidth - GLASS_INSET * 2),
+        h = Math.round(el.clientHeight - GLASS_INSET * 2);
+      if (w <= 0 || h <= 0 || w + "x" + h === glassSize) return;
+      glassSize = w + "x" + h;
+      const map = refractionMap(w, h, { radius: 22, bezel: 18, maxShift: 14 });
+      el.querySelector("#ux-glass-filter")?.setAttribute("width", w);
+      el.querySelector("#ux-glass-filter")?.setAttribute("height", h);
+      const image = el.querySelector("#ux-glass-filter feImage");
+      image?.setAttribute("width", w);
+      image?.setAttribute("height", h);
+      image?.setAttribute("href", map.url);
+      el.querySelector("#ux-glass-filter feDisplacementMap")?.setAttribute("scale", map.scale);
+    }
+    function moveGlassHighlight(e) {
+      const el = e.currentTarget,
+        r = el.getBoundingClientRect(),
+        x = e.clientX - r.left,
+        y = e.clientY - r.top;
+      el.style.setProperty("--glass-x", x + "px");
+      el.style.setProperty("--glass-y", y + "px");
+      el.style.setProperty("--glass-dx", (x / r.width - 0.5) * 2);
+      el.style.setProperty("--glass-dy", (y / r.height - 0.5) * 2);
+      el.style.setProperty("--glass-glow", "1");
+    }
+    function hideGlassHighlight(e) {
+      const el = e.currentTarget;
+      el.style.setProperty("--glass-glow", "0");
+      el.style.setProperty("--glass-dx", "0");
+      el.style.setProperty("--glass-dy", "0");
+    }
+    function glassLayers() {
+      if (!vibrant) return [];
+      return [
+        h("div", { class: "ux-glass-backdrop", "aria-hidden": "true" }, [
+          h("div", { class: "ux-glass-wallpaper" }),
+        ]),
+        h("svg", { class: "ux-glass-defs", "aria-hidden": "true", focusable: "false" }, [
+          h(
+            "filter",
+            {
+              id: "ux-glass-filter",
+              x: 0,
+              y: 0,
+              filterUnits: "userSpaceOnUse",
+              primitiveUnits: "userSpaceOnUse",
+              "color-interpolation-filters": "sRGB",
+            },
+            [
+              // 1 frost the backdrop
+              h("feGaussianBlur", {
+                in: "SourceGraphic",
+                stdDeviation: 6,
+                edgeMode: "duplicate",
+                result: "blur",
+              }),
+              // 2 refract it through the rounded bezel
+              h("feImage", { x: 0, y: 0, preserveAspectRatio: "none", result: "map" }),
+              h("feDisplacementMap", {
+                in: "blur",
+                in2: "map",
+                xChannelSelector: "R",
+                yChannelSelector: "G",
+                result: "refracted",
+              }),
+              // 3 colour mixing: glass concentrates and slightly lifts what it transmits
+              h("feColorMatrix", { in: "refracted", type: "saturate", values: 1.8, result: "mixed" }),
+              h("feComponentTransfer", { in: "mixed" }, [
+                h("feFuncR", { type: "linear", slope: 1.02, intercept: 0.05 }),
+                h("feFuncG", { type: "linear", slope: 1.02, intercept: 0.05 }),
+                h("feFuncB", { type: "linear", slope: 1.02, intercept: 0.05 }),
+              ]),
+            ],
+          ),
+        ]),
+      ];
+    }
     const Root = {
       render() {
         const taskCount =
@@ -6585,9 +6685,25 @@ export default Vue.defineComponent({
             .length + taskStore.taskQueue.length;
         return h(
           "div",
-          { class: ["ux-shell", navCollapsed.value ? "is-nav-collapsed" : ""] },
+          {
+            class: [
+              "ux-shell",
+              navCollapsed.value ? "is-nav-collapsed" : "",
+              vibrant ? "is-vibrant" : "",
+            ],
+          },
           [
-          h("aside", { class: "aside-nav ux-nav", "data-v-cccda18a": "" }, [
+          h(
+            "aside",
+            {
+              class: "aside-nav ux-nav",
+              "data-v-cccda18a": "",
+              ref: attachGlass,
+              onPointermove: moveGlassHighlight,
+              onPointerleave: hideGlassHighlight,
+            },
+            [
+            ...glassLayers(),
             h("div", { class: "ux-nav-head" }, [
               h("div", { class: "ux-nav-brand" }, [
                 h("p", { class: "ux-brand" }, "牛人快跑"),
@@ -6950,6 +7066,8 @@ export default Vue.defineComponent({
     );
     R.onUnmounted(() => {
       aiFooterObserver?.disconnect();
+      glassObserver?.disconnect();
+      cancelAnimationFrame(glassFrame);
       clearTimeout(draftSaveTimer);
       clearInterval(progressTimer);
       clearSpotlight();

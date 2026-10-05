@@ -18,6 +18,14 @@ export function createMainWindow(): BrowserWindow {
           /* icon */
         }
       : {}),
+    // macOS: native sidebar glass shows through wherever the page is transparent (the left nav)
+    ...(process.platform === 'darwin'
+      ? {
+          vibrancy: 'sidebar' as const,
+          visualEffectState: 'active' as const,
+          backgroundColor: '#00000000'
+        }
+      : {}),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       sandbox: false

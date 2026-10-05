@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, globalShortcut } from 'electron'
+import { app, BrowserWindow, ipcMain, globalShortcut, nativeTheme } from 'electron'
 import { startJobStatusPollScheduler } from '../../features/job-status-poll'
 import { applyPendingDbRestore, startDbBackupScheduler } from '../../features/db-backup'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
@@ -26,6 +26,8 @@ export function openSettingWindow() {
   whenReadyPromise.then(() => {
     // Set app user model id for windows
     electronApp.setAppUserModelId('com.electron')
+    // the UI is designed for light only; keep native materials (sidebar glass, menus) light too
+    nativeTheme.themeSource = 'light'
 
     // Default open or close DevTools by F12 in development
     // and ignore CommandOrControl + R in production.
