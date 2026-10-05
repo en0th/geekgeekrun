@@ -25,6 +25,7 @@ import CompanyLibrary from "../MainLayout/CompanyLibrary.vue";
 import StartChatRecord from "../MainLayout/StartChatRecord.vue";
 import MarkAsNotSuitRecord from "../MainLayout/MarkAsNotSuitRecord.vue";
 import FavoriteJobs from "../MainLayout/FavoriteJobs.vue";
+import { toDbDate, formatDbDate } from "../../features/RunDataTable/format";
 import {
   Fold,
   Expand,
@@ -38,6 +39,7 @@ import {
   Setting,
   Compass,
   TopRight,
+  Check,
 } from "@element-plus/icons-vue";
 import { getAutoStartChatSteps } from "../../../../common/prerequisite-step-by-step-check";
 import {
@@ -49,6 +51,7 @@ import buildInfo from "../../../../common/build-info.json";
 import "./filter-data.js";
 import "./keyword-examples.js";
 import "./ux.css";
+import "./task-review.css";
 import { refractionMap } from "./glass.js";
 import {
   missingJobFields,
@@ -1081,6 +1084,10 @@ export default Vue.defineComponent({
       const d = effective();
       d.inherit = false;
       d.inheritedFields = [];
+      return withoutTaskPace(d);
+    }
+    function withoutTaskPace(d) {
+      for (const key of ["useGlobalPace", "pause", "actions", "minutes", "jobListLoadWaitSeconds", "jobDetailViewWaitSeconds"]) delete d[key];
       return d;
     }
     function templateModified() {
@@ -1296,10 +1303,12 @@ export default Vue.defineComponent({
       }
       const saved = keywordDraft(clone(t.snapshot)),
         next = keywordDraft(clone(drafts[id] || saved));
+      withoutTaskPace(saved);
+      withoutTaskPace(next);
       // templates saved before the run settings existed keep the current values
       for (const target of [saved, next])
         for (const key of Object.keys(readRunSettings({})))
-          if (target[key] === undefined) target[key] = draft.value[key];
+          if (!["pause", "actions", "minutes", "jobListLoadWaitSeconds", "jobDetailViewWaitSeconds"].includes(key) && target[key] === undefined) target[key] = draft.value[key];
       const baseline = JSON.stringify(saved);
       if (
         !(await writeTemplateState(templates.value, id, baseline, next, drafts))
@@ -1587,7 +1596,7 @@ export default Vue.defineComponent({
                   "aria-label": "模板包含哪些设置",
                 }),
               default: () => [
-                h("p", "模板保存求职条件、职位来源、处理方式与运行节奏。"),
+                h("p", "模板保存运行方式、求职条件、职位来源与处理方式；运行节奏由系统设置统一管理。"),
                 hint("选择模板不会切换消息跟进、消息内容或AI配置。"),
               ],
             },
@@ -1715,12 +1724,12 @@ export default Vue.defineComponent({
     // settings every run uses, whatever the run mode
     function runConfig(d) {
       // the global pace is read when the configuration is saved (begin() loads it first)
-      const pace = d.useGlobalPace && globalPace.value ? globalPace.value : d;
+      const pace = globalPace.value || { pause: true, actions: 100, minutes: 15, jobListLoadWaitSeconds: DEFAULT_JOB_LIST_LOAD_WAIT_SECONDS, jobDetailViewWaitSeconds: DEFAULT_JOB_DETAIL_VIEW_WAIT_SECONDS };
       return {
         autoChatRunMode: d.runMode === "collect" ? "collect" : "chat",
         collectOnlyMatchingJobs: d.collectOnlyMatchingJobs !== false,
         skipUnparseableSalaryJob: d.skipUnparseableSalaryJob !== false,
-        useGlobalRunPace: Boolean(d.useGlobalPace),
+        useGlobalRunPace: true,
         isSageTimeEnabled: pace.pause,
         ...(pace.pause
           ? { sageTimeOpTimes: pace.actions, sageTimePauseMinute: pace.minutes }
@@ -1946,18 +1955,6 @@ export default Vue.defineComponent({
       const a = [];
       if (!isCollectAll(d)) conditionIssues(d, a);
       sourceIssues(d, a);
-      if (
-        !d.useGlobalPace &&
-        d.pause &&
-        (!Number.isInteger(d.actions) ||
-          d.actions < 1 ||
-          !Number.isFinite(d.minutes) ||
-          d.minutes < 0)
-      )
-        a.push({
-          field: "rhythm",
-          text: "休息前操作次数须为正整数，休息时长不能留空或小于0。",
-        });
       return a;
     }
     function conditionIssues(d, a) {
@@ -2788,12 +2785,6 @@ export default Vue.defineComponent({
       }
       const d = effective();
       const facts = Object.fromEntries(templateFacts(d));
-      const g = globalPace.value;
-      const pace =
-        d.useGlobalPace && g
-          ? "全局设置：" +
-            (g.pause ? `每 ${g.actions} 次操作休息 ${g.minutes} 分钟` : "不定时休息")
-          : facts["运行节奏"];
       const keys = isCollectAll(d)
         ? ["运行方式", "职位来源"]
         : [
@@ -2812,7 +2803,7 @@ export default Vue.defineComponent({
             ].filter((k) => !["不限", "无"].includes(facts[k])),
             ...(d.runMode === "collect" ? [] : ["默认处理方式"]),
           ];
-      return [...keys.map((k) => [k, facts[k]]), ["运行节奏", pace]];
+      return keys.map((k) => [k, facts[k]]);
     }
     function checkFacts() {
       const rows = checkFactRows();
@@ -3514,6 +3505,20 @@ export default Vue.defineComponent({
     const liveTasks = ref({});
     // the task whose dashboard the 任务列表 page shows
     const taskDetailId = ref(null);
+    const selectedTask = ref(null);
+    const detailTab = ref("overview");
+    const detailRows = ref([]);
+    const detailBusy = ref(false);
+    const detailError = ref("");
+    const detailSearch = ref("");
+    const detailCity = ref("");
+    const detailPage = ref(1);
+    const taskSearch = ref("");
+    const taskMode = ref("");
+    const taskStatus = ref("");
+    const taskPage = ref(1);
+    const nextTaskOpen = ref(false);
+    let detailRequest = 0;
     // runs for which the user chose to keep editing under the curtain
     const curtainDismissed = ref({ auto: null, follow: null });
     const COUNTERS = ["viewed", "collected", "sent", "skipped", "marked"];
@@ -3562,9 +3567,14 @@ export default Vue.defineComponent({
     // counts over the whole run, across restarts
     const liveCount = (live, key) => (live?.base?.[key] || 0) + (live?.progress?.[key] || 0);
     function openTaskDetail(workerId) {
+      if (route.value !== "tasks") navigate("tasks");
       taskDetailId.value = workerId;
-      tasksTab.value = "current";
-      navigate("tasks");
+      const entry = [...taskStore.runningTasks, ...taskStore.taskQueue].find(t => t.workerId === workerId);
+      const args = entry?.args || [];
+      selectedTask.value = { workerId, runRecordId: args.find(a => String(a).startsWith("--run-record-id="))?.split("=")[1], runMode: args.find(a => String(a).startsWith("--run-mode="))?.split("=")[1], startedAt: liveTasks.value[workerId]?.firstStartedAt || entry?.startedAt || entry?.queuedAt || Date.now() - (entry?.uptime || 0), current: true };
+      detailTab.value = "overview";
+      detailSearch.value = ""; detailCity.value = ""; detailPage.value = 1;
+      loadDetailRows();
     }
     async function begin(task) {
       if (
@@ -3585,7 +3595,7 @@ export default Vue.defineComponent({
       shortResume.value = false;
       try {
         if (!(await ensureBossLogin(task))) return;
-        if (task === "auto" && draft.value.useGlobalPace) await loadGlobalPace();
+        if (task === "auto" && !(await loadGlobalPace())) throw Error("运行节奏读取失败，请到设置中检查后重试");
         if (!(await save(false, task))) return;
         if (
           task === "follow" &&
@@ -3725,6 +3735,11 @@ export default Vue.defineComponent({
               },
         );
         await taskStore.getRunningTasks();
+        curtainDismissed.value = { ...curtainDismissed.value, [task]: result.runRecordId };
+        taskDetailId.value = null;
+        tasksTab.value = "current";
+        taskSearch.value = ""; taskMode.value = ""; taskStatus.value = ""; taskPage.value = 1;
+        await navigate("tasks");
       } catch (error) {
         R.message({
           type: "error",
@@ -3752,12 +3767,12 @@ export default Vue.defineComponent({
         if (wasQueued && taskProgress.value[task]) {
           taskProgress.value[task].state = "stopped";
           taskProgress.value[task].stoppedAt = Date.now();
-          taskProgress.value[task].detail = "已移出队列，未开始运行";
+          taskProgress.value[task].detail = "已取消排队，任务未开始";
         }
         R.message(
           running.value[task]
             ? { type: "info", message: "停止请求已发送，等待任务退出。" }
-            : { type: "success", message: wasQueued ? "已移出队列。" : "任务已停止。" },
+            : { type: "success", message: wasQueued ? "已取消排队。" : "任务已停止。" },
         );
       } catch (error) {
         R.message({ type: "error", message: "停止失败：" + error.message });
@@ -3822,7 +3837,7 @@ export default Vue.defineComponent({
           waiting
             ? inline([
                 button("查看任务列表", () => navigate("tasks")),
-                button("移出队列", () => stop(task), {
+                button("取消排队", () => stop(task), {
                   type: "danger",
                   plain: true,
                   loading: stopping.value,
@@ -3889,18 +3904,13 @@ export default Vue.defineComponent({
           label: "处理方式",
           skipped: all ? "收集全部岗位，无需配置" : "",
         },
-        {
-          id: "job-pace",
-          label: "运行节奏",
-          skipped: d.useGlobalPace ? "使用全局运行节奏" : "",
-        },
       ];
     }
     // the step a validation field belongs to; null for fields outside the 找岗位 form
     function stepOfField(field) {
       if (!field || field.startsWith("follow-") || field.startsWith("ai-")) return null;
       if (["source", "source-selection"].includes(field)) return "job-sources";
-      if (field === "rhythm") return "job-pace";
+      if (field === "rhythm") return null;
       if (field === "template-name") return null;
       return "job-preferences";
     }
@@ -3969,7 +3979,7 @@ export default Vue.defineComponent({
                 h(
                   "span",
                   { class: "ux-step-index", "aria-hidden": "true" },
-                  state === "done" ? "✓" : state === "skipped" ? "–" : String(i + 1),
+                  state === "done" ? h(Check, { class: "ux-step-check" }) : state === "skipped" ? "–" : String(i + 1),
                 ),
                 h("span", { class: "ux-step-text" }, [
                   h("span", { class: "ux-step-label" }, step.label),
@@ -3978,13 +3988,9 @@ export default Vue.defineComponent({
                     { class: "ux-step-sub" },
                     step.skipped
                       ? step.skipped
-                      : state === "missing"
-                        ? "待完善"
-                        : order.indexOf(step.id) === order.length - 1
-                          ? "最后一步"
-                          : state === "done"
-                            ? "已完成"
-                            : "",
+                      : state === "missing" ? "待填写 · 点击设置"
+                        : state === "done" ? "已完成 · 点击查看"
+                          : "当前步骤",
                   ),
                 ]),
               ],
@@ -3992,46 +3998,6 @@ export default Vue.defineComponent({
           ]);
         }),
       );
-    }
-    function paceStep() {
-      const d = draft.value;
-      const g = globalPace.value;
-      return card(
-        "运行节奏",
-        [
-          globalPaceCheck(),
-          d.useGlobalPace
-            ? h("div", { class: "ux-pace-summary" }, [
-                hint(
-                  g
-                    ? (g.pause
-                        ? `每操作 ${g.actions} 次休息 ${g.minutes} 分钟；`
-                        : "不定时休息；") +
-                        `加载下一批后等待 ${g.jobListLoadWaitSeconds} 秒，查看详情后等待 ${g.jobDetailViewWaitSeconds} 秒。`
-                    : "正在读取全局运行节奏…",
-                ),
-                button(
-                  "去设置中修改",
-                  () => {
-                    settingTab.value = "pace";
-                    loadGlobalPace();
-                    navigate("settings");
-                  },
-                  { link: true, type: "primary" },
-                ),
-              ])
-            : h("div", { class: "ux-preference-group" }, rhythmControls()),
-        ],
-        { id: "job-pace", tabIndex: -1 },
-      );
-    }
-    function globalPaceCheck() {
-      return h("div", { class: "ux-run-mode-option" }, [
-        check(draft.value, "useGlobalPace", "使用全局运行节奏设置"),
-        hint(
-          "勾选后跳过“运行节奏”这一步，按“设置 → 运行节奏”中的全局设置运行；多份配置模板可共用同一节奏。",
-        ),
-      ]);
     }
     function stepContent(id) {
       if (id === "job-run-mode") return runModeCard();
@@ -4050,7 +4016,7 @@ export default Vue.defineComponent({
           id: "job-policy",
           tabIndex: -1,
         });
-      return paceStep();
+      return null;
     }
     function autoPage() {
       const steps = autoSteps();
@@ -4137,8 +4103,8 @@ export default Vue.defineComponent({
                   ),
                 ),
             inline([
-              button("查看任务", () => openTaskDetail(id), { type: "primary" }),
-              button(waiting ? "移出队列" : "停止任务", () => stop(task), {
+              button("查看运行进度", () => openTaskDetail(id), { type: "primary" }),
+              button(waiting ? "取消排队" : "停止任务", () => stop(task), {
                 type: "danger",
                 plain: true,
                 loading: stopping.value,
@@ -4148,9 +4114,9 @@ export default Vue.defineComponent({
               "任务在后台运行，可以随时去资料库、求职记录等页面查看数据；在“任务列表”中能看到这个任务的实时进度和执行日志。",
             ),
             button(
-              "继续编辑配置（下次开始时生效）",
+              "返回配置页",
               () => (curtainDismissed.value = { ...curtainDismissed.value, [task]: runId }),
-              { link: true, size: "small" },
+              { plain: true },
             ),
           ]),
         ],
@@ -4245,16 +4211,6 @@ export default Vue.defineComponent({
                 ? `单独处理 ${n} 种情况`
                 : "全部按默认方式处理";
           })(),
-        },
-        {
-          id: "job-pace",
-          label: "运行节奏",
-          checks: d.useGlobalPace || !d.pause ? [] : [check("定时休息", ["rhythm"])],
-          extra: d.useGlobalPace
-            ? "使用全局运行节奏"
-            : d.pause
-              ? `每 ${d.actions} 次操作休息 ${d.minutes} 分钟`
-              : "不定时休息",
         },
       ];
       const all = sections.flatMap((section) => section.checks);
@@ -4407,7 +4363,6 @@ export default Vue.defineComponent({
                 ? "只把符合求职条件的岗位详情保存到资料库，不打招呼，也不在BOSS标记不合适。"
                 : "把遇到的所有岗位详情保存到资料库，不检查求职条件，不打招呼，也不标记；无需配置求职条件和处理方式。",
           ),
-          globalPaceCheck(),
         ],
         { id: "job-run-mode", class: "ux-card ux-run-mode" },
       );
@@ -4469,26 +4424,30 @@ export default Vue.defineComponent({
         : Math.floor(minutes / 60) + " 小时 " + (minutes % 60) + " 分钟";
     };
     async function removeQueued(workerId) {
+      try {
       await window.electron.ipcRenderer.invoke("stop-task", workerId);
       await taskStore.getRunningTasks();
       const task = Object.keys(workerIds).find((k) => workerIds[k] === workerId);
       if (task && taskProgress.value[task]) {
         taskProgress.value[task].state = "stopped";
         taskProgress.value[task].stoppedAt = Date.now();
-        taskProgress.value[task].detail = "已移出队列，未开始运行";
+        taskProgress.value[task].detail = "已取消排队，任务未开始";
       }
-      R.message({ type: "success", message: "已移出队列" });
+      R.message({ type: "success", message: "已取消排队" });
+      } catch (error) {
+        R.message({ type: "error", message: "取消排队失败：" + error.message });
+      }
     }
     const runModeLabel = (t) =>
       t.workerId !== "geekAutoStartWithBossMain"
-        ? "—"
+        ? t.workerId === "jobStatusPollMain" ? "收藏检查" : "消息跟进"
         : t.runMode === "collect"
           ? "只收集"
           : "打招呼";
     // where a finished run's data lives, filtered to the time the run took
     function historyTarget(t) {
-      // tasks run one at a time, so a few seconds of slack cannot reach into the next run
-      const range = [new Date(t.startedAt), new Date(t.endedAt + 5 * 1000)];
+      // Time-scoped results are not a persisted, exact task-to-row association.
+      const range = [new Date(t.startedAt), new Date(t.endedAt || Date.now())];
       if (t.workerId === "geekAutoStartWithBossMain")
         return t.runMode === "collect"
           ? {
@@ -4539,16 +4498,73 @@ export default Vue.defineComponent({
       },
     );
     function openHistoryData(t) {
+      selectedTask.value = { ...t, current: false };
+      taskDetailId.value = t.workerId;
+      detailTab.value = "data";
+      detailSearch.value = ""; detailCity.value = ""; detailPage.value = 1;
+      loadDetailRows();
+    }
+    async function loadDetailRows() {
+      const request = ++detailRequest;
+      const target = selectedTask.value && historyTarget(selectedTask.value);
+      detailRows.value = []; detailError.value = "";
+      if (!target) { detailBusy.value = false; return; }
+      detailBusy.value = true;
+      try {
+        const res = await ipc("run-data-query-all", { dataset: target.dataset, filters: [{ field: target.field, op: "between", value: target.range.map(toDbDate) }] });
+        if (request === detailRequest) detailRows.value = Array.isArray(res) ? res : res?.rows || res?.data || [];
+      } catch (e) { if (request === detailRequest) detailError.value = e.message || "数据加载失败，请重试"; }
+      finally { if (request === detailRequest) detailBusy.value = false; }
+    }
+    function downloadTaskRows() {
+      const rows = filteredDetailRows();
+      const fields = [["companyName", "公司"], ["jobName", "职位"], ["positionName", "分类"], ["address", "工作地点"], ["salaryLow", "最低薪资"], ["salaryHigh", "最高薪资"], ["bossName", "招聘者"], ["date", "记录时间"], ["hireStatusCheckedAt", "检查时间"]];
+      const quote = x => '"' + String(x ?? "").replace(/^[=+@-]/, "'$&").replace(/"/g, '""') + '"';
+      const csv = "\uFEFF" + [fields.map(f => f[1]), ...rows.map(r => fields.map(f => r[f[0]]))].map(r => r.map(quote).join(",")).join("\r\n");
+      const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+      const a = document.createElement("a"); a.href = url; a.download = `任务数据-${selectedTask.value.runRecordId || selectedTask.value.startedAt}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+    function filteredDetailRows() {
+      const q = detailSearch.value.trim().toLowerCase();
+      return detailRows.value.filter(r => (!q || [r.companyName, r.jobName, r.bossName].some(v => String(v || "").toLowerCase().includes(q))) && (!detailCity.value || r.address === detailCity.value));
+    }
+    function modeTag(row) {
+      const mode = row.workerId === "geekAutoStartWithBossMain" ? row.runMode === "collect" ? "collect" : "chat" : row.workerId === "jobStatusPollMain" ? "poll" : "follow";
+      return h("span", { class: "task-mode task-mode--" + mode }, runModeLabel(row));
+    }
+    const taskExplanation = row => row.outcome === "failed" ? exitCodeLabels[row.code] || "异常结束，请查看详情" : row.outcome === "yielded" ? "已让出，轮到时自动继续" : row.state === "waiting" ? `排队第 ${row.position || 1} 位` : row.outcome ? row.outcome === "stopped" ? "已手动停止" : "本次运行已结束" : liveTasks.value[row.workerId]?.progress?.detail || "正在准备任务";
+    function taskDetailDialog() {
+      if (!taskDetailId.value || !selectedTask.value) return null;
+      const t = selectedTask.value;
       const target = historyTarget(t);
-      if (!target) return;
-      jumpStore.jump({
-        dataset: target.dataset,
-        rows: [{ field: target.field, op: "between", value: target.range }],
-        label: target.label + "（" + clockTime(t.startedAt) + " 起）",
+      const rows = filteredDetailRows();
+      detailPage.value = Math.min(detailPage.value, Math.max(1, Math.ceil(rows.length / 10)));
+      return E("ElDialog", { modelValue: true, title: "任务详情 · " + runModeLabel(t), width: "min(1120px, calc(100vw - 32px))", class: "task-review-dialog", closeOnClickModal: false, destroyOnClose: true, "onUpdate:modelValue": v => { if (!v) { taskDetailId.value = null; selectedTask.value = null; ++detailRequest; } } }, {
+        default: () => [
+          tabBar(detailTab.value, [["overview", "运行概览"], ["data", "本次数据"], ["config", "任务配置"]], v => detailTab.value = v),
+          detailTab.value === "overview" ? t.current ? taskDetailPage(t.workerId) : [
+            card("运行结果", [inline([modeTag(t), E("ElTag", {}, () => (taskOutcomeLabels[t.outcome] || [t.outcome])[0])]), h("p", taskExplanation(t)), hint(`开始：${clockTime(t.startedAt)} · 结束：${clockTime(t.endedAt)} · 用时：${durationText(t.endedAt - t.startedAt)}`), hint("历史日志和统计尚未完整持久化，不使用最新一次任务的信息替代。"), button("查看本次数据", () => detailTab.value = "data", { type: "primary" })])
+          ] : detailTab.value === "config" ? card("任务配置", [
+            inline([modeTag(t), h("span", `运行编号：${t.runRecordId || "未提供"}`)]), hint("本次任务未保存配置快照，无法还原启动时的条件。"), button("前往配置页", () => { taskDetailId.value = null; if (t.workerId === "jobStatusPollMain") libraryTab.value = "favorites"; navigate(t.workerId === workerIds.follow ? "follow" : t.workerId === workerIds.auto ? "auto" : "library"); }, { plain: true }), hint("配置页显示当前设置，不代表本次任务使用的配置。")
+          ]) : [
+            hint(target ? "按本次运行时间筛选；暂非任务编号精确绑定。岗位后续更新可能影响历史结果。" : "消息跟进尚无独立结果表，请在运行概览中查看实时统计和日志。"),
+            inline([
+              E("ElInput", { modelValue: detailSearch.value, placeholder: "搜索公司、职位或招聘者", clearable: true, style: { width: "260px" }, "onUpdate:modelValue": v => { detailSearch.value = v; detailPage.value = 1; } }),
+              E("ElSelect", { modelValue: detailCity.value, placeholder: "全部工作地点", clearable: true, style: { width: "200px" }, "onUpdate:modelValue": v => { detailCity.value = v; detailPage.value = 1; } }, () => [...new Set(detailRows.value.map(r => r.address).filter(Boolean))].map(v => E("ElOption", { value: v, label: v }))),
+              button("刷新数据", loadDetailRows, { loading: detailBusy.value, disabled: !target }),
+              button("导出筛选结果", downloadTaskRows, { disabled: !rows.length, type: "primary", plain: true }),
+            ]),
+            detailError.value ? E("ElAlert", { title: detailError.value, type: "error", closable: false }) : null,
+            E("ElTable", { data: rows.slice((detailPage.value - 1) * 10, detailPage.value * 10), border: true, size: "small", height: "360px", emptyText: detailBusy.value ? "正在加载数据…" : "本次范围内暂无数据" }, () => [
+              ...[["companyName", "公司", 150], ["jobName", "职位", 170], ["positionName", "分类", 120], ["address", "工作地点", 140], ["bossName", "招聘者", 100]].map(([prop, label, minWidth]) => column({ prop, label, minWidth, showOverflowTooltip: true })),
+              column({ label: "薪资", width: 120 }, r => r.salaryLow != null ? `${r.salaryLow}–${r.salaryHigh || r.salaryLow}K` : "—"),
+              column({ label: "记录时间", width: 175 }, r => formatDbDate(r[target?.field || "date"]) || "—"),
+            ]),
+            E("ElPagination", { currentPage: detailPage.value, pageSize: 10, total: rows.length, layout: "total, prev, pager, next, jumper", "onUpdate:currentPage": v => detailPage.value = v }),
+          ],
+        ],
+        footer: () => [button("关闭详情", () => { taskDetailId.value = null; selectedTask.value = null; ++detailRequest; }, { plain: true })],
       });
-      if (target.route === "library") libraryTab.value = target.tab;
-      else recordTab.value = target.tab;
-      navigate(target.route);
     }
     const column = (props, cell) =>
       E("ElTableColumn", props, cell ? { default: ({ row }) => cell(row) } : undefined);
@@ -4560,8 +4576,8 @@ export default Vue.defineComponent({
       sent: ["打招呼", "success"],
       skipped: ["跳过", "info"],
       marked: ["标记", "danger"],
-      resting: ["休息", "warning"],
-      yielded: ["让出", "warning"],
+      resting: ["休息", "info"],
+      yielded: ["让出", "info"],
       waiting: ["等待", "info"],
       searching: ["翻页", "info"],
       retrying: ["重试", "warning"],
@@ -4593,11 +4609,11 @@ export default Vue.defineComponent({
       const active = Boolean(runningEntry || queueEntry);
       const status = runningEntry
         ? runningEntry.yielding
-          ? ["即将让出", "warning"]
+          ? ["即将让出", "info"]
           : ["运行中", "primary"]
         : queueEntry
           ? queueEntry.reason === "yielded"
-            ? ["已让出，等待继续", "warning"]
+            ? ["已让出，等待继续", "info"]
             : ["排队中", "info"]
           : p.state === "error"
             ? ["异常结束", "danger"]
@@ -4642,7 +4658,6 @@ export default Vue.defineComponent({
         .reverse();
       return [
         h("div", { class: "ux-task-detail-head" }, [
-          button("‹ 返回任务列表", () => (taskDetailId.value = null), { link: true }),
           h("div", { class: "ux-page-title" }, [h("h1", name + "任务")]),
           E("ElTag", { type: status[1], disableTransitions: true }, () => status[0]),
           runMode && workerId === workerIds.auto
@@ -4653,7 +4668,7 @@ export default Vue.defineComponent({
         inline([
           active
             ? button(
-                queueEntry && !runningEntry ? "移出队列" : "停止任务",
+                queueEntry && !runningEntry ? "取消排队" : "停止任务",
                 () => (task ? stop(task) : removeQueued(workerId)),
                 { type: "danger", plain: true, loading: stopping.value },
               )
@@ -4662,17 +4677,12 @@ export default Vue.defineComponent({
             ? button(
                 "查看本次产生的数据",
                 () =>
-                  openHistoryData({
-                    workerId,
-                    runMode,
-                    startedAt,
-                    endedAt: endAt || Date.now(),
-                  }),
+                  { detailTab.value = "data"; loadDetailRows(); },
                 { plain: true },
               )
             : null,
           task
-            ? button("查看配置", () => navigate(task), { plain: true })
+            ? button("查看配置", () => detailTab.value = "config", { plain: true })
             : null,
         ]),
         h("div", { class: "ux-task-metrics" }, [
@@ -4771,14 +4781,13 @@ export default Vue.defineComponent({
       ];
     }
     function tasksPage() {
-      if (taskDetailId.value) return taskDetailPage(taskDetailId.value);
       const workerTasks = taskStore.runningTasks.filter(
         (t) => t.workerId in queuedTaskLabels,
       );
       const taskOf = (workerId) =>
         Object.keys(workerIds).find((k) => workerIds[k] === workerId);
       // running and waiting tasks are one list; the state column tells them apart
-      const current = [
+      let current = [
         ...workerTasks.map((t) => ({
           key: "run-" + t.workerId,
           workerId: t.workerId,
@@ -4807,28 +4816,42 @@ export default Vue.defineComponent({
       }));
       const stateTags = {
         running: ["运行中", "primary"],
-        yielding: ["即将让出", "warning"],
+        yielding: ["即将让出", "info"],
         waiting: ["排队等待", "info"],
-        yielded: ["已让出，等待继续", "warning"],
+        yielded: ["已让出，等待继续", "info"],
         restarting: ["等待重启", "danger"],
       };
-      const history = taskStore.taskHistory.filter(
+      let history = taskStore.taskHistory.filter(
         (t) => t.workerId in queuedTaskLabels,
       );
       const tab = tasksTab.value;
+      const match = row => (!taskMode.value || runModeLabel(row) === taskMode.value) && (!taskStatus.value || (row.state || row.outcome) === taskStatus.value) && (!taskSearch.value.trim() || [row.id, row.runRecordId, taskExplanation(row)].some(v => String(v || "").toLowerCase().includes(taskSearch.value.trim().toLowerCase())));
+      const totalCurrent = current.length, totalHistory = history.length;
+      current = current.filter(match);
+      history = history.filter(match).sort((a, b) => b.endedAt - a.endedAt);
+      const total = tab === "current" ? current.length : history.length;
+      taskPage.value = Math.min(taskPage.value, Math.max(1, Math.ceil(total / 10)));
+      current = current.slice((taskPage.value - 1) * 10, taskPage.value * 10);
+      history = history.slice((taskPage.value - 1) * 10, taskPage.value * 10);
       return [
-        heading("任务列表"),
+        inline([heading("任务列表"), button("添加其他任务", () => nextTaskOpen.value = true, { type: "primary", plain: true })]),
         explain(
-          "找岗位（打招呼或只收集岗位数据）、消息跟进和收藏职位状态检查都会操作BOSS页面，因此一次只运行一个，其余按顺序排队。长时间运行的任务每 20 分钟会在安全的检查点让出一次，之后自动继续；收藏职位检查会排在最前面。",
+          "一次运行一个任务，其他类型可排队。找岗位的收集与打招呼不能重复加入；收藏检查优先执行。",
         ),
         tabBar(
           tab,
           [
-            ["current", `当前任务（${current.length}）`],
-            ["history", `历史记录（${history.length}）`],
+            ["current", `当前任务（${totalCurrent}）`],
+            ["history", `历史记录（${totalHistory}）`],
           ],
-          (v) => (tasksTab.value = v),
+          (v) => { tasksTab.value = v; taskPage.value = 1; taskStatus.value = ""; },
         ),
+        inline([
+          E("ElInput", { modelValue: taskSearch.value, placeholder: "搜索任务编号或运行说明", clearable: true, style: { width: "260px" }, "onUpdate:modelValue": v => { taskSearch.value = v; taskPage.value = 1; } }),
+          E("ElSelect", { modelValue: taskMode.value, placeholder: "全部方式", clearable: true, style: { width: "150px" }, "onUpdate:modelValue": v => { taskMode.value = v; taskPage.value = 1; } }, () => ["打招呼", "只收集", "消息跟进", "收藏检查"].map(v => E("ElOption", { value: v, label: v }))),
+          E("ElSelect", { modelValue: taskStatus.value, placeholder: "全部状态", clearable: true, style: { width: "160px" }, "onUpdate:modelValue": v => { taskStatus.value = v; taskPage.value = 1; } }, () => Object.entries(tab === "current" ? stateTags : taskOutcomeLabels).map(([value, pair]) => E("ElOption", { value, label: pair[0] }))),
+          button("重置筛选", () => { taskSearch.value = ""; taskMode.value = ""; taskStatus.value = ""; taskPage.value = 1; }, { plain: true }),
+        ]),
         tab === "current"
           ? E(
               "ElTable",
@@ -4843,18 +4866,20 @@ export default Vue.defineComponent({
                 onRowClick: (row) => openTaskDetail(row.workerId),
               },
               () => [
+                column({ label: "任务方式", width: 110 }, modeTag),
                 column({ label: "状态", width: 150 }, (row) =>
                   E("ElTag", { size: "small", type: stateTags[row.state][1] }, () =>
                     stateTags[row.state][0],
                   ),
                 ),
+                column({ label: "进度", minWidth: 170 }, row => {
+                  const live = liveTasks.value[row.workerId];
+                  if (!live) return "等待进度上报";
+                  return `查看 ${liveCount(live, "viewed")} · ${row.runMode === "collect" ? "收集 " + liveCount(live, "collected") : "发送 " + liveCount(live, "sent")} · 跳过 ${liveCount(live, "skipped")}`;
+                }),
                 column({ label: "顺序", width: 64, align: "center" }, (row) =>
                   row.position ? String(row.position) : "—",
                 ),
-                column({ label: "任务", minWidth: 150 }, (row) =>
-                  queuedTaskLabels[row.workerId],
-                ),
-                column({ label: "方式", width: 90 }, (row) => runModeLabel(row)),
                 column({ label: "开始 / 加入时间", width: 130 }, (row) =>
                   clockTime(row.since),
                 ),
@@ -4862,12 +4887,12 @@ export default Vue.defineComponent({
                   durationText(progressClock.value - row.since),
                 ),
                 column({ label: "当前操作", minWidth: 200, showOverflowTooltip: true }, (row) =>
-                  liveTasks.value[row.workerId]?.progress?.detail || "—",
+                  taskExplanation(row),
                 ),
                 column({ label: "操作", width: 190, fixed: "right" }, (row) =>
                   // buttons act on their own; a click elsewhere on the row opens the task
                   h("span", { class: "ux-task-actions", onClick: (e) => e.stopPropagation() }, [
-                    button("查看任务", () => openTaskDetail(row.workerId), {
+                    button("查看详情", () => openTaskDetail(row.workerId), {
                       link: true,
                       type: "primary",
                       size: "small",
@@ -4883,7 +4908,7 @@ export default Vue.defineComponent({
                             { link: true, type: "danger", size: "small" },
                           ),
                         ]
-                      : button("移出队列", () => removeQueued(row.workerId), {
+                      : button("取消排队", () => removeQueued(row.workerId), {
                           link: true,
                           type: "danger",
                           size: "small",
@@ -4906,42 +4931,37 @@ export default Vue.defineComponent({
                 onRowClick: (row) => openHistoryData(row),
               },
               () => [
+                column({ label: "任务方式", width: 110 }, modeTag),
                 column({ label: "结果", width: 120 }, (row) => {
                   const [label, type] = taskOutcomeLabels[row.outcome] || [row.outcome, "info"];
                   return E("ElTag", { size: "small", type, disableTransitions: true }, () => label);
                 }),
-                column({ label: "任务", minWidth: 150 }, (row) =>
-                  queuedTaskLabels[row.workerId],
-                ),
-                column({ label: "方式", width: 90 }, (row) => runModeLabel(row)),
                 column({ label: "开始", width: 130 }, (row) => clockTime(row.startedAt)),
                 column({ label: "结束", width: 130 }, (row) => clockTime(row.endedAt)),
                 column({ label: "时长", width: 110 }, (row) =>
                   durationText(row.endedAt - row.startedAt),
                 ),
                 column({ label: "说明", minWidth: 200, showOverflowTooltip: true }, (row) =>
-                  row.outcome === "failed" && row.code != null
-                    ? exitCodeLabels[row.code] || "退出码 " + row.code
-                    : row.outcome === "yielded"
-                      ? "让出给排队的任务，稍后自动继续"
-                      : "",
+                  taskExplanation(row),
                 ),
-                column({ label: "数据", width: 110, fixed: "right" }, (row) =>
-                  historyTarget(row)
-                    ? button("查看数据", () => openHistoryData(row), {
+                column({ label: "操作", width: 110, fixed: "right" }, (row) =>
+                    button("查看详情", () => openHistoryData(row), {
                         link: true,
                         type: "primary",
                         size: "small",
-                      })
-                    : h("span", { class: "ux-hint" }, "—"),
+                      }),
                 ),
               ],
             ),
-        tab === "history"
-          ? hint(
-              "点击一条记录，会打开该次运行产生的数据并按运行时间筛选：打招呼看开聊记录，只收集看职位库中查看过的岗位，收藏检查看收藏夹。",
-            )
-          : null,
+        E("ElPagination", { class: "task-list-pagination", currentPage: taskPage.value, pageSize: 10, total, layout: "total, prev, pager, next, jumper", "onUpdate:currentPage": v => taskPage.value = v }),
+        taskDetailDialog(),
+        E("ElDialog", { modelValue: nextTaskOpen.value, title: "添加其他任务", width: "min(520px, calc(100vw - 32px))", "onUpdate:modelValue": v => nextTaskOpen.value = v }, () => [
+          hint("同类型不能重复加入。其他类型将排队，轮到时自动执行；不是并行运行。"),
+          ...[[workerIds.auto, "找岗位", "auto"], [workerIds.follow, "消息跟进", "follow"], ["jobStatusPollMain", "收藏职位检查", "library"]].map(([id, name, route]) => {
+            const busy = [...taskStore.runningTasks, ...taskStore.taskQueue].some(t => t.workerId === id);
+            return h("div", { class: "task-next-choice" }, [h("span", name), button(busy ? "已运行或排队" : "前往设置", () => { nextTaskOpen.value = false; if (route === "library") libraryTab.value = "favorites"; navigate(route); }, { disabled: busy, plain: true })]);
+          }),
+        ]),
       ];
     }
     function railLogin() {
@@ -5463,7 +5483,7 @@ export default Vue.defineComponent({
             ["ai", "AI模型配置"],
             ["notify", "钉钉通知"],
             ["templates", "配置模板"],
-            ["pace", "运行节奏"],
+            ["pace", "找岗位运行节奏"],
             ["data", "数据、备份与日志"],
           ],
           (v) => {
@@ -5614,16 +5634,16 @@ export default Vue.defineComponent({
         ...(tab === "templates" ? templateSettings() : []),
         tab === "pace"
           ? card(
-              "全局运行节奏",
+              "找岗位运行节奏",
               [
                 explain(
-                  "在“找岗位 → 运行节奏”中勾选了“使用全局运行节奏设置”的配置都按这里运行；修改后从下次开始任务起生效。",
+                  "统一控制找岗位中的页面操作和休息间隔，不随任务模板切换。保存后从下次启动找岗位任务起生效，不影响消息跟进或收藏检查。",
                 ),
                 ...(paceForm.value
                   ? rhythmControls(paceForm.value, "global-rhythm")
                   : [hint("正在读取…")]),
                 inline([
-                  button("保存全局运行节奏", saveGlobalPace, {
+                  button("保存运行节奏", saveGlobalPace, {
                     type: "primary",
                     loading: paceSaving.value,
                     disabled: !paceForm.value,
@@ -5883,14 +5903,6 @@ export default Vue.defineComponent({
         ["招聘者活跃", sn.activity || "不限"],
         ["职位来源", sources.join("；") || "未选择"],
         ["默认处理方式", strategyLabel(sn.strategy)],
-        [
-          "运行节奏",
-          sn.useGlobalPace
-            ? "使用全局运行节奏"
-            : sn.pause
-              ? `每 ${sn.actions} 次操作休息 ${sn.minutes} 分钟`
-              : "不定时休息",
-        ],
       ];
     }
     const fileDate = () => new Date().toISOString().slice(0, 10);
@@ -5899,7 +5911,7 @@ export default Vue.defineComponent({
       const result = await ipc("save-file-with-dialog", {
         defaultPath: fileName,
         filters: [{ name: "配置模板", extensions: ["json"] }],
-        content: exportTemplates(items),
+        content: exportTemplates(items.map(t => ({ ...t, snapshot: withoutTaskPace(clone(t.snapshot)) }))),
       });
       if (result?.canceled) return;
       R.message({
@@ -6000,7 +6012,7 @@ export default Vue.defineComponent({
           "配置模板",
           [
             explain(
-              "模板保存一整套找岗位配置（运行方式、求职条件、职位来源、处理方式、运行节奏）。可以在这里查看、删除，或导出成文件备份、在另一台电脑上导入。",
+              "模板保存运行方式、求职条件、职位来源和处理方式，不包含系统运行节奏。可以查看、删除或导出备份，也可以导入已有模板。",
             ),
             inline([
               button("导入模板…", importTemplatesFromFile, {
@@ -6221,8 +6233,10 @@ export default Vue.defineComponent({
         // an open settings form keeps its unsaved edits
         if (!paceForm.value || route.value !== "settings" || settingTab.value !== "pace")
           paceForm.value = clone(pace);
+        return true;
       } catch (error) {
         R.message({ type: "error", message: "读取全局运行节奏失败：" + error.message });
+        return false;
       }
     }
     async function saveGlobalPace() {
@@ -6241,7 +6255,7 @@ export default Vue.defineComponent({
       try {
         globalPace.value = await ipc("run-pace-save", clone(p));
         paceForm.value = clone(globalPace.value);
-        R.message({ type: "success", message: "全局运行节奏已保存，下次开始任务时生效。" });
+        R.message({ type: "success", message: "运行节奏已保存，下次启动找岗位任务时生效。" });
       } catch (error) {
         R.message({ type: "error", message: "保存失败：" + error.message });
       } finally {
@@ -7491,39 +7505,6 @@ export default Vue.defineComponent({
               ),
             ),
             h("div", { class: "ux-nav-bottom" }, [
-              running.value.auto || queued.value.auto
-                ? inline([
-                    E(
-                      "ElTag",
-                      { size: "small", type: queued.value.auto ? "info" : "primary" },
-                      queued.value.auto
-                        ? "打招呼排队中"
-                        : draft.value.runMode === "collect"
-                          ? "收集中"
-                          : "打招呼中",
-                    ),
-                    button(queued.value.auto ? "移出队列" : "停止", () => stop("auto"), {
-                      link: true,
-                      loading: stopping.value,
-                    }),
-                  ])
-                : null,
-              running.value.follow || queued.value.follow
-                ? inline([
-                    E(
-                      "ElTag",
-                      { size: "small", type: queued.value.follow ? "info" : "primary" },
-                      queued.value.follow ? "跟进排队中" : "跟进中",
-                    ),
-                    button(queued.value.follow ? "移出队列" : "停止跟进", () => stop("follow"), {
-                      link: true,
-                      loading: stopping.value,
-                    }),
-                  ])
-                : null,
-              taskStore.runningTasks.some((t) => t.workerId === "jobStatusPollMain")
-                ? E("ElTag", { size: "small", type: "warning" }, "检查收藏职位中")
-                : null,
               updateStore.availableNewRelease
                 ? button(
                     "发现新版本",
@@ -7574,6 +7555,7 @@ export default Vue.defineComponent({
                 {
                   class: [
                     "ux-inner",
+                    route.value === "tasks" ? "ux-inner--task-review" : "",
                     route.value === "settings" && settingTab.value === "ai"
                       ? "ux-inner--ai"
                       : "",

@@ -1,0 +1,98 @@
+.task-mode { display: inline-block; padding: 3px 9px; border-radius: 4px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.task-mode--chat { color: #215da8; background: #edf4fe; }
+.task-mode--collect { color: #17665f; background: #e9f6f3; }
+.task-mode--follow { color: #7047a4; background: #f4effb; }
+.task-mode--poll { color: #855413; background: #fff5e2; }
+.el-dialog.task-review-dialog { margin: 4vh auto !important; max-height: 92vh; display: flex; flex-direction: column; box-sizing: border-box; }
+.task-review-dialog > .el-dialog__body { flex: 1; min-height: 0; overflow: auto; }
+.task-review-dialog > .el-dialog__header, .task-review-dialog > .el-dialog__footer { flex-shrink: 0; }
+.task-review-dialog .ux-page-title h1 { font-size: 20px; }
+.task-review-dialog .ux-task-detail-head { margin-bottom: 12px; }
+.task-review-dialog .ux-hint { max-width: 75ch; }
+.task-review-dialog .el-pagination, .task-list-pagination { margin-top: 16px; flex-wrap: wrap; gap: 8px; }
+.task-next-choice { display: flex; justify-content: space-between; align-items: center; padding: 14px 0; border-bottom: 1px solid #e3e9ed; }
+.task-review-dialog .ux-task-metrics { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+.task-review-dialog .ux-task-detail-grid { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.ux-inner.ux-inner--task-review { height: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px; padding: 24px 24px 18px; }
+.ux-inner--task-review > .el-table { flex: 1; min-height: 180px; }
+.ux-inner--task-review > .task-list-pagination { flex-shrink: 0; margin-top: 0; }
+.ux-inner--task-review > .ux-explain { margin: 0; }
+.ux-inner--task-review .el-table .cell { word-break: normal; }
+.ux-inner--task-review > .ux-inline .el-select { flex: 0 0 auto; }
+.task-review-dialog .ux-inline .el-select { flex: 0 0 auto; }
+.task-review-dialog .ux-inline { row-gap: 8px; flex-wrap: wrap; }
+
+/* Shared functional colors: selection, success, caution and error are distinct.
+   Neutral pending states never borrow the validation-error color. */
+html:root {
+  --el-color-primary: #1668dc;
+  --el-color-primary-light-3: #4389e6;
+  --el-color-primary-light-5: #80acec;
+  --el-color-primary-light-7: #b9d2f5;
+  --el-color-primary-light-8: #d5e4fa;
+  --el-color-primary-light-9: #eef5ff;
+  --el-color-primary-dark-2: #1255b5;
+  --el-color-success: #287d3c;
+  --el-color-success-light-3: #56a66a;
+  --el-color-success-light-5: #8cc798;
+  --el-color-success-light-7: #bfdcc7;
+  --el-color-success-light-8: #d6eadb;
+  --el-color-success-light-9: #eff8f1;
+  --el-color-success-dark-2: #216532;
+  --el-color-warning: #946200;
+  --el-color-warning-light-3: #c5993e;
+  --el-color-warning-light-5: #dfbd75;
+  --el-color-warning-light-7: #efdbb0;
+  --el-color-warning-light-8: #f4e8cb;
+  --el-color-warning-light-9: #fff8e8;
+  --el-color-warning-dark-2: #785000;
+  --el-color-danger: #c9363c;
+  --el-color-danger-light-3: #dc7478;
+  --el-color-danger-light-5: #e8a2a5;
+  --el-color-danger-light-7: #f1c6c8;
+  --el-color-danger-light-8: #f6dcdd;
+  --el-color-danger-light-9: #fff1f0;
+  --el-color-danger-dark-2: #a32930;
+  --el-color-info: #5c6979;
+  --el-color-info-light-9: #f2f4f7;
+  --el-text-color-secondary: #637083;
+  --el-text-color-placeholder: #697689;
+}
+.ux-shell .ux-steps { gap: 12px; margin: 18px 0 12px; }
+.ux-shell .ux-step + .ux-step::before { display: none; }
+.ux-shell .ux-step-button {
+  min-height: 76px; padding: 14px 16px; gap: 12px;
+  border: 1px solid #8997a9; border-radius: 8px; background: #f7f9fc;
+  color: #344256; transition: background 160ms ease, border-color 160ms ease;
+}
+.ux-shell .ux-step-button:hover:not(:disabled) { background: #edf3fc; border-color: #1668dc; }
+.ux-shell .ux-step-button:focus-visible { outline: 3px solid #1668dc; outline-offset: 3px; }
+.ux-shell .ux-step-label { font-size: 15px; }
+.ux-shell .ux-step-sub { color: #5c6979; margin-top: 4px; }
+.ux-shell .ux-step-index { display: grid; place-items: center; width: 28px; height: 28px; background: #e3e9f1; color: #465469; line-height: 1; }
+.ux-shell .ux-step-check { width: 17px; height: 17px; }
+.ux-shell .ux-step.is-current .ux-step-button { background: #eef5ff; border: 2px solid #1668dc; padding: 13px 15px; color: #1255b5; }
+.ux-shell .ux-step.is-current .ux-step-index { background: #1668dc; color: #fff; }
+.ux-shell .ux-step.is-current .ux-step-sub { color: #1255b5; }
+.ux-shell .ux-step.is-done .ux-step-index { background: #e0f0e5; color: #216532; }
+.ux-shell .ux-step.is-missing .ux-step-index { background: #e3e9f1; color: #465469; }
+.ux-shell .ux-step.is-missing .ux-step-sub { color: #5c6979; }
+.ux-shell .ux-step.is-skipped .ux-step-button { border-color: #c0c8d3; background: #f4f5f7; opacity: 1; color: #667181; }
+.ux-shell .ux-required { color: #526075; background: #edf0f5; }
+.ux-shell .ux-rail-item.is-missing .ux-rail-extra { color: #637083; }
+.ux-shell .ux-rail-login.is-missing { background: #f2f4f7; }
+.ux-shell .ux-rail-login.is-missing strong { color: #5c6979; }
+.ux-shell .ux-rail-login.is-checking .ux-rail-dot { background: #1668dc; }
+.ux-shell .ux-rail-login.is-unknown .ux-rail-dot { background: #637083; }
+.ux-shell .ux-rail-item.is-missing .ux-rail-dot,
+.ux-shell .ux-rail-login.is-missing .ux-rail-dot { background: #8c99aa; }
+body .el-button--primary:not(.is-plain) { --el-button-hover-bg-color: #1255b5; --el-button-hover-border-color: #1255b5; }
+body .el-button--success:not(.is-plain) { --el-button-hover-bg-color: #216532; --el-button-hover-border-color: #216532; }
+body .el-button--warning:not(.is-plain) { --el-button-hover-bg-color: #785000; --el-button-hover-border-color: #785000; }
+body .el-button--danger:not(.is-plain) { --el-button-hover-bg-color: #a32930; --el-button-hover-border-color: #a32930; }
+.ux-shell ::selection { color: #123d77; background: #d5e4fa; }
+@media (max-width: 1050px) {
+  .ux-shell .ux-steps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .ux-shell .ux-step-button { min-height: 72px; padding: 12px; }
+  .ux-shell .ux-step.is-current .ux-step-button { padding: 11px; }
+}
