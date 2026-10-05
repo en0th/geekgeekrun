@@ -23,7 +23,7 @@ export async function yieldIfRequested(beforeExit: () => Promise<unknown> | unkn
 }
 
 const QUEUED_TASK_NAMES: Record<string, string> = {
-  geekAutoStartWithBossMain: '自动化',
+  geekAutoStartWithBossMain: '找岗位',
   readNoReplyAutoReminderMain: '消息跟进',
   jobStatusPollMain: '检查收藏职位状态'
 }

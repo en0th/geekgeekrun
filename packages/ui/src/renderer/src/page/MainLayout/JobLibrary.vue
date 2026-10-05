@@ -4,7 +4,6 @@
       dataset="jobLibrary"
       :columns="columns"
       :stats-preset="runDataStatsPresets.jobLibrary"
-      gtag-prefix="job_library"
       :actions-width="240"
       class="flex-1"
     >
@@ -31,7 +30,6 @@
         scene="jobLibrary"
         @closed="
           () => {
-            gtagRenderer('job_info_snapshot_closed')
             selectedJobInfoForViewSnapshot = null
           }
         "
@@ -53,7 +51,6 @@
         :job-info-history-list="selectedJobHistory ?? []"
         @closed="
           () => {
-            gtagRenderer('job_library_list_dialog_closed')
             selectedJobInfoForViewHistory = null
             selectedJobHistory = null
           }
@@ -75,7 +72,6 @@ import RunDataTable from '../../features/RunDataTable/index.vue'
 import { runDataStatsPresets } from '../../features/RunDataTable/stats-presets'
 import { formatSalary } from '../../features/RunDataTable/format'
 import type { RunDataColumn } from '../../features/RunDataTable/types'
-import { gtagRenderer } from '@renderer/utils/gtag'
 
 const columns: RunDataColumn[] = [
   { key: 'companyName' },
@@ -97,12 +93,10 @@ const drawVisibleModelValue = ref(false)
 const selectedJobInfoForViewSnapshot = ref<VChatStartupLog | null>(null)
 
 function handleViewJobSnapshotButtonClick(record: VChatStartupLog) {
-  gtagRenderer('view_job_snapshot_button_clicked')
   selectedJobInfoForViewSnapshot.value = record
   drawVisibleModelValue.value = true
 }
 async function handleViewJobOnlineButtonClick(encryptJobId: string) {
-  gtagRenderer('view_job_online_button_clicked')
   return await electron.ipcRenderer.invoke('open-site-with-boss-cookie', {
     url: `https://www.zhipin.com/job_detail/${encryptJobId}.html`
   })
@@ -112,7 +106,6 @@ const historyDialogVisibleModelValue = ref(false)
 const selectedJobInfoForViewHistory = ref<VChatStartupLog | null>(null)
 const selectedJobHistory = ref<null | JobInfoChangeLog[]>(null)
 async function handleViewJobHistoryButtonClick(record: VChatStartupLog) {
-  gtagRenderer('view_job_history_button_clicked')
   let historyResponse
   try {
     historyResponse = await electron.ipcRenderer.invoke(
@@ -174,13 +167,11 @@ async function handleViewJobHistoryButtonClick(record: VChatStartupLog) {
   // })
 
   if (!historyList.length) {
-    gtagRenderer('job_history_is_not_found')
     toast.warning({
       message: '此职位暂无已保存的历史变化。'
     })
     return
   }
-  gtagRenderer('job_history_is_found')
   historyDialogVisibleModelValue.value = true
   selectedJobInfoForViewHistory.value = record
   selectedJobHistory.value = historyList

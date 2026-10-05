@@ -16,13 +16,6 @@
       () => {
         drag = false
         setTimeout(() => {
-          gtagRenderer('job-source-dragged', {
-            sourceOrder: modelValue?.map((it) => JobSource[it.type]).join(','),
-            enabledSourceOrder: modelValue
-              ?.filter?.((it) => !!it.enabled)
-              ?.map((it) => JobSource[it.type])
-              ?.join(',')
-          })
         }, 50)
       }
     "
@@ -64,7 +57,6 @@
                           grouping: true
                         })
                       }
-                      gtagRenderer('job-source-switch-ph-clicked', { type: element.type })
                     }
                   "
                 />
@@ -77,9 +69,6 @@
                   active-text="启用"
                   inactive-text="禁用"
                   inline-prompt
-                  @change="
-                    (v) => gtagRenderer('job-source-switch-changed', { type: element.type, v })
-                  "
                 />
                 {{ element.label }}
               </template>
@@ -96,9 +85,6 @@
                   @click="
                     () => {
                       addSearchKeyword(element)
-                      gtagRenderer('job-source-search-kw-added', {
-                        kwListLength: element.children?.length
-                      })
                     }
                   "
                   >添加关键词</el-button
@@ -124,9 +110,6 @@
               () => {
                 drag = false
                 setTimeout(() => {
-                  gtagRenderer('job-source-search-kw-dragged', {
-                    kwListLength: element.children?.length
-                  })
                 }, 50)
               }
             "
@@ -146,7 +129,6 @@
                         active-text="启用"
                         inactive-text="禁用"
                         inline-prompt
-                        @change="(v) => gtagRenderer('job-source-search-kw-switch-changed', { v })"
                       />
                       <el-switch
                         v-else
@@ -169,7 +151,6 @@
                                 grouping: true
                               })
                             }
-                            gtagRenderer('job-source-search-kw-switch-ph-clicked')
                           }
                         "
                       />
@@ -179,9 +160,6 @@
                         @blur="
                           () => {
                             searchItem.keyword = searchItem.keyword?.trim() ?? ''
-                            gtagRenderer('job-source-search-kw-input-blurred', {
-                              contentLength: searchItem.keyword?.length
-                            })
                           }
                         "
                       />
@@ -195,10 +173,6 @@
                       @click="
                         () => {
                           removeSearchKeywordByIndex(element, index)
-                          gtagRenderer('job-source-search-kw-removed', {
-                            itemIndex: index,
-                            contentLength: searchItem.keyword?.length
-                          })
                         }
                       "
                       >删除</el-button
@@ -218,8 +192,6 @@
 import { computed, ref } from 'vue'
 import draggable from 'vuedraggable'
 import { toast as Message } from '@renderer/features/Toast'
-import { gtagRenderer } from '@renderer/utils/gtag'
-import { JobSource } from '@geekgeekrun/sqlite-plugin/src/enums'
 const props = defineProps({
   modelValue: {
     type: Array

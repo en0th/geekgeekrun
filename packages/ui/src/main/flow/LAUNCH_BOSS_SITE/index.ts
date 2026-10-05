@@ -30,7 +30,6 @@ import { Target } from 'puppeteer'
 import { pipeWriteRegardlessError } from '../utils/pipe'
 import * as JSONStream from 'JSONStream'
 import { ChatStartupFrom } from '@geekgeekrun/sqlite-plugin/dist/entity/ChatStartupLog'
-import gtag from '../../utils/gtag'
 import attachListenerForKillSelfOnParentExited from '../../utils/attachListenerForKillSelfOnParentExited'
 import { type ChatMessageRecord } from '@geekgeekrun/sqlite-plugin/src/entity/ChatMessageRecord'
 import { BossInfo } from '@geekgeekrun/sqlite-plugin/dist/entity/BossInfo'
@@ -224,12 +223,6 @@ const attachRequestsListener = async (target: Target) => {
         markReason: MarkAsNotSuitReason.USER_MANUAL_OPERATION_WITH_UNKNOWN_REASON,
         jobSource: JobSource[jobSource]
       }
-      gtag('job_marked_as_not_suit', {
-        markFrom: markDetail.markFrom,
-        bossActiveTimeDesc: currentJobData?.bossInfo?.activeTimeDesc,
-        encryptJobId: currentJobData?.jobInfo?.encryptId,
-        jobSource: JobSource[jobSource]
-      })
       if (reasonCodeToTextMap[chosenCode]?.includes('活跃度低')) {
         markDetail.markReason = MarkAsNotSuitReason.BOSS_INACTIVE
         markDetail.extInfo.bossActiveTimeDesc = currentJobData?.bossInfo.activeTimeDesc
@@ -265,11 +258,6 @@ const attachRequestsListener = async (target: Target) => {
         'document.querySelector(".job-detail-box").__vue__.$store.state.userInfo'
       )
       const jobSource = await getCurrentJobSource()
-      gtag('new_chat_startup', {
-        chatStartupFrom: ChatStartupFrom.ManuallyFromRecommendList,
-        encryptJobId: currentJobData?.jobInfo?.encryptId,
-        jobSource: JobSource[jobSource]
-      })
       await saveChatStartupRecord(
         await dbInitPromise,
         currentJobData,
@@ -411,7 +399,6 @@ export async function launchBossSite() {
     })
   )
   //#endregion
-  gtag('launch_boss_site_ready')
   browser.on('targetcreated', (target) => {
     attachRequestsListener(target)
   })

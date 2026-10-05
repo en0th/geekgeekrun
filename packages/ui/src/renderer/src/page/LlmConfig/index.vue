@@ -8,9 +8,6 @@
             <el-dropdown
               @command="
                 (item) => {
-                  gtagRenderer('provider_url_for_secret_clicked', {
-                    name: item.name
-                  })
                   openExternalLink(item.url)
                 }
               "
@@ -38,7 +35,6 @@
                 href="javascript:void(0)"
                 @click.prevent="
                   () => {
-                    gtagRenderer('chat_completion_intro_doc_link_clicked')
                     openExternalLink(
                       'https://api-docs.deepseek.com/zh-cn/api/create-chat-completion'
                     )
@@ -53,7 +49,6 @@
                 href="javascript:void(0)"
                 @click.prevent="
                   () => {
-                    gtagRenderer('openai_sdk_intro_doc_link_clicked')
                     openExternalLink('https://www.npmjs.com/package/openai')
                   }
                 "
@@ -176,11 +171,6 @@
                       v-if="formContent.length > 1"
                       v-model="conf.enabled"
                       font-size-12px
-                      @click="
-                        nextTick(() =>
-                          gtagRenderer('model_enable_status_changed', { enabled: conf.enabled })
-                        )
-                      "
                     ></el-checkbox>
                     <el-checkbox v-else :model-value="true" font-size-12px disabled />
                   </el-form-item>
@@ -196,11 +186,6 @@
                       :precision="0"
                       font-size-12px
                       placeholder="1 ~ 100"
-                      @change="
-                        (new_val, old_val) => {
-                          gtagRenderer('serve_weight_changed', { new_val, old_val })
-                        }
-                      "
                     ></el-input-number>
                     <el-input-number
                       v-else
@@ -255,7 +240,6 @@ import {
 } from 'element-plus'
 import { ArrowUp, ArrowDown, Delete } from '@element-plus/icons-vue'
 import { ref, onMounted, watch, nextTick, computed } from 'vue'
-import { gtagRenderer as baseGtagRenderer } from '@renderer/utils/gtag'
 import { SINGLE_ITEM_DEFAULT_SERVE_WEIGHT } from '../../../../common/constant'
 import { v4 as uuid } from 'uuid'
 import { sleep } from '@geekgeekrun/utils/sleep.mjs'
@@ -268,12 +252,6 @@ interface LlmConfigItem {
   enabled: true
 }
 
-const gtagRenderer = (name, params?: object) => {
-  return baseGtagRenderer(name, {
-    scene: 'llm-config',
-    ...params
-  })
-}
 
 function getNewConfigItem(): LlmConfigItem {
   return {
@@ -324,16 +302,12 @@ const formRulesForElForm = computed(() => {
 })
 
 const handleCancel = () => {
-  gtagRenderer('cancel_clicked')
   electron.ipcRenderer.send('close-llm-config')
-  gtagRenderer('cancel_done')
 }
 
 const handleSubmit = async () => {
-  gtagRenderer('submit_clicked', { llm_config_length: formContent.value.length })
   await formRef.value?.validate()
   if (!formContent.value.length) {
-    gtagRenderer('empty_model_list')
     toast.warning({
       message: '可选模型列表为空，请出现填写'
     })
@@ -342,13 +316,11 @@ const handleSubmit = async () => {
   } else if (formContent.value.length > 1) {
     const firstEnabledModel = formContent.value.find((it) => it.enabled)
     if (!firstEnabledModel) {
-      gtagRenderer('no_enabled_model_find_in_model_list')
       toast.warning('所有模型均被禁用；请至少启用一个模型')
       return
     }
   }
   electron.ipcRenderer.invoke('save-llm-config', JSON.parse(JSON.stringify(formContent.value)))
-  gtagRenderer('submit_done')
 }
 
 onMounted(async () => {
@@ -462,9 +434,6 @@ const providerList: Array<{ name: string; url: string }> = [
 ]
 
 function handlePresetClick(selected: (typeof llmPresetList)[number], index) {
-  gtagRenderer('model_preset_clicked', {
-    name: selected.name
-  })
   for (const k of Object.keys(formContent.value[index])) {
     formContent.value[index][k] = selected.config[k]
   }
@@ -475,7 +444,6 @@ function handlePresetClick(selected: (typeof llmPresetList)[number], index) {
 
 const firstInputRefList = ref<InstanceType<typeof ElInput>[]>([])
 function addConfig() {
-  gtagRenderer('new_config_item_added', { config_list_length_before_add: formContent.value.length })
   formContent.value.push(getNewConfigItem())
   nextTick(() => {
     firstInputRefList.value[firstInputRefList.value.length - 1]?.focus()
@@ -486,7 +454,6 @@ function moveConfigUp(index) {
     formContent.value[index - 1],
     formContent.value[index]
   ]
-  gtagRenderer('config_item_moved_up')
 }
 
 function moveConfigDown(index) {
@@ -494,12 +461,10 @@ function moveConfigDown(index) {
     formContent.value[index + 1],
     formContent.value[index]
   ]
-  gtagRenderer('config_item_moved_down')
 }
 
 function removeConfig(index) {
   formContent.value.splice(index, 1)
-  gtagRenderer('config_item_removed')
 }
 
 watch(

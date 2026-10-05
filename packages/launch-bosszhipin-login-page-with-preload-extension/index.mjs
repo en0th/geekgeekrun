@@ -20,10 +20,14 @@ import {
 } from './utils.mjs'
 
 import { EventEmitter } from 'node:events'
+import { waitForLogin } from './login-watch.mjs'
 
 export const loginEventBus = new EventEmitter()
 
 const __dirname = url.fileURLToPath(new URL('.', import.meta.url))
+
+// where the cookies are collected after login: a page that loads the full set of site cookies
+const COOKIE_PAGE_URL = 'https://www.zhipin.com/web/geek/jobs'
 
 export async function main() {
   await ensureEditThisCookie()
@@ -34,11 +38,10 @@ export async function main() {
     enableExtensions: [editThisCookieExtensionPath]
   })
 
+  // keep everything in the one login tab
   const closeAttachedSet = new WeakSet()
   browser.on('targetcreated', async function closeNewTabs(target) {
-    let targetBrowser = target.browser();
-    const pages = await targetBrowser.pages()
-    console.log(pages)
+    const pages = await target.browser().pages()
     for (let i = 1; i < pages.length; i++) {
       const page = pages[i]
       if (!closeAttachedSet.has(page)) {
@@ -50,69 +53,57 @@ export async function main() {
     }
   })
 
-  const [page] = await browser.pages();
-
-  page.once('close', async () => {
-    browser.close()
+  const [page] = await browser.pages()
+  let closed = false
+  const quit = async () => {
+    if (closed) return
+    closed = true
+    await browser.close().catch(() => void 0)
     const electron = await import('electron')
     electron.app.quit()
+  }
+  // the user closed the login window: nothing to collect
+  page.once('close', quit)
+  browser.once('disconnected', () => {
+    closed = true
   })
 
-  const { dispose: disposeNavigationLock } = await blockNavigation(page, (req) => !req.url().startsWith('https://www.zhipin.com'))
-  await page.goto('https://www.zhipin.com/web/user/');
+  await blockNavigation(page, (req) => !req.url().startsWith('https://www.zhipin.com'))
+  // a slow load must not end the flow: the user can still log in once the page is usable
+  await page.goto('https://www.zhipin.com/web/user/').catch((err) => console.log(err))
 
-  const loginSuccessPromiseList = [
-    page.waitForResponse(
-      (response) =>
-        response.url().startsWith('https://www.zhipin.com/wapi/zppassport/qrcode/loginConfirm'),
-      {
-        timeout: 0
-      }
-    ),
-    page.waitForResponse(
-      (response) =>
-        response.url().startsWith('https://www.zhipin.com/wapi/zppassport/qrcode/dispatcher'),
-      {
-        timeout: 0
-      }
-    ),
-    page.waitForResponse(
-      (response) =>
-        response.url().startsWith('https://www.zhipin.com/wapi/zppassport/login/phoneV2'),
-      { timeout: 0 }
-    )
-  ]
+  try {
+    const loggedIn = await waitForLogin({
+      getCookies: () => page.cookies('https://www.zhipin.com/'),
+      // the same account API the site calls; code 0 means logged in
+      askAccountApi: () =>
+        page.evaluate(async () => {
+          const res = await fetch('/wapi/zpuser/wap/getUserInfo.json', {
+            credentials: 'include',
+            signal: AbortSignal.timeout(8000)
+          })
+          return (await res.json())?.code === 0
+        }),
+      isClosed: () => closed,
+      sleep
+    })
+    if (!loggedIn) return
 
-  Promise.all([
-    Promise.race(loginSuccessPromiseList),
-    page.waitForNavigation({
-      timeout: 0
-    }),
-  ]).then(async () => {
-    await sleep(2000)
-    const headerLogoAnchorHandler = await page.$('.header-home-logo')
-    return Promise.all([
-      headerLogoAnchorHandler ? headerLogoAnchorHandler.click() : page.goto('https://www.zhipin.com/'),
-      page.waitForNavigation({
-        timeout: 0,
-      })
-    ])
-  }).then(async () => {
-    if (
-      page.url().startsWith('https://www.zhipin.com/web/common/security-check.html')
-    ) {
-      await page.waitForNavigation({
-        timeout: 0,
-      })
+    // a job page sets the rest of the site cookies (e.g. after a security check)
+    await page.goto(COOKIE_PAGE_URL, { waitUntil: 'domcontentloaded', timeout: 60 * 1000 }).catch(() => void 0)
+    if (page.url().startsWith('https://www.zhipin.com/web/common/security-check.html')) {
+      await page.waitForNavigation({ timeout: 60 * 1000 }).catch(() => void 0)
     }
     await sleep(2000)
     const cookies = await page.cookies()
-    loginEventBus.emit(
-      'cookie-collected',
-      cookies
-    )
-    return writeStorageFile('boss-cookies.json', cookies)
-  }).catch((err) => {
+    await writeStorageFile('boss-cookies.json', cookies)
+    loginEventBus.emit('cookie-collected', cookies)
+    // let the message reach the login assistant before the process goes away
+    await sleep(800)
+  } catch (err) {
+    // leave the window open so the user can still log in or close it
     console.log(err)
-  })
+    return
+  }
+  await quit()
 }

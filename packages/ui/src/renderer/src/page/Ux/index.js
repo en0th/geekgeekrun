@@ -1,6 +1,14 @@
 /* Task-oriented UI migrated from the accepted prototype. All execution uses native IPC. */
 import { toast } from "../../features/Toast";
 import { exportTemplates, parseTemplateFile, uniqueName } from "./template-io.js";
+import { parseMarkdown } from "./markdown.js";
+import {
+  REPOSITORY_URL,
+  RELEASES_URL,
+  releaseTag,
+} from "../../../../common/repository.mjs";
+// notes of each released version, written into the repository by the release workflow
+import releaseNotesByVersion from "../../../../common/release-notes.json";
 import * as Vue from "vue";
 import {
   modelPair,
@@ -409,7 +417,7 @@ export default Vue.defineComponent({
       platformFiltersOpen = ref(false),
       policyExceptionsOpen = ref(false),
       activeAutoSection = ref("job-run-mode");
-    // the 自动化 configuration is a step-by-step form; this is the step on screen
+    // the 找岗位 configuration is a step-by-step form; this is the step on screen
     const autoStep = ref("job-run-mode"),
       // global run pace (settings → 运行节奏); paceForm is its edit copy
       globalPace = ref(null),
@@ -472,11 +480,11 @@ export default Vue.defineComponent({
     const promptKind = ref("rechat"),
       promptText = ref("");
     const nav = [
-      ["auto", "自动化"],
+      ["auto", "找岗位"],
       ["follow", "消息跟进"],
       ["records", "求职记录"],
       ["library", "资料库"],
-      ["tasks", "任务队列"],
+      ["tasks", "任务列表"],
       ["settings", "设置"],
     ];
     // groups of the left navigation; "browse" is the 自己逛 action, not a page
@@ -3476,7 +3484,7 @@ export default Vue.defineComponent({
     };
     // every task that takes a turn in the daemon's BOSS task queue
     const queuedTaskLabels = {
-      geekAutoStartWithBossMain: "自动化",
+      geekAutoStartWithBossMain: "找岗位",
       readNoReplyAutoReminderMain: "消息跟进",
       jobStatusPollMain: "检查收藏职位状态",
     };
@@ -3636,7 +3644,7 @@ export default Vue.defineComponent({
           result.queued
             ? {
                 type: "info",
-                title: "已加入任务队列",
+                title: "已加入任务列表",
                 message: "其他任务正在运行，轮到时会自动开始。",
               }
             : {
@@ -3743,7 +3751,7 @@ export default Vue.defineComponent({
           ),
           waiting
             ? inline([
-                button("查看任务队列", () => navigate("tasks")),
+                button("查看任务列表", () => navigate("tasks")),
                 button("移出队列", () => stop(task), {
                   type: "danger",
                   plain: true,
@@ -3820,7 +3828,7 @@ export default Vue.defineComponent({
     function updateAutoSection() {
       // steps show one section at a time; the rail follows the step, not the scroll position
     }
-    // ---- 自动化 configuration steps ----
+    // ---- 找岗位 configuration steps ----
     function autoSteps(d = draft.value) {
       const all = isCollectAll(d);
       return [
@@ -3843,7 +3851,7 @@ export default Vue.defineComponent({
         },
       ];
     }
-    // the step a validation field belongs to; null for fields outside the 自动化 form
+    // the step a validation field belongs to; null for fields outside the 找岗位 form
     function stepOfField(field) {
       if (!field || field.startsWith("follow-") || field.startsWith("ai-")) return null;
       if (["source", "source-selection"].includes(field)) return "job-sources";
@@ -4004,7 +4012,7 @@ export default Vue.defineComponent({
       const current = currentStepId(steps);
       const { sections } = autoProgress();
       return [
-        heading("自动化"),
+        heading("找岗位"),
         templateBar(),
         problems(errors.value),
         runPanel("auto"),
@@ -4435,9 +4443,9 @@ export default Vue.defineComponent({
       );
       const tab = tasksTab.value;
       return [
-        heading("任务队列"),
+        heading("任务列表"),
         explain(
-          "自动化（打招呼或只收集岗位数据）、消息跟进和收藏职位状态检查都会操作BOSS页面，因此一次只运行一个，其余按顺序排队。长时间运行的任务每 20 分钟会在安全的检查点让出一次，之后自动继续；收藏职位检查会排在最前面。",
+          "找岗位（打招呼或只收集岗位数据）、消息跟进和收藏职位状态检查都会操作BOSS页面，因此一次只运行一个，其余按顺序排队。长时间运行的任务每 20 分钟会在安全的检查点让出一次，之后自动继续；收藏职位检查会排在最前面。",
         ),
         tabBar(
           tab,
@@ -5097,7 +5105,7 @@ export default Vue.defineComponent({
                   bossLogin.value.status
                 ] || "error",
               ),
-              inline([
+              h("div", { class: "ux-inline ux-account-actions" }, [
                 button(
                   "编辑登录凭证",
                   () => openLegacy("编辑登录凭证", "/cookieAssistant"),
@@ -5230,7 +5238,7 @@ export default Vue.defineComponent({
               "全局运行节奏",
               [
                 explain(
-                  "在“自动化 → 运行节奏”中勾选了“使用全局运行节奏设置”的配置都按这里运行；修改后从下次开始任务起生效。",
+                  "在“找岗位 → 运行节奏”中勾选了“使用全局运行节奏设置”的配置都按这里运行；修改后从下次开始任务起生效。",
                 ),
                 ...(paceForm.value
                   ? rhythmControls(paceForm.value, "global-rhythm")
@@ -5571,7 +5579,7 @@ export default Vue.defineComponent({
               skipped ? skipped + " 个缺少名称或内容的模板未导入" : "",
             ]
               .filter(Boolean)
-              .join("；") || "可在自动化页的“配置模板”中选用。",
+              .join("；") || "可在找岗位页的“配置模板”中选用。",
         });
       } catch (error) {
         R.message({ type: "error", title: "导入失败", message: error.message });
@@ -5581,7 +5589,7 @@ export default Vue.defineComponent({
     }
     async function deleteTemplateById(t) {
       if (running.value.auto) {
-        R.message({ type: "warning", message: "自动化运行中，停止后才能删除模板。" });
+        R.message({ type: "warning", message: "找岗位任务运行中，停止后才能删除模板。" });
         return;
       }
       if (
@@ -5596,7 +5604,7 @@ export default Vue.defineComponent({
     }
     function useTemplate(t) {
       if (running.value.auto) {
-        R.message({ type: "warning", message: "自动化运行中，停止后才能切换模板。" });
+        R.message({ type: "warning", message: "找岗位任务运行中，停止后才能切换模板。" });
         return;
       }
       templateView.value = null;
@@ -5613,7 +5621,7 @@ export default Vue.defineComponent({
           "配置模板",
           [
             explain(
-              "模板保存一整套自动化配置（运行方式、求职条件、职位来源、处理方式、运行节奏）。可以在这里查看、删除，或导出成文件备份、在另一台电脑上导入。",
+              "模板保存一整套找岗位配置（运行方式、求职条件、职位来源、处理方式、运行节奏）。可以在这里查看、删除，或导出成文件备份、在另一台电脑上导入。",
             ),
             inline([
               button("导入模板…", importTemplatesFromFile, {
@@ -5635,7 +5643,7 @@ export default Vue.defineComponent({
                 size: "small",
                 border: true,
                 class: "ux-template-table",
-                emptyText: "还没有配置模板。在自动化页顶部“配置模板”中新建，或从文件导入。",
+                emptyText: "还没有配置模板。在找岗位页顶部“配置模板”中新建，或从文件导入。",
               },
               () => [
                 column({ label: "名称", minWidth: 160 }, (row) =>
@@ -5730,6 +5738,102 @@ export default Vue.defineComponent({
           },
         ),
       ];
+    }
+    // ---- release notes of the running version (click the version in the navigation) ----
+    const releaseNotes = ref(null);
+    function openReleaseNotes() {
+      const version = buildInfo.version;
+      const entry = releaseNotesByVersion[version];
+      releaseNotes.value = {
+        version,
+        found: Boolean(entry),
+        draft: Boolean(entry?.draft),
+        publishedAt: entry?.date,
+        blocks: parseMarkdown(entry?.notes || ""),
+        htmlUrl: entry ? `${RELEASES_URL}/tag/${releaseTag(version)}` : RELEASES_URL,
+      };
+    }
+    const openLink = (href) =>
+      window.electron.ipcRenderer.send("open-external-link", href);
+    function markdownInline(tokens) {
+      return tokens.map((t) =>
+        t.type === "strong"
+          ? h("strong", t.text)
+          : t.type === "code"
+            ? h("code", t.text)
+            : t.type === "link"
+              ? h(
+                  "a",
+                  {
+                    href: t.href,
+                    onClick: (e) => {
+                      e.preventDefault();
+                      openLink(t.href);
+                    },
+                  },
+                  t.text,
+                )
+              : t.text,
+      );
+    }
+    function markdownBlocks(blocks) {
+      return blocks.map((b) =>
+        b.type === "h"
+          ? h("h" + Math.min(6, b.level + 1), markdownInline(b.inline))
+          : b.type === "ul"
+            ? h(
+                "ul",
+                b.items.map((item) => h("li", markdownInline(item))),
+              )
+            : b.type === "hr"
+              ? h("hr")
+              : h("p", markdownInline(b.inline)),
+      );
+    }
+    function releaseNotesDialog() {
+      const notes = releaseNotes.value;
+      return E(
+        "ElDialog",
+        {
+          modelValue: Boolean(notes),
+          title: notes ? `版本 ${notes.version} 更新内容` : "",
+          width: "min(720px, calc(100vw - 48px))",
+          appendToBody: true,
+          class: "ux-release-dialog",
+          "onUpdate:modelValue": (v) => {
+            if (!v) releaseNotes.value = null;
+          },
+        },
+        {
+          default: () =>
+            !notes
+              ? null
+              : !notes.found
+                ? alert(
+                    "这个版本没有内置的更新说明，可能是开发版或尚未发布的版本。",
+                    "info",
+                  )
+                : h("div", { class: "ux-release-notes" }, [
+                        notes.draft
+                          ? alert("这份更新说明是自动整理的草稿，内容可能不完整。", "warning")
+                          : null,
+                        notes.publishedAt
+                          ? hint(
+                              "发布于 " +
+                                new Date(notes.publishedAt).toLocaleString("zh-CN"),
+                            )
+                          : null,
+                        ...markdownBlocks(notes.blocks),
+                      ]),
+          footer: () =>
+            notes
+              ? inline([
+                  button("在 GitHub 查看", () => openLink(notes.htmlUrl), { plain: true }),
+                  button("关闭", () => (releaseNotes.value = null), { type: "primary" }),
+                ])
+              : null,
+        },
+      );
     }
     async function loadGlobalPace() {
       try {
@@ -7089,14 +7193,18 @@ export default Vue.defineComponent({
                     { link: true, type: "primary" },
                   )
                 : null,
-              hint("版本：" + buildInfo.version),
+              button("版本：" + buildInfo.version, openReleaseNotes, {
+                link: true,
+                class: "ux-version-link",
+                title: "查看这个版本的更新内容",
+              }),
               h("div", { class: "ux-project-links" }, [
                 button(
                   "项目首页",
                   () =>
                     window.electron.ipcRenderer.send(
                       "open-external-link",
-                      "https://github.com/geekgeekrun/geekgeekrun",
+                      REPOSITORY_URL,
                     ),
                   { link: true, type: "primary" },
                 ),
@@ -7159,6 +7267,7 @@ export default Vue.defineComponent({
             ],
           ),
           dialogs(),
+          releaseNotesDialog(),
           imagePreview.value
             ? h(ElImageViewer, {
                 urlList: [imagePreview.value.src],
@@ -7333,7 +7442,7 @@ export default Vue.defineComponent({
                 : "请修复问题后重新开始；不会从原位置续跑";
         }
         const labels = exitCodeLabels;
-        const name = task === "follow" ? "消息跟进" : "自动化";
+        const name = task === "follow" ? "消息跟进" : "找岗位";
         // a stop the user asked for was already confirmed by stop()
         if (message.restarting)
           R.message({

@@ -14,7 +14,6 @@
           <el-tooltip
             placement="right"
             :enterable="false"
-            @show="gtagRenderer('tooltip_show_for_rnrr_entry')"
           >
             <template #content>
               <div class="font-size-12px">
@@ -48,12 +47,10 @@
 
 <script lang="ts" setup>
 import { toast } from '@renderer/features/Toast'
-import { gtagRenderer } from '@renderer/utils/gtag'
 
 import { TopRight, QuestionFilled } from '@element-plus/icons-vue'
 
 const handleClickBrowserSetting = async () => {
-  gtagRenderer('browser_setting_clicked')
   try {
     await electron.ipcRenderer.invoke('config-with-browser-assistant')
     toast({
@@ -66,7 +63,6 @@ const handleClickBrowserSetting = async () => {
 }
 
 const handleClickConfigLlm = async () => {
-  gtagRenderer('config_llm_clicked')
   try {
     await electron.ipcRenderer.invoke('llm-config')
   } catch (err) {
@@ -75,7 +71,6 @@ const handleClickConfigLlm = async () => {
 }
 
 const handleClickConfigCommonJobCondition = async () => {
-  gtagRenderer('config_cjc_clicked', { entry: 'left-nav' })
   try {
     await electron.ipcRenderer.invoke('common-job-condition-config')
   } catch (err) {

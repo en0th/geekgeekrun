@@ -108,7 +108,6 @@
       :columns="columns"
       :stats-preset="runDataStatsPresets.favoriteJobs"
       :base-filters="baseFilters"
-      gtag-prefix="favorite_jobs"
       :actions-width="100"
       class="favorite-jobs__table"
       @changed="loadFolders"

@@ -1,4 +1,4 @@
-// Export and import of 自动化 configuration templates as a JSON file.
+// Export and import of 找岗位 configuration templates as a JSON file.
 
 export const TEMPLATE_FILE_FORMAT = "geekgeekrun-config-templates";
 export const TEMPLATE_FILE_VERSION = 1;

@@ -203,10 +203,9 @@
 <script lang="ts" setup>
 import { toast } from '@renderer/features/Toast'
 import { useRouter } from 'vue-router'
-import { nextTick, onMounted, ref } from 'vue'
+import { nextTick, ref } from 'vue'
 import debounce from 'lodash/debounce'
 
-import { gtagRenderer as baseGtagRenderer } from '@renderer/utils/gtag'
 import { EXPECT_CHROMIUM_BUILD_ID } from '../../../../common/constant'
 import { sleep } from '@geekgeekrun/utils/sleep.mjs'
 const { ipcRenderer } = electron
@@ -214,16 +213,9 @@ useRouter()
 // const checkDependenciesResult = ref({})
 // const downloadProcessWaitee = ref(null)
 
-const gtagRenderer = (name, params?: object) => {
-  return baseGtagRenderer(name, {
-    scene: 'browser-assistant',
-    ...params
-  })
-}
 
 const handleOpenChromeDownloadPage = debounce(
   async () => {
-    gtagRenderer('open_chrome_download_page_clicked')
     ipcRenderer.send('open-external-link', 'https://www.google.cn/chrome/')
   },
   1000,
@@ -254,7 +246,6 @@ const rules = {
 
 const isAutoDetectLoading = ref(false)
 async function autoDetectPuppeteerExecutable() {
-  gtagRenderer('auto_detect_pptr_exe_clicked')
   isAutoDetectLoading.value = true
   await sleep(50)
   try {
@@ -263,7 +254,6 @@ async function autoDetectPuppeteerExecutable() {
       noSave: true
     })
     if (!result) {
-      gtagRenderer('auto_detect_pptr_exe_not_found')
       toast({
         message: '未检测到可用浏览器的可执行文件',
         type: 'warning',
@@ -271,12 +261,6 @@ async function autoDetectPuppeteerExecutable() {
       })
       return
     }
-    gtagRenderer('auto_detect_pptr_exe_done', {
-      isUseCached: !!(
-        result.executablePath?.includes(`cache`) && result.executablePath?.includes(`.geekgeekrun`)
-      ),
-      executableName: result.executablePath?.split(/\/|\\/).pop() ?? ''
-    })
     formData.value.browserPath = result.executablePath
     toast({
       message: '已找到可用浏览器，可执行文件路径已填入输入框',
@@ -291,7 +275,6 @@ async function autoDetectPuppeteerExecutable() {
 }
 
 async function chooseExecutableFile() {
-  gtagRenderer('choose_pptr_exe_clicked')
   const chooseResult = await ipcRenderer.invoke('choose-file', {
     fileChooserConfig: {
       properties: ['openFile', 'treatPackageAsDirectory'],
@@ -305,13 +288,9 @@ async function chooseExecutableFile() {
     }
   })
   if (chooseResult.canceled || !chooseResult.filePaths?.length) {
-    gtagRenderer('choose_pptr_exe_cancelled')
     return
   }
   formData.value.browserPath = chooseResult.filePaths[0]
-  gtagRenderer('choose_pptr_exe_done', {
-    executableName: chooseResult.filePaths[0]?.split(/\/|\\/).pop() ?? ''
-  })
   await nextTick()
   await formRef.value.validateField()
 }
@@ -320,15 +299,10 @@ ipcRenderer.invoke('get-last-used-and-available-browser').then((res) => {
   formData.value.browserPath = res?.executablePath ?? ''
 })
 function handleCancel() {
-  gtagRenderer('cancel_clicked')
   window.close()
 }
 const formRef = ref()
 async function handleSave() {
-  gtagRenderer('save_clicked', {
-    executablePath: formData.value.browserPath,
-    executableName: formData.value.browserPath?.split(/\/|\\/).pop() ?? ''
-  })
   try {
     await formRef.value.validate()
     await ipcRenderer.invoke('save-last-used-and-available-browser-info', {
@@ -336,24 +310,13 @@ async function handleSave() {
       browser: ''
     })
     await ipcRenderer.send('browser-config-saved')
-    gtagRenderer('save_done', {
-      executablePath: formData.value.browserPath,
-      executableName: formData.value.browserPath?.split(/\/|\\/).pop() ?? ''
-    })
   } catch (err) {
-    gtagRenderer('save_validate_failed', {
-      error: err?.message ?? '',
-      executablePath: formData.value.browserPath,
-      executableName: formData.value.browserPath?.split(/\/|\\/).pop() ?? ''
-    })
   }
 }
 const handleFeedbackClick = () => {
-  gtagRenderer('goto_feedback_for_ba_clicked')
   electron.ipcRenderer.send('send-feed-back-to-github-issue')
 }
 const handleClickLaunchBrowserDownloader = async () => {
-  gtagRenderer('launch_browser_downloader_clicked')
   let downloadedBrowserPath
   try {
     downloadedBrowserPath = await electron.ipcRenderer.invoke('download-browser-with-downloader')
@@ -364,7 +327,6 @@ const handleClickLaunchBrowserDownloader = async () => {
         type: 'success',
         grouping: true
       })
-      gtagRenderer('browser_downloader_done_with_path')
     } else {
       toast({
         message:
@@ -372,26 +334,12 @@ const handleClickLaunchBrowserDownloader = async () => {
         type: 'success',
         grouping: true
       })
-      gtagRenderer('browser_downloader_done_without_path')
     }
   } catch (err) {
-    gtagRenderer('browser_downloader_cancelled')
   }
 }
 
 const faqMainRef = ref()
-onMounted(() => {
-  const faqItemEls = faqMainRef?.value?.querySelectorAll(`details`) ?? []
-  for (const el of faqItemEls) {
-    el.addEventListener('toggle', () => {
-      const isOpen = el.open
-      gtagRenderer('faq_item_toggled', {
-        faqId: el.dataset.faqId,
-        isOpen
-      })
-    })
-  }
-})
 </script>
 
 <style lang="scss" scoped>

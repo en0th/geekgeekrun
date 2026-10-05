@@ -5,7 +5,6 @@ import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { createMainWindow } from '../../window/mainWindow'
 import './app-menu'
 import initIpc from './ipc'
-import gtag from '../../utils/gtag'
 import initPublicIpc from '../../utils/initPublicIpc'
 import { sendToDaemon, closeDaemonClient } from './connect-to-daemon'
 
@@ -53,7 +52,6 @@ export function openSettingWindow() {
       if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
     })
 
-    gtag('ui_ready')
   })
 
   // Quit when all windows are closed, except on macOS. There, it's common

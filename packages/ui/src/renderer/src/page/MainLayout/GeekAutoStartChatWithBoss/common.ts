@@ -68,103 +68,86 @@ export function ensureSalaryRangeCorrect({ formContent }) {
   }
 }
 
-export function getRuleOfExpectJobNameRegExpStr({ gtagRenderer, jobDetailRegExpSectionEl }) {
+export function getRuleOfExpectJobNameRegExpStr({ jobDetailRegExpSectionEl }) {
   return (_, value, cb) => {
     if (!value) {
       cb()
-      gtagRenderer('empty_reg_exp_for_expect_job_name')
       return
     }
     try {
       new RegExp(value, 'ig')
-      gtagRenderer('valid_reg_exp_for_expect_job_name', { v: value })
       cb()
     } catch (err) {
       cb(new Error(`正则无效：${err?.message}`))
       jobDetailRegExpSectionEl.value?.scrollIntoViewIfNeeded()
-      gtagRenderer('invalid_reg_exp_for_expect_job_name', { v: value })
     }
   }
 }
 
-export function getRuleOfExpectJobTypeRegExpStr({ gtagRenderer, jobDetailRegExpSectionEl }) {
+export function getRuleOfExpectJobTypeRegExpStr({ jobDetailRegExpSectionEl }) {
   return (_, value, cb) => {
     if (!value) {
       cb()
-      gtagRenderer('empty_reg_exp_for_expect_job_type')
       return
     }
     try {
       new RegExp(value, 'ig')
-      gtagRenderer('valid_reg_exp_for_expect_job_type', { v: value })
       cb()
     } catch (err) {
       cb(new Error(`正则无效：${err?.message}`))
       jobDetailRegExpSectionEl.value?.scrollIntoViewIfNeeded()
-      gtagRenderer('invalid_reg_exp_for_expect_job_type', { v: value })
     }
   }
 }
 
-export function getRuleOfExpectJobDescRegExpStr({ gtagRenderer, jobDetailRegExpSectionEl }) {
+export function getRuleOfExpectJobDescRegExpStr({ jobDetailRegExpSectionEl }) {
   return (_, value, cb) => {
     if (!value) {
       cb()
-      gtagRenderer('empty_reg_exp_for_expect_job_desc')
       return
     }
     try {
       new RegExp(value, 'ig')
-      gtagRenderer('valid_reg_exp_for_expect_job_desc', { v: value })
       cb()
     } catch (err) {
       cb(new Error(`正则无效：${err?.message}`))
       jobDetailRegExpSectionEl.value?.scrollIntoViewIfNeeded()
-      gtagRenderer('invalid_reg_exp_for_expect_job_desc', { v: value })
     }
   }
 }
 
 export function getRuleOfPosterHrTitleRegExpStr({
-  gtagRenderer,
   posterHrTitleRegExpSectionEl
 }) {
   return (_, value, cb) => {
     if (!value) {
       cb()
-      gtagRenderer('empty_reg_exp_for_poster_hr')
       return
     }
     try {
       new RegExp(value, 'ig')
-      gtagRenderer('valid_reg_exp_for_poster_hr', { v: value })
       cb()
     } catch (err) {
       cb(new Error(`正则无效：${err?.message}`))
       posterHrTitleRegExpSectionEl.value?.scrollIntoViewIfNeeded()
-      gtagRenderer('invalid_reg_exp_for_poster_hr', { v: value })
     }
   }
 }
 
 export function getRuleOfBlockCompanyNameRegExpStr({
-  gtagRenderer,
   blockCompanyNameRegExpSectionEl
 }) {
   return (_, value, cb) => {
     if (!value) {
       cb()
-      gtagRenderer('empty_reg_exp_for_bcn')
       return
     }
     try {
       new RegExp(value, 'ig')
-      gtagRenderer('valid_reg_exp_for_bcn', { v: value })
       cb()
     } catch (err) {
       cb(new Error(`正则无效：${err?.message}`))
       blockCompanyNameRegExpSectionEl.value?.scrollIntoViewIfNeeded()
-      gtagRenderer('invalid_reg_exp_for_bcn', { v: value })
     }
   }
 }
@@ -219,31 +202,22 @@ export const blockCompanyNameRegExpTemplateList = [
   }
 ]
 
-export function getHandlerForExpectCompanyTemplateClicked({ gtagRenderer, formContent }) {
+export function getHandlerForExpectCompanyTemplateClicked({ formContent }) {
   return function handleExpectCompanyTemplateClicked(item) {
-    gtagRenderer('expect_company_tpl_clicked', {
-      name: item.name
-    })
     formContent.value.expectCompanies = item.value
   }
 }
 
-export function getHandlerForExpectJobFilterTemplateClicked({ gtagRenderer, formContent }) {
+export function getHandlerForExpectJobFilterTemplateClicked({ formContent }) {
   return function handleExpectJobFilterTemplateClicked(item) {
-    gtagRenderer('expect_job_filter_tpl_clicked', {
-      name: item.name
-    })
     Object.assign(formContent.value, {
       ...item.config
     })
   }
 }
 
-export function getHandlerForBlockCompanyNameRegExpTemplateClicked({ gtagRenderer, formContent }) {
+export function getHandlerForBlockCompanyNameRegExpTemplateClicked({ formContent }) {
   return function handleBlockCompanyNameRegExpTemplateClicked(item) {
-    gtagRenderer('bcn_reg_exp_tpl_clicked', {
-      name: item.name
-    })
     formContent.value.blockCompanyNameRegExpStr = item.value
   }
 }
@@ -259,9 +233,8 @@ export const jobDetailRegExpMatchLogicOptions = [
   }
 ]
 
-export function getHandlerForExpectSalaryCalculateWayChanged({ gtagRenderer, formContent }) {
+export function getHandlerForExpectSalaryCalculateWayChanged({ formContent }) {
   return async function handleExpectSalaryCalculateWayChanged(value) {
-    gtagRenderer('expect_salary_calculate_way_changed', { value })
 
     await nextTick()
     // convert annual package to month salary as 12-month

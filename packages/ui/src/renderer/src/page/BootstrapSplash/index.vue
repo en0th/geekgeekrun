@@ -18,7 +18,6 @@
 import { useRouter } from 'vue-router'
 import { onMounted } from 'vue'
 import { sleep } from '@geekgeekrun/utils/sleep.mjs'
-import { gtagRenderer } from '@renderer/utils/gtag'
 
 const router = useRouter()
 
@@ -26,7 +25,6 @@ const router = useRouter()
 // const downloadProcessWaitee = ref(null)
 
 onMounted(async () => {
-  gtagRenderer('bootstrap_mounted')
   await sleep(1500)
   try {
     await electron.ipcRenderer.invoke('pre-enter-setting-ui')

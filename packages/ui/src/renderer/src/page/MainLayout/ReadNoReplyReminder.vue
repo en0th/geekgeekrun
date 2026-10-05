@@ -106,8 +106,7 @@
                         @click="
                           () => {
                             restoreDefaultTemplate({
-                              type: 'open',
-                              gaEvName: 'reset_template_clicked_in_main_form'
+                              type: 'open'
                             })
                           }
                         "
@@ -131,7 +130,6 @@
                 effect="light"
                 placement="right"
                 :enterable="false"
-                @show="gtagRenderer('tooltip_show_about_lfr_emotion_figure')"
               >
                 <template #content>
                   <img block h-100px src="./resources/look-forward-reply-emotion.gif" />
@@ -172,8 +170,7 @@
                           @click="
                             () => {
                               restoreDefaultTemplate({
-                                type: 'rechat',
-                                gaEvName: 'reset_template_clicked_in_main_form'
+                                type: 'rechat'
                               })
                             }
                           "
@@ -285,7 +282,6 @@
           <el-tooltip
             effect="light"
             placement="bottom-start"
-            @show="gtagRenderer('tooltip_show_about_stop_trace_one_boss')"
           >
             <template #content>
               <ul m0 line-height-1.5em w-300px pl2em>
@@ -362,18 +358,11 @@ import {
   RECHAT_LLM_FALLBACK,
   RUNNING_STATUS_ENUM
 } from '../../../../common/enums/auto-start-chat'
-import { gtagRenderer as baseGtagRenderer } from '@renderer/utils/gtag'
 import mittBus from '../../utils/mitt'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import RunningOverlay from '@renderer/features/RunningOverlay/index.vue'
 import { DEFAULT_CONSTANT_OPEN_CONTENT_SEGS } from '../../../../common/constant'
 import { useTaskManagerStore } from '@renderer/store'
-const gtagRenderer = (name, params?: object) => {
-  return baseGtagRenderer(name, {
-    scene: 'rnrr-config',
-    ...params
-  })
-}
 const router = useRouter()
 const formContent = ref({
   autoReminder: {
@@ -396,10 +385,8 @@ const enableRechatLimit = computed({
   },
   set(val) {
     if (!val) {
-      gtagRenderer('rechat_limit_disabled')
       formContent.value.autoReminder.rechatLimitDay = 0
     } else {
-      gtagRenderer('rechat_limit_enabled')
       formContent.value.autoReminder.rechatLimitDay = 21
     }
   }
@@ -512,14 +499,12 @@ watch(
 
 async function checkIsCanRun() {
   if (!(await electron.ipcRenderer.invoke('check-is-resume-content-valid'))) {
-    gtagRenderer('cannot_launch_for_invalid_rc_dialog_show')
     try {
       await ElMessageBox.confirm(`简历内容无效；您需要编辑一下您的简历`, {
         cancelButtonText: '取消',
         confirmButtonText: '好的，去编辑我的简历',
         dangerouslyUseHTMLString: true
       })
-      gtagRenderer('invalid_rc_dialog_click_confirm')
       try {
         await electron.ipcRenderer.invoke('resume-edit')
         await fetchResumeContent()
@@ -527,7 +512,6 @@ async function checkIsCanRun() {
         console.log(err)
       }
     } catch {
-      gtagRenderer('invalid_rc_dialog_click_cancel')
     }
     return false
   }
@@ -535,7 +519,6 @@ async function checkIsCanRun() {
     await electron.ipcRenderer.invoke('check-if-llm-config-list-valid')
   } catch (err) {
     if (err?.message?.includes(`CANNOT_FIND_VALID_CONFIG`)) {
-      gtagRenderer('cannot_launch_for_invalid_llm_config')
       console.log(`大模型配置无效`, err)
       ElMessageBox.confirm(
         '大模型配置不存在或者包含无效配置<br />您是否希望查看并修正当前大模型配置？',
@@ -549,7 +532,6 @@ async function checkIsCanRun() {
         }
       )
         .then(async () => {
-          gtagRenderer('invalid_llm_config_tip_dialog_confirm')
           try {
             await electron.ipcRenderer.invoke('llm-config')
           } catch (err) {
@@ -557,10 +539,8 @@ async function checkIsCanRun() {
           }
         })
         .catch(() => {
-          gtagRenderer('invalid_llm_config_tip_dialog_cancel')
         })
     } else {
-      gtagRenderer('cannot_launch_for_check_llm_config_error', { err })
       toast({
         type: 'error',
         message: '大模型配置检查未通过，请重试'
@@ -573,7 +553,6 @@ async function checkIsCanRun() {
   } catch (err) {
     console.log(err)
     if (err?.message?.includes(`RESUME_PLACEHOLDER_NOT_EXIST`)) {
-      gtagRenderer('cannot_launch_for_no_resume_placehold')
       console.log(`提示词模板无效`, err)
       ElMessageBox.confirm(
         '提示词模板缺少简历内容占位符：<br /><b>__REPLACE_REAL_RESUME_HERE__</b><br /><br />您是否希望还原默认的提示词模板？',
@@ -588,15 +567,12 @@ async function checkIsCanRun() {
       )
         .then(async () => {
           await restoreDefaultTemplate({
-            type: 'rechat',
-            gaEvName: 'confirm_invalid_rt_tip_dialog'
+            type: 'rechat'
           })
         })
         .catch(() => {
-          gtagRenderer('close_invalid_rt_tip_dialog')
         })
     } else {
-      gtagRenderer('cannot_launch_for_check_prompt_error', { err })
       toast({
         type: 'error',
         message: '用于生成自动提醒消息的提示词检查未通过，请重试'
@@ -628,23 +604,8 @@ onMounted(async () => {
 })
 
 const handleSubmit = async () => {
-  gtagRenderer('run_read_no_reply_reminder_clicked', {
-    throttle_interval_minutes: formContent.value.autoReminder.throttleIntervalMinutes,
-    rechat_limit_day: formContent.value.autoReminder.rechatLimitDay,
-    rechat_content_source: formContent.value.autoReminder.rechatContentSource,
-    recent_message_quantity_for_llm: formContent.value.autoReminder.recentMessageQuantityForLlm,
-    only_remind_boss_with_expect_job_type:
-      formContent.value.autoReminder.onlyRemindBossWithExpectJobType,
-    only_remind_boss_without_block_company_name:
-      formContent.value.autoReminder.onlyRemindBossWithoutBlockCompanyName,
-    rechat_llm_fallback: formContent.value.autoReminder.rechatLlmFallback,
-    open_content_source: formContent.value.autoReminder.openContentSource,
-    constant_open_content_text_length:
-      formContent.value.autoReminder.constantOpenContent.length ?? 0
-  })
   await formRef.value!.validate()
   await electron.ipcRenderer.invoke('save-config-file-from-ui', JSON.stringify(formContent.value))
-  gtagRenderer('config_saved')
   if (
     formContent.value.autoReminder?.rechatContentSource ===
       RECHAT_CONTENT_SOURCE.GEMINI_WITH_CHAT_CONTEXT ||
@@ -655,7 +616,6 @@ const handleSubmit = async () => {
       return
     }
     if (!(await electron.ipcRenderer.invoke('resume-content-enough-detect'))) {
-      gtagRenderer('rc_not_enough_dialog_show')
       try {
         await ElMessageBox.confirm(
           `简历内容可能不够充足（各个部分内容长度相加 <800 字）<br />后续大模型根据简历生成的内容将可能不符合预期（例如相同内容重复生成、生成预期之外的内容）<br /><br />要继续运行吗？`,
@@ -665,14 +625,11 @@ const handleSubmit = async () => {
             dangerouslyUseHTMLString: true
           }
         )
-        gtagRenderer('rc_not_enough_dialog_click_confirm')
       } catch {
-        gtagRenderer('rc_not_enough_dialog_click_cancel')
         return
       }
     }
   }
-  gtagRenderer('run_read_no_reply_reminder_launched')
 
   try {
     runningOverlayRef.value?.show()
@@ -682,14 +639,12 @@ const handleSubmit = async () => {
     runRecordId.value = rrId
   } catch (err) {
     if (err instanceof Error && err.message.includes('NEED_TO_CHECK_RUNTIME_DEPENDENCIES')) {
-      gtagRenderer('rnrr_cannot_run_for_corrupt')
       toast.error({
         message: `核心组件损坏，正在尝试修复`
       })
       router.replace('/')
     }
     console.error(err)
-    gtagRenderer('rnrr_cannot_run_for_unknown_error', { err })
   }
 
   // {
@@ -706,8 +661,7 @@ function handleThrottleIntervalMinutesBlur() {
   )
 }
 
-const restoreDefaultTemplate = async ({ type, gaEvName }) => {
-  gtagRenderer(gaEvName)
+const restoreDefaultTemplate = async ({ type }) => {
   await electron.ipcRenderer.invoke('overwrite-auto-remind-prompt-with-default', { type })
   toast({
     type: 'success',
@@ -733,7 +687,6 @@ const rechatLimitDateString = computed(() => {
 })
 
 const handleClickEditResume = async () => {
-  gtagRenderer('edit_resume_clicked')
   try {
     await electron.ipcRenderer.invoke('resume-edit')
     await fetchResumeContent()
@@ -743,7 +696,6 @@ const handleClickEditResume = async () => {
 }
 
 const handleClickEditPrompt = async ({ type }) => {
-  gtagRenderer('edit_prompt_clicked', { type })
   await electron.ipcRenderer.send('no-reply-reminder-prompt-edit', { type })
 }
 
@@ -772,7 +724,6 @@ const rechatLlmFallbackOptions = [
 // ]
 
 async function handleTestEffectClicked() {
-  gtagRenderer('goto_mock_chat_clicked')
   if (!(await checkIsCanRun())) {
     return
   }
@@ -794,7 +745,6 @@ onUnmounted(() => {
 
 const isStopButtonLoading = ref(false)
 const handleStopButtonClick = async () => {
-  gtagRenderer('rnrr_stop_button_clicked')
   isStopButtonLoading.value = true
   try {
     electron.ipcRenderer.invoke('stop-read-no-reply-auto-reminder')

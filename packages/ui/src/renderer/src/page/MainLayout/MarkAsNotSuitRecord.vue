@@ -4,7 +4,6 @@
       dataset="markAsNotSuitLog"
       :columns="columns"
       :stats-preset="runDataStatsPresets.markAsNotSuitLog"
-      gtag-prefix="mansr"
       :actions-width="180"
       class="flex-1"
     >
@@ -32,7 +31,6 @@
         scene="markAsNotSuitRecord"
         @closed="
           () => {
-            gtagRenderer('mansr_closed')
             selectedJobInfoForViewSnapshot = null
           }
         "
@@ -52,7 +50,6 @@ import { enumLabel, formatSalary } from '../../features/RunDataTable/format'
 import type { RunDataColumn } from '../../features/RunDataTable/types'
 import { MarkAsNotSuitReason } from '@geekgeekrun/sqlite-plugin/src/enums'
 import { getRunDataField } from '../../../../common/run-data'
-import { gtagRenderer } from '@renderer/utils/gtag'
 
 const markReasonField = getRunDataField('markAsNotSuitLog', 'markReason')!
 const markReasonLabel = (row: VMarkAsNotSuitLog) => enumLabel(markReasonField, row.markReason)
@@ -77,7 +74,6 @@ const columns: RunDataColumn[] = [
 ]
 
 async function handleViewJobOnlineButtonClick(encryptJobId: string) {
-  gtagRenderer('view_job_online_button_clicked')
   return await electron.ipcRenderer.invoke('open-site-with-boss-cookie', {
     url: `https://www.zhipin.com/job_detail/${encryptJobId}.html`
   })
@@ -87,7 +83,6 @@ const drawVisibleModelValue = ref(false)
 const selectedJobInfoForViewSnapshot = ref<VMarkAsNotSuitLog | null>(null)
 
 function handleViewJobSnapshotButtonClick(record: VMarkAsNotSuitLog) {
-  gtagRenderer('view_job_snapshot_button_clicked')
   selectedJobInfoForViewSnapshot.value = record
   drawVisibleModelValue.value = true
 }

@@ -1,6 +1,5 @@
 import { createRouter, createWebHashHistory, RouteRecordRaw } from 'vue-router'
 import BootstrapSplash from '@renderer/page/BootstrapSplash/index.vue'
-import { gtagRenderer } from '@renderer/utils/gtag'
 
 const routes: Array<RouteRecordRaw> = [
   {
@@ -185,20 +184,12 @@ const router = createRouter({
   routes
 })
 
-router.afterEach((to, from) => {
+router.afterEach((to) => {
   if (to.meta?.title) {
     document.title = `${to.meta.title} - GeekGeekRun 牛人快跑`
   } else {
     document.title = `GeekGeekRun 牛人快跑`
   }
-  gtagRenderer('router_path_changed', {
-    from_path: from.fullPath,
-    to_path: to.fullPath
-  })
-  gtagRenderer('page_view', {
-    page_location: location.href,
-    page_title: document.title
-  })
 })
 
 export default router

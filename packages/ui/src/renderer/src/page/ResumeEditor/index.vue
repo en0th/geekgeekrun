@@ -322,17 +322,10 @@
 import { ElForm, ElButton, ElAlert, ElMessageBox } from 'element-plus'
 import { ref, onMounted, computed } from 'vue'
 import { ArrowUp, ArrowDown, Delete, Plus } from '@element-plus/icons-vue'
-import { gtagRenderer as baseGtagRenderer } from '@renderer/utils/gtag'
 import { type ResumeContent, resumeContentEnoughDetect } from '../../../../common/utils/resume'
 
 const formRef = ref<InstanceType<typeof ElForm>>()
 
-const gtagRenderer = (name, params?: object) => {
-  return baseGtagRenderer(name, {
-    scene: 'resume-editor',
-    ...params
-  })
-}
 
 const getEmptyFormContent = () => {
   const o: any = {
@@ -402,20 +395,16 @@ const formRulesForElForm = computed(() => {
   return valueMap
 })
 const handleCancel = () => {
-  gtagRenderer('cancel_clicked')
   electron.ipcRenderer.send('close-resume-editor')
-  gtagRenderer('cancel_done')
 }
 const handleSubmit = async () => {
   await formRef.value?.validate()
-  gtagRenderer('submit_clicked')
   if (
     !resumeContentEnoughDetect({
       content: formContent.value
     })
   ) {
     try {
-      gtagRenderer('rc_not_enough_dialog_show')
       await ElMessageBox.confirm(
         `简历内容可能不够充足（各个部分内容长度相加 <800 字）<br />后续大模型根据简历生成的内容将可能不符合预期（例如相同内容重复生成、生成预期之外的内容）<br /><br />要继续保存吗？`,
         {
@@ -429,7 +418,6 @@ const handleSubmit = async () => {
     }
   }
   electron.ipcRenderer.invoke('save-resume-content', JSON.parse(JSON.stringify(formContent.value)))
-  gtagRenderer('submit_done')
 }
 
 onMounted(async () => {
@@ -476,14 +464,12 @@ function getNewWorkExpItem() {
 }
 function addWorkExp() {
   formContent.value.geekWorkExpList.push(getNewWorkExpItem())
-  gtagRenderer('resume_work_exp_added')
 }
 function moveWorkExpUp(index) {
   ;[formContent.value.geekWorkExpList[index], formContent.value.geekWorkExpList[index - 1]] = [
     formContent.value.geekWorkExpList[index - 1],
     formContent.value.geekWorkExpList[index]
   ]
-  gtagRenderer('resume_work_exp_moved_up')
 }
 
 function moveWorkExpDown(index) {
@@ -491,12 +477,10 @@ function moveWorkExpDown(index) {
     formContent.value.geekWorkExpList[index + 1],
     formContent.value.geekWorkExpList[index]
   ]
-  gtagRenderer('resume_work_exp_moved_down')
 }
 
 function removeWorkExp(index) {
   formContent.value.geekWorkExpList.splice(index, 1)
-  gtagRenderer('resume_work_exp_removed')
 }
 // #endregion
 
@@ -513,14 +497,12 @@ function getNewProjExpItem() {
 }
 function addProjExp() {
   formContent.value.geekProjExpList.push(getNewProjExpItem())
-  gtagRenderer('resume_proj_exp_added')
 }
 function moveProjExpUp(index) {
   ;[formContent.value.geekProjExpList[index], formContent.value.geekProjExpList[index - 1]] = [
     formContent.value.geekProjExpList[index - 1],
     formContent.value.geekProjExpList[index]
   ]
-  gtagRenderer('resume_proj_exp_moved_up')
 }
 
 function moveProjExpDown(index) {
@@ -528,17 +510,14 @@ function moveProjExpDown(index) {
     formContent.value.geekProjExpList[index + 1],
     formContent.value.geekProjExpList[index]
   ]
-  gtagRenderer('resume_proj_exp_moved_down')
 }
 
 function removeProjExp(index) {
   formContent.value.geekProjExpList.splice(index, 1)
-  gtagRenderer('resume_proj_exp_removed')
 }
 // #endregion
 
 onMounted(() => {
-  gtagRenderer('resume_editor_mounted')
 })
 </script>
 

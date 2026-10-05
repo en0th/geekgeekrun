@@ -162,7 +162,6 @@
                           () => {
                             // isDialogVisible = true
                             showDialog()
-                            gtagRenderer('choose_city_entry_button_clicked')
                           }
                         "
                         >选择城市</el-button
@@ -223,7 +222,6 @@
                       placeholder="不设置"
                       @change="
                         () => {
-                          gtagRenderer('expect_salary_low_changed')
                           ensureSalaryRangeCorrect({ formContent })
                         }
                       "
@@ -257,7 +255,6 @@
                       placeholder="不设置"
                       @change="
                         () => {
-                          gtagRenderer('expect_salary_high_changed')
                           ensureSalaryRangeCorrect({ formContent })
                         }
                       "
@@ -396,7 +393,6 @@
                 <div font-size-12px>职位名称/类型/描述 正则匹配筛选逻辑</div>
                 <el-select
                   v-model="formContent.jobDetailRegExpMatchLogic"
-                  @change="(value) => gtagRenderer('job_detail_re_ml_change', { value })"
                 >
                   <el-option
                     v-for="op in jobDetailRegExpMatchLogicOptions"
@@ -429,7 +425,6 @@
                 <el-tooltip
                   effect="light"
                   placement="bottom"
-                  @show="gtagRenderer('tooltip_show_about_how_to_fill_df')"
                 >
                   <template #content>
                     <div w-800px>
@@ -622,7 +617,6 @@
 </template>
 
 <script setup lang="tsx">
-import { gtagRenderer as baseGtagRenderer } from '@renderer/utils/gtag'
 import { JobDetailRegExpMatchLogic, SalaryCalculateWay } from '@geekgeekrun/sqlite-plugin/src/enums'
 import CityChooser from '../MainLayout/GeekAutoStartChatWithBoss/components/CityChooser.vue'
 import { QuestionFilled, ArrowDown } from '@element-plus/icons-vue'
@@ -652,12 +646,6 @@ import {
 } from '@geekgeekrun/geek-auto-start-chat-with-boss/poster-title-filter.mjs'
 import expectJobFilterTemplateList from '../MainLayout/GeekAutoStartChatWithBoss/expectJobFilterTemplateList'
 const { ipcRenderer } = window.electron
-const gtagRenderer = (name, params?: object) => {
-  return baseGtagRenderer(name, {
-    scene: 'cjc_config',
-    ...params
-  })
-}
 
 const formContent = ref({
   expectCompanies: '',
@@ -680,44 +668,40 @@ const blockCompanyNameRegExpSectionEl = ref<HTMLDivElement>()
 const formRules = computed(() => ({
   expectJobNameRegExpStr: {
     trigger: 'blur',
-    validator: getRuleOfExpectJobNameRegExpStr({ gtagRenderer, jobDetailRegExpSectionEl })
+    validator: getRuleOfExpectJobNameRegExpStr({ jobDetailRegExpSectionEl })
   },
   expectJobTypeRegExpStr: {
     trigger: 'blur',
-    validator: getRuleOfExpectJobTypeRegExpStr({ gtagRenderer, jobDetailRegExpSectionEl })
+    validator: getRuleOfExpectJobTypeRegExpStr({ jobDetailRegExpSectionEl })
   },
   expectJobDescRegExpStr: {
     trigger: 'blur',
-    validator: getRuleOfExpectJobDescRegExpStr({ gtagRenderer, jobDetailRegExpSectionEl })
+    validator: getRuleOfExpectJobDescRegExpStr({ jobDetailRegExpSectionEl })
   },
   posterHrTitleRegExpStr: {
     trigger: 'blur',
-    validator: getRuleOfPosterHrTitleRegExpStr({ gtagRenderer, posterHrTitleRegExpSectionEl })
+    validator: getRuleOfPosterHrTitleRegExpStr({ posterHrTitleRegExpSectionEl })
   },
   blockCompanyNameRegExpStr: {
     trigger: 'blur',
-    validator: getRuleOfBlockCompanyNameRegExpStr({ gtagRenderer, blockCompanyNameRegExpSectionEl })
+    validator: getRuleOfBlockCompanyNameRegExpStr({ blockCompanyNameRegExpSectionEl })
   }
 }))
 
 const handleBlockCompanyNameRegExpTemplateClicked =
   getHandlerForBlockCompanyNameRegExpTemplateClicked({
-    gtagRenderer,
     formContent
   })
 
 const handleExpectCompanyTemplateClicked = getHandlerForExpectCompanyTemplateClicked({
-  gtagRenderer,
   formContent
 })
 
 const handleExpectJobFilterTemplateClicked = getHandlerForExpectJobFilterTemplateClicked({
-  gtagRenderer,
   formContent
 })
 
 function handleHowToFillDetailFilterClick() {
-  gtagRenderer('click_linux_do_how_to_fill_df')
   electron.ipcRenderer.send(
     'open-external-link',
     'https://linux.do/t/topic/640626/74?u=geekgeekrun'
@@ -725,7 +709,6 @@ function handleHowToFillDetailFilterClick() {
 }
 
 const handleExpectSalaryCalculateWayChanged = getHandlerForExpectSalaryCalculateWayChanged({
-  gtagRenderer,
   formContent
 })
 

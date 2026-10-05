@@ -1,11 +1,11 @@
 import semver from 'semver'
 import packageJson from '../../../package.json'
 import os from 'node:os'
-import gtag from '../utils/gtag'
 import { NewReleaseInfo } from '../../common/types/update'
+import { RELEASES_API_URL } from '../../common/repository.mjs'
 
 export const currentOsPlatform = os.platform()
-const RELEASE_LIST_URL = `https://api.github.com/repos/en0th/geekgeekrun/releases`
+const RELEASE_LIST_URL = RELEASES_API_URL
 
 export interface GitHubReleaseItem {
   tag_name: string
@@ -71,7 +71,6 @@ export const checkUpdateForUi = async (): Promise<NewReleaseInfo | null> => {
         }
       })
   } catch (err) {
-    gtag('check_update_error', { err: JSON.stringify(err) })
     console.log(err)
   }
   console.log(releaseList)
@@ -86,10 +85,6 @@ export const checkUpdateForUi = async (): Promise<NewReleaseInfo | null> => {
   const { assets } = availableRelease
   const targetAsset = findTargetAsset(assets ?? [])
   if (targetAsset) {
-    gtag('update_found', {
-      currentVersion: packageJson.version,
-      newVersion: availableReleaseVersion
-    })
     console.log(targetAsset)
     return {
       releaseVersion: availableReleaseVersion,

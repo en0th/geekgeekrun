@@ -7,7 +7,6 @@
         <el-tooltip
           placement="right"
           :enterable="false"
-          @show="gtagRenderer('tooltip_show_for_nav_boss_b_entry')"
         >
           <template #content>
             <div w-480px>
@@ -56,7 +55,6 @@
         <el-tooltip
           placement="right"
           :enterable="false"
-          @show="gtagRenderer('tooltip_show_for_rnrr_entry')"
         >
           <template #content>
             <div w-480px>
@@ -96,13 +94,11 @@
 
 <script lang="ts" setup>
 import { toast } from '@renderer/features/Toast'
-import { gtagRenderer } from '@renderer/utils/gtag'
 import { debounce } from 'lodash'
 
 import { TopRight, QuestionFilled } from '@element-plus/icons-vue'
 
 const handleClickLaunchBossLogin = async () => {
-  gtagRenderer('launch_login_clicked')
   try {
     await electron.ipcRenderer.invoke('login-with-cookie-assistant')
     toast({
@@ -116,7 +112,6 @@ const handleClickLaunchBossLogin = async () => {
 
 const handleLaunchBossSite = debounce(
   async () => {
-    gtagRenderer('launch_boss_site_clicked')
     return await electron.ipcRenderer.invoke('open-site-with-boss-cookie', {
       url: `https://www.zhipin.com/`
     })

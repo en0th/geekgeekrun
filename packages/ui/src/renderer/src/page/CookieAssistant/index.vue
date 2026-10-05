@@ -82,7 +82,6 @@
               font-size-inherit
               @click="
                 () => {
-                  gtagRenderer('replace_inputted_cookie_by_collected')
                   fillCollectedCookie()
                 }
               "
@@ -102,17 +101,10 @@
 <script lang="ts" setup>
 import { toast } from '@renderer/features/Toast'
 import { ElForm } from 'element-plus'
-import { ref, onUnmounted, onMounted } from 'vue'
+import { ref, onUnmounted, onMounted, nextTick } from 'vue'
 import { checkCookieListFormat } from '../../../../common/utils/cookie'
 import { useRouter } from 'vue-router'
-import { gtagRenderer as baseGtagRenderer } from '@renderer/utils/gtag'
 
-const gtagRenderer = (name, params?: object) => {
-  return baseGtagRenderer(name, {
-    scene: 'cookie-assistant',
-    ...params
-  })
-}
 const router = useRouter()
 const cookieInvalid = ref(false)
 
@@ -146,13 +138,11 @@ const formRules = {
               `JSON格式无效 - 存在语法错误: ${err.message}；建议使用EditThisCookie扩展程序进行复制。`
             )
           )
-          gtagRenderer('wrong_cookie_format_json_syntax_error')
           return
         }
 
         if (!checkCookieListFormat(JSON.parse(formContent.value.collectedCookies))) {
           cb(new Error(`Cookie格式无效 - 部分字段缺失；建议使用EditThisCookie扩展程序进行复制。`))
-          gtagRenderer('wrong_cookie_format_field_loss')
           return
         }
         cb()
@@ -163,14 +153,18 @@ const formRules = {
 
 const hasUserMutateInput = ref(false)
 const collectedCookie = ref()
-const handleCookieCollected = (_, payload) => {
+const handleCookieCollected = async (_, payload) => {
   loginCookieWaitingStatus.value = LOGIN_COOKIE_WAITING_STATUS.COOKIE_COLLECTED
   collectedCookie.value = payload.cookies
-  if (!hasUserMutateInput.value) {
-    fillCollectedCookie()
-    gtagRenderer('cookie_collected_and_auto_filled')
-  } else {
-    gtagRenderer('cookie_collected_after_changed_input')
+  // an edited input is left alone; the alert offers to use the collected cookies instead
+  if (hasUserMutateInput.value) return
+  fillCollectedCookie()
+  // the login browser has closed itself; save right away so the user doesn't have to
+  await nextTick()
+  try {
+    await handleSubmit()
+  } catch {
+    // the form shows what is wrong; the user can fix it and press 确定
   }
 }
 const fillCollectedCookie = () => {
@@ -182,13 +176,11 @@ const fillCollectedCookie = () => {
 }
 
 const handleClickLaunchLogin = () => {
-  gtagRenderer('launch_login_button_clicked')
   electron.ipcRenderer.send('launch-bosszhipin-login-page-with-preload-extension')
   loginCookieWaitingStatus.value = LOGIN_COOKIE_WAITING_STATUS.WAITING_FOR_LOGIN
 }
 
 const handleEditThisCookieExtensionStoreLinkClick = () => {
-  gtagRenderer('etc_extension_link_clicked')
   electron.ipcRenderer.send(
     'open-external-link',
     'https://chromewebstore.google.com/detail/editthiscookie-v3/ojfebgpkimhlhcblbalbfjblapadhbol'
@@ -196,18 +188,15 @@ const handleEditThisCookieExtensionStoreLinkClick = () => {
 }
 
 const handleCancel = () => {
-  gtagRenderer('cancel_clicked')
   window.close()
 }
 const handleSubmit = async () => {
-  gtagRenderer('save_clicked')
   await formRef.value!.validate()
   await electron.ipcRenderer.invoke('write-storage-file', {
     fileName: 'boss-cookies.json',
     data: formContent.value.collectedCookies
   })
   toast.success('BOSS直聘 Cookie 保存成功')
-  gtagRenderer('save_cookie_done')
 
   window.electron.ipcRenderer.send('cookie-saved')
 }
@@ -219,10 +208,9 @@ const handleBossZhipinLoginPageClosed = () => {
 }
 
 onMounted(() => {
-  gtagRenderer('cookie_assistant_mounted')
 })
 onMounted(async () => {
-  electron.ipcRenderer.once('BOSS_ZHIPIN_COOKIE_COLLECTED', handleCookieCollected)
+  electron.ipcRenderer.on('BOSS_ZHIPIN_COOKIE_COLLECTED', handleCookieCollected)
   electron.ipcRenderer.on('BOSS_ZHIPIN_LOGIN_PAGE_CLOSED', handleBossZhipinLoginPageClosed)
 
   const cookieFileContent = await electron.ipcRenderer.invoke('read-storage-file', {

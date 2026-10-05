@@ -244,14 +244,12 @@ function getNewConditionItem() {
 
 function addCondition() {
   props.modelValue?.push(getNewConditionItem())
-  // gtagRenderer('resume_work_exp_added')
 }
 function moveConditionUp(index) {
   ;[props.modelValue[index], props.modelValue[index - 1]] = [
     props.modelValue[index - 1],
     props.modelValue[index]
   ]
-  // gtagRenderer('resume_work_exp_moved_up')
 }
 
 function moveConditionDown(index) {
@@ -259,12 +257,10 @@ function moveConditionDown(index) {
     props.modelValue[index + 1],
     props.modelValue[index]
   ]
-  // gtagRenderer('resume_work_exp_moved_down')
 }
 
 function removeCondition(index) {
   props.modelValue?.splice(index, 1)
-  // gtagRenderer('resume_work_exp_removed')
 }
 const duplicatedMap = computed(() => {
   const map = new Map()

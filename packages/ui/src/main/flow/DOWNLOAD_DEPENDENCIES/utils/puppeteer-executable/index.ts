@@ -6,7 +6,6 @@ import {
   getLastUsedAndAvailableBrowser,
   removeLastUsedAndAvailableBrowserPath
 } from '../browser-history'
-import gtag from '../../../../utils/gtag'
 import { EXPECT_CHROMIUM_BUILD_ID } from '../../../../../common/constant'
 import { cacheDir } from '../../../../constant'
 
@@ -56,7 +55,6 @@ export const checkAndDownloadPuppeteerExecutable = async (
   const puppeteerManager = await getPuppeteerManagerModule()
   let installedBrowser: InstalledBrowser
   if (!(await checkCachedPuppeteerExecutable())) {
-    gtag('need_download_browser')
     try {
       await options.confirmContinuePromise
     } catch {
@@ -76,7 +74,6 @@ export const checkAndDownloadPuppeteerExecutable = async (
       baseUrl: `https://registry.npmmirror.com/-/binary/chrome-for-testing`
     })
   } else {
-    gtag('use_installed_browser')
     installedBrowser = (
       await puppeteerManager.getInstalledBrowsers({
         cacheDir

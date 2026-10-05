@@ -17,13 +17,11 @@
 </template>
 
 <script lang="ts" setup>
-// import { gtagRenderer } from '@renderer/utils/gtag'
 // import debounce from 'lodash/debounce'
 // const { ipcRenderer } = electron
 
 // const handleOpenChromeDownloadPage = debounce(
 //   async () => {
-//     gtagRenderer('open_chrome_download_page_clicked')
 //     ipcRenderer.send('open-external-link', 'https://www.google.cn/chrome/')
 //   },
 //   1000,

@@ -4,7 +4,6 @@
       dataset="chatStartupLog"
       :columns="columns"
       :stats-preset="runDataStatsPresets.chatStartupLog"
-      gtag-prefix="start_chat_record"
       :actions-width="180"
       class="flex-1"
     >
@@ -28,7 +27,6 @@
         scene="startChatRecord"
         @closed="
           () => {
-            gtagRenderer('start_chat_record_closed')
             selectedJobInfoForViewSnapshot = null
           }
         "
@@ -46,7 +44,6 @@ import RunDataTable from '../../features/RunDataTable/index.vue'
 import { runDataStatsPresets } from '../../features/RunDataTable/stats-presets'
 import { formatSalary } from '../../features/RunDataTable/format'
 import type { RunDataColumn } from '../../features/RunDataTable/types'
-import { gtagRenderer } from '@renderer/utils/gtag'
 
 const columns: RunDataColumn[] = [
   { key: 'companyName' },

@@ -27,7 +27,6 @@
             <el-tooltip
               content="待对比条目少于2个"
               :disabled="tableProps.length > 1"
-              @show="gtagRenderer('tooltip_show_about_lake_of_compare_item')"
             >
               <el-radio v-model="diffPivot" :label="item.value" :disabled="tableProps.length <= 1">作为diff基准</el-radio>
             </el-tooltip>
@@ -48,7 +47,6 @@ import { JobInfoChangeLog } from '@geekgeekrun/sqlite-plugin/src/entity/JobInfoC
 import { ElTable, ElTableColumn, ElForm, ElFormItem, ElRow, ElCol, ElDivider } from 'element-plus'
 import TextDiff from '../../components/TextDiff.vue'
 import { transformUtcDateToLocalDate } from '@geekgeekrun/utils/date.mjs'
-import { gtagRenderer } from '@renderer/utils/gtag'
 
 const props = defineProps({
   jobInfo: {

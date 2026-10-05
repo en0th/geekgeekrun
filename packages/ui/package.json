@@ -37,7 +37,6 @@
     "lodash": "^4.17.21",
     "minimist": "^1.2.8",
     "mitt": "^3.0.1",
-    "node-machine-id": "^1.1.12",
     "pinia": "^3.0.2",
     "puppeteer": "24.19.0",
     "puppeteer-extra-plugin-stealth": "2.11.2",

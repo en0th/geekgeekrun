@@ -92,7 +92,9 @@ export function createCookieAssistantWindow(
         : [`--mode=launchBossZhipinLoginPageWithPreloadExtension`],
       {
         env: subProcessEnv,
-        stdio: [null, null, null, 'pipe', 'ipc']
+        // the login process writes its own log file; unread stdout/stderr pipes could fill up
+        // and stall it
+        stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'ipc']
       }
     )
     subProcessOfBossZhipinLoginPageWithPreloadExtension!.stdio[3]!.pipe(JSONStream.parse()).on(
@@ -111,7 +113,8 @@ export function createCookieAssistantWindow(
       }
     )
 
-    subProcessOfBossZhipinLoginPageWithPreloadExtension!.once('exit', () => {
+    // 'close' comes after the message pipe has been read, so a collected cookie arrives first
+    subProcessOfBossZhipinLoginPageWithPreloadExtension!.once('close', () => {
       cookieAssistantWindow?.webContents.send('BOSS_ZHIPIN_LOGIN_PAGE_CLOSED')
       subProcessOfBossZhipinLoginPageWithPreloadExtension = null
     })

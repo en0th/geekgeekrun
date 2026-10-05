@@ -28,7 +28,6 @@ import {
   RECHAT_CONTENT_SOURCE,
   RECHAT_LLM_FALLBACK
 } from '../../../common/enums/auto-start-chat'
-import gtag from '../../utils/gtag'
 import { JobHireStatus } from '@geekgeekrun/sqlite-plugin/dist/enums'
 import dayjs from 'dayjs'
 import cheerio from 'cheerio'
@@ -633,19 +632,14 @@ const mainLoop = async () => {
       if (!messageList?.length) {
         if (openContentSource === OPEN_CONTENT_SOURCE.CONSTANT_CONTENT) {
           await sendMessage(pageMapByName.boss!, constantOpenContent)
-          gtag('rnrr_llm_content_sent')
         } else {
           try {
             const textToSend = await getGptContent(messageList)
             await sendMessage(pageMapByName.boss!, textToSend)
-            gtag('rnrr_llm_content_sent')
           } catch (err) {
             console.log(err)
             if ((err as Error)?.message?.includes('SEND_CONFIRMATION_UNCERTAIN')) throw err
             await sendMessage(pageMapByName.boss!, constantOpenContent)
-            gtag('rnrr_look_forward_reply_emotion_sent', {
-              fallback: true
-            })
           }
         }
       } else {
@@ -653,25 +647,17 @@ const mainLoop = async () => {
           try {
             const textToSend = await getGptContent(messageList)
             await sendMessage(pageMapByName.boss!, textToSend)
-            gtag('rnrr_llm_content_sent')
           } catch (err) {
             console.log(err)
             if ((err as Error)?.message?.includes('SEND_CONFIRMATION_UNCERTAIN')) throw err
             if (rechatLlmFallback === RECHAT_LLM_FALLBACK.SEND_LOOK_FORWARD_EMOTION) {
               await sendLookForwardReplyEmotion(pageMapByName.boss!)
-              gtag('rnrr_look_forward_reply_emotion_sent', {
-                fallback: true
-              })
             } else {
-              gtag('rnrr_encounter_error', {
-                error: err
-              })
               throw err
             }
           }
         } else {
           await sendLookForwardReplyEmotion(pageMapByName.boss!)
-          gtag('rnrr_look_forward_reply_emotion_sent')
         }
       }
       taskProgress.update('sent', '页面已确认跟进消息发送')
@@ -806,7 +792,6 @@ export async function runEntry() {
           break
         }
         if (err.message === 'CANNOT_FIND_A_USABLE_MODEL') {
-          gtag('cannot_find_a_usable_model')
           process.exit(AUTO_CHAT_ERROR_EXIT_CODE.LLM_UNAVAILABLE)
           break
         }

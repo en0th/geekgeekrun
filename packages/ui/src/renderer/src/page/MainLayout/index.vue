@@ -62,8 +62,8 @@
 
 <script lang="ts" setup>
 import { useRouter } from 'vue-router'
+import { REPOSITORY_URL } from '../../../../common/repository.mjs'
 import useBuildInfo from '@renderer/hooks/useBuildInfo'
-import { gtagRenderer } from '@renderer/utils/gtag'
 import { useUpdateStore, useTaskManagerStore } from '../../store/index'
 import BossPart from './LeftNavBar/BossPart.vue'
 import GlobalConfigPart from './LeftNavBar/GlabalConfigPart.vue'
@@ -73,21 +73,17 @@ useRouter()
 
 const { buildInfo } = useBuildInfo()
 const handleFeedbackClick = () => {
-  gtagRenderer('goto_feedback_clicked')
   electron.ipcRenderer.send('send-feed-back-to-github-issue')
 }
 const handleGotoProjectPageClick = () => {
-  gtagRenderer('goto_project_github_clicked')
-  electron.ipcRenderer.send('open-external-link', 'https://github.com/geekgeekrun/geekgeekrun')
+  electron.ipcRenderer.send('open-external-link', REPOSITORY_URL)
 }
 
 const updateStore = useUpdateStore()
 function handleDownloadNewReleaseClick() {
-  gtagRenderer('click_download_release_form_nav')
   electron.ipcRenderer.send('open-external-link', updateStore.availableNewRelease!.assetUrl)
 }
 function handleViewNewReleaseClick() {
-  gtagRenderer('click_view_release_form_nav')
   electron.ipcRenderer.send('open-external-link', updateStore.availableNewRelease!.releasePageUrl)
 }
 

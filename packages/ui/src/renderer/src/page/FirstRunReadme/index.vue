@@ -20,7 +20,6 @@
                       'open-external-link',
                       'https://about.zhipin.com/agreement/'
                     )
-                    gtagRenderer('view_boss_agreement_clicked')
                   }
                 "
                 >《BOSS直聘用户协议》</el-link
@@ -121,31 +120,21 @@
 import { toast } from '@renderer/features/Toast'
 import { ElCheckbox, ElCheckboxGroup } from 'element-plus'
 import { ref, onMounted, onBeforeMount } from 'vue'
-import { gtagRenderer as baseGtagRenderer } from '@renderer/utils/gtag'
 import { sleep } from '@geekgeekrun/utils/sleep.mjs'
 
-const gtagRenderer = (name, params?: object) => {
-  return baseGtagRenderer(name, {
-    scene: 'first-run-agreement',
-    ...params
-  })
-}
 const electron = window.electron
 
 const readmeItemCheckStatusList = ref<number[]>([])
 
 const handleCancel = async () => {
-  gtagRenderer('cancel_clicked')
   await sleep(500)
   window.close()
 }
 
 const unreadItemsAfterClickSubmit = ref<Record<number, true>>({})
 const handleSubmit = () => {
-  gtagRenderer('submit_clicked')
   const COUNT = 10
   if (readmeItemCheckStatusList.value.length !== COUNT) {
-    gtagRenderer('agreement_not_finish_read_tip_displayed')
     toast.warning({
       message: `您还有${COUNT - readmeItemCheckStatusList.value.length}条没有读完，读完就打勾标记一下吧`,
       grouping: true
@@ -159,7 +148,6 @@ const handleSubmit = () => {
     return
   }
   electron.ipcRenderer.send('first-launch-notice-approve')
-  gtagRenderer('submit_done')
 }
 const handleReadmeItemCheckStatusListChange = (value: number[]) => {
   value.forEach((it) => {

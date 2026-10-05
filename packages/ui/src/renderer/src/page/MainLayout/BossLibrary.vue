@@ -4,7 +4,6 @@
       dataset="bossLibrary"
       :columns="columns"
       :stats-preset="runDataStatsPresets.bossLibrary"
-      gtag-prefix="boss_library"
       class="flex-1"
     />
   </div>

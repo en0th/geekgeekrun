@@ -255,7 +255,6 @@ import {
   type RunDataSort
 } from '../../../../common/run-data'
 import type { PagedRes } from '../../../../common/types/pagination'
-import { gtagRenderer } from '@renderer/utils/gtag'
 import type { RunDataColumn, RunDataRow, RunDataStatsPreset } from './types'
 import { useRunDataTablePrefs } from './prefs'
 import { enumLabel, formatFieldValue, toPlain } from './format'
@@ -281,8 +280,6 @@ const props = defineProps<{
   dataset: RunDataDatasetKey
   columns: RunDataColumn[]
   statsPreset: RunDataStatsPreset
-  // prefix for analytics events, e.g. `job_library` -> `job_library_request_sent`
-  gtagPrefix: string
   actionsWidth?: number
   // always applied and not shown as removable conditions, e.g. the selected favourite folder
   baseFilters?: RunDataFilter[]
@@ -478,10 +475,8 @@ const getRowKey = (row: RunDataRow) => String(row[datasetDef.value.rowKey])
 let requestSeq = 0
 async function fetchData() {
   const seq = ++requestSeq
-  const eventParams = { page_no: pagination.value.pageNo, page_size: pagination.value.pageSize }
   isTableLoading.value = true
   try {
-    gtagRenderer(`${props.gtagPrefix}_request_sent`, eventParams)
     const { data: res } = (await electron.ipcRenderer.invoke(
       'run-data-query',
       toPlain({
@@ -494,10 +489,8 @@ async function fetchData() {
     tableData.value = res.data
     pagination.value.totalItemCount = res.totalItemCount
     pagination.value.pageNo = res.pageNo
-    gtagRenderer(`${props.gtagPrefix}_request_success`, eventParams)
   } catch (err) {
     if (seq !== requestSeq) return
-    gtagRenderer(`${props.gtagPrefix}_request_error`, { err, ...eventParams })
     console.log(err)
     toast.error(`加载数据失败：${(err as Error)?.message ?? err}`)
     tableData.value = []
@@ -523,12 +516,9 @@ function handlePageSizeChange(size: number) {
   fetchData()
 }
 function handleRefresh() {
-  gtagRenderer(`${props.gtagPrefix}_refresh_clicked`)
   fetchData()
 }
 
-const trackAction = (action: string, extra: Record<string, unknown> = {}) =>
-  gtagRenderer('run_data_table_action', { dataset: props.dataset, action, ...extra })
 
 // ---------- table height ----------
 const tableHeight = ref<number | undefined>(undefined)
@@ -549,7 +539,6 @@ function clearSelection() {
 }
 
 async function exportSelected(format: ExportFormat) {
-  trackAction('export_selected', { format, count: selection.value.length })
   try {
     const res = await exportRows(props.dataset, selection.value, format, '-选中')
     notifySaved(res)
@@ -559,7 +548,6 @@ async function exportSelected(format: ExportFormat) {
 }
 
 async function copySelected() {
-  trackAction('copy_selected', { count: selection.value.length })
   const cols = displayedColumns.value
   const text = rowsToTsv(
     cols.map((c) => c.label),
@@ -593,7 +581,6 @@ async function openSelectedOnline() {
     }
     toOpen = ids.slice(0, OPEN_ONLINE_LIMIT)
   }
-  trackAction('open_online_selected', { count: toOpen.length })
   openingOnline.value = true
   try {
     // sequential: the first call starts the browser process, later calls reuse it
@@ -642,7 +629,6 @@ async function deleteSelected() {
   } catch {
     return
   }
-  trackAction('delete_selected', { count })
   try {
     const { data } = (await electron.ipcRenderer.invoke(
       'run-data-delete',
@@ -669,7 +655,6 @@ function openFavoritePicker() {
     toast.warning('选中的记录中没有可收藏的职位')
     return
   }
-  trackAction('favorite_selected', { count: ids.length })
   favoriteJobIds.value = ids
   favoritePickerVisible.value = true
 }
@@ -692,7 +677,6 @@ function notifySaved(res: { canceled: boolean; filePath?: string }) {
   electron.ipcRenderer.invoke('show-item-in-folder', res.filePath)
 }
 async function exportAll(format: ExportFormat) {
-  trackAction('export_all', { format, count: pagination.value.totalItemCount })
   exporting.value = true
   try {
     const { data: rows } = (await electron.ipcRenderer.invoke(
@@ -719,11 +703,9 @@ const filterDialogVisible = ref(false)
 const statsVisible = ref(false)
 const importVisible = ref(false)
 function openStats() {
-  trackAction('open_stats')
   statsVisible.value = true
 }
 function openImport() {
-  trackAction('open_import')
   importVisible.value = true
 }
 
@@ -744,7 +726,6 @@ function handleDrill({
     toast.info('按小时、星期统计的项暂不支持筛选')
     return
   }
-  trackAction('stats_drill', { field: group.field, bucket: group.bucket ?? '' })
   if (filter.kind === 'column') {
     // replaces any value filter on that column, like picking it in the header filter
     columnFilters[filter.field] = filter.values
@@ -759,7 +740,6 @@ function handleDrill({
 const isFullscreen = ref(false)
 function toggleFullscreen() {
   isFullscreen.value = !isFullscreen.value
-  trackAction(isFullscreen.value ? 'enter_fullscreen' : 'exit_fullscreen')
 }
 function handleKeydown(e: KeyboardEvent) {
   // leave Esc to any open dialog / drawer / popper first

@@ -4,7 +4,6 @@
       dataset="companyLibrary"
       :columns="columns"
       :stats-preset="runDataStatsPresets.companyLibrary"
-      gtag-prefix="company_library"
       class="flex-1"
     />
   </div>

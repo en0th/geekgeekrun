@@ -1972,7 +1972,7 @@ html:not(.replica-child) body {
   border-top: 1px solid #b3c8c3;
 }
 
-/* 自动化 configuration steps */
+/* 找岗位 configuration steps */
 .ux-steps {
   display: flex;
   gap: 6px;
@@ -2301,4 +2301,71 @@ html:not(.replica-child) body {
 .ux-template-facts dd {
   margin: 0;
   word-break: break-word;
+}
+
+/* section rail folded: the content takes the rail's width, and keeps clear of the pull tab */
+.ux-inner.ux-inner--rail-collapsed {
+  max-width: 1360px;
+  padding-right: 48px;
+}
+@media (max-width: 720px) {
+  .ux-inner.ux-inner--rail-collapsed {
+    padding-right: 40px;
+  }
+}
+
+/* settings → 账号与登录: space between the status and the buttons */
+.ux-account-actions {
+  margin-top: 14px;
+}
+
+/* version number in the navigation opens its release notes */
+.ux-nav-bottom .el-button.ux-version-link {
+  margin-top: 10px;
+  padding: 0;
+  height: auto;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.ux-nav-bottom .el-button.ux-version-link:hover {
+  color: var(--el-color-primary);
+}
+.ux-release-notes {
+  max-height: min(60vh, 560px);
+  overflow: auto;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--el-text-color-primary);
+}
+.ux-release-notes h3 {
+  margin: 18px 0 6px;
+  font-size: 16px;
+}
+.ux-release-notes h3:first-of-type {
+  margin-top: 4px;
+}
+.ux-release-notes ul {
+  margin: 4px 0;
+  padding-left: 1.4em;
+}
+.ux-release-notes li + li {
+  margin-top: 4px;
+}
+.ux-release-notes p {
+  margin: 6px 0;
+}
+.ux-release-notes code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--el-fill-color-light);
+  font-size: 13px;
+}
+.ux-release-notes a {
+  color: var(--el-color-primary);
+  word-break: break-all;
+}
+.ux-release-notes hr {
+  margin: 14px 0;
+  border: 0;
+  border-top: 1px solid var(--el-border-color-lighter);
 }

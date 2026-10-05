@@ -16,24 +16,16 @@
 import { toast } from '@renderer/features/Toast'
 import { useRouter } from 'vue-router'
 
-import { gtagRenderer as baseGtagRenderer } from '@renderer/utils/gtag'
 
 const { ipcRenderer } = electron
 const router = useRouter()
 // const checkDependenciesResult = ref({})
 // const downloadProcessWaitee = ref(null)
 
-const gtagRenderer = (name, params?: object) => {
-  return baseGtagRenderer(name, {
-    scene: 'browser-auto-find',
-    ...params
-  })
-}
 
 async function autoDetectPuppeteerExecutable() {
   const result = await ipcRenderer.invoke('get-any-available-puppeteer-executable')
   if (!result) {
-    gtagRenderer('first-run-auto-detect-pptr-exe-fail')
     toast({
       message: '未找到可用浏览器的可执行文件，请尝试手动配置',
       type: 'warning',
@@ -47,7 +39,6 @@ async function autoDetectPuppeteerExecutable() {
     })
     return
   }
-  gtagRenderer('first-run-auto-detect-pptr-exe-success')
   await ipcRenderer.send('browser-config-saved')
 }
 

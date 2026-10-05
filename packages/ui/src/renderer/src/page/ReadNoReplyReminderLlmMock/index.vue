@@ -173,7 +173,6 @@ import { toast } from '@renderer/features/Toast'
 import { computed, ref, watch } from 'vue'
 import { sleep } from '@geekgeekrun/utils/sleep.mjs'
 
-import { gtagRenderer } from '@renderer/utils/gtag'
 import {
   OPEN_CONTENT_SOURCE,
   RECHAT_CONTENT_SOURCE
@@ -219,9 +218,6 @@ const selectedLlmConfig = ref(null)
 watch(
   () => selectedLlmConfig.value,
   () => {
-    gtagRenderer('change_mock_chat_llm_model', {
-      model: selectedLlmConfig.value?.model ?? ''
-    })
   }
 )
 
@@ -241,7 +237,6 @@ const constantOpenContent = (() => {
 const rechatContentSource = Number(searchParams.rechatContentSource)
 
 async function sendLlmGeneratedContent() {
-  gtagRenderer('click_mock_chat_send')
   if (!(messageList.value ?? []).length) {
     // send open content
     if (openContentSource === OPEN_CONTENT_SOURCE.GEMINI_WITH_CHAT_CONTEXT) {
@@ -319,7 +314,6 @@ function closeWindow() {
   electron.ipcRenderer.send(`close-read-no-reply-reminder-llm-mock-window`)
 }
 
-gtagRenderer('enter_mock_chat_page')
 </script>
 
 <style lang="scss" scoped>

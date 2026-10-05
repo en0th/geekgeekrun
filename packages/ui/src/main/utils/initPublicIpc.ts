@@ -1,6 +1,6 @@
+import { ISSUE_NEW_URL } from '../../common/repository.mjs'
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { redactConfigForRenderer } from '../features/config-secrets'
-import gtag from './gtag'
 import buildInfo from '../../common/build-info.json'
 import os from 'node:os'
 import fs from 'node:fs'
@@ -36,15 +36,9 @@ export default function initPublicIpc() {
       activate: true
     })
   })
-  ipcMain.on('gtag', (ev, { name, params } = {}) => {
-    gtag(name, {
-      ...params,
-      electron_log_source: 'renderer'
-    })
-  })
   ipcMain.on('send-feed-back-to-github-issue', (ev, payload) => {
     const getIssueUrlWithBody = (issueBody: string = '') => {
-      const baseUrl = `https://github.com/geekgeekrun/geekgeekrun/issues/new`
+      const baseUrl = ISSUE_NEW_URL
       issueBody = issueBody || ''
       if (!issueBody || !issueBody.trim()) {
         return baseUrl

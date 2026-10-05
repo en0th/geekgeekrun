@@ -19,6 +19,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import Anthropic from '@anthropic-ai/sdk'
+import { RELEASE_NOTES_JSON, writeReleaseNotesFile } from './release-notes-file.mjs'
 
 const DRY_RUN = process.argv.includes('--dry-run')
 const MODEL_OVERRIDE = process.env.RELEASE_NOTES_MODEL
@@ -41,7 +42,9 @@ const PATCH_EXCLUDES = [
   ':(exclude)pnpm-lock.yaml',
   ':(exclude)**/package-lock.json',
   ':(exclude)**/tests/**',
-  ':(exclude)packages/ui/src/common/build-info.json'
+  ':(exclude)packages/ui/src/common/build-info.json',
+  // earlier versions' notes, not a change of this release
+  `:(exclude)${RELEASE_NOTES_JSON}`
 ]
 
 const AREA_NAMES = [
@@ -401,7 +404,11 @@ async function main() {
   }
   notes += footer({ baseHash: base.hash, fromVersion, toVersion, commits })
 
-  if (!DRY_RUN) writeVersion(toVersion)
+  if (!DRY_RUN) {
+    writeVersion(toVersion)
+    // shipped inside the app: the version number in the navigation shows these notes
+    writeReleaseNotesFile(toVersion, { notes, date: new Date().toISOString(), draft })
+  }
   setOutputs({
     skip: false,
     version: toVersion,

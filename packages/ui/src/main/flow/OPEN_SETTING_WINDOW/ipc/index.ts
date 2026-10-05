@@ -90,7 +90,6 @@ import {
 } from '../../../window/readNoReplyReminderLlmMockWindow'
 import { RequestSceneEnum } from '../../../features/llm-request-log'
 import { checkUpdateForUi } from '../../../features/updater'
-import gtag from '../../../utils/gtag'
 import { daemonEE, sendToDaemon } from '../connect-to-daemon'
 import { runCommon } from '../../../features/run-common'
 import { loginWithCookieAssistant } from '../../../features/login-with-cookie-assistant'
@@ -695,7 +694,6 @@ export default function initIpc() {
   })
   ipcMain.on('close-read-no-reply-reminder-llm-mock-window', () => {
     readNoReplyReminderLlmMockWindow?.close()
-    gtag('mock_chat_window_closed')
   })
   ipcMain.handle('check-update', async () => {
     const newRelease = await checkUpdateForUi()

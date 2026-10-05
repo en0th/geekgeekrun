@@ -12,8 +12,6 @@ import { AUTO_CHAT_ERROR_EXIT_CODE } from '../../../common/enums/auto-start-chat
 import attachListenerForKillSelfOnParentExited from '../../utils/attachListenerForKillSelfOnParentExited'
 import minimist from 'minimist'
 import SqlitePluginModule from '@geekgeekrun/sqlite-plugin'
-import gtag from '../../utils/gtag'
-import GtagPlugin from '../../utils/gtag/GtagPlugin'
 import { connectToDaemon, sendToDaemon } from '../OPEN_SETTING_WINDOW/connect-to-daemon'
 // import { PeriodPushCurrentPageScreenshotPlugin } from '../../utils/screenshot'
 import { checkShouldExit } from '../../utils/worker'
@@ -44,7 +42,6 @@ const { groupRobotAccessToken: dingTalkAccessToken } = readConfigFile('dingtalk.
 const initPlugins = (hooks) => {
   new DingtalkPlugin(dingTalkAccessToken).apply(hooks)
   new SqlitePlugin(getPublicDbFilePath()).apply(hooks)
-  new GtagPlugin().apply(hooks)
   // new PeriodPushCurrentPageScreenshotPlugin().apply(hooks)
   new CookieInvalidHandlePlugin().apply(hooks)
 }
@@ -145,7 +142,6 @@ const runAutoChat = async () => {
     taskProgress.update(undefined, '休息结束，继续查找')
   )
 
-  gtag('run_auto_chat_with_boss_main_ready')
 
   autoStartChatEventBus.once('LOGIN_STATUS_INVALID', () => {})
 

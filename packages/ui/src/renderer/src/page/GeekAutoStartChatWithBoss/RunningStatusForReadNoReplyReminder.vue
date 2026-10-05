@@ -17,25 +17,21 @@ import { ref, onUnmounted, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import FlyingCompanyLogoList from '../../features/FlyingCompanyLogoList/index.vue'
 
-import { gtagRenderer } from '@renderer/utils/gtag'
 
 const { ipcRenderer } = electron
 const router = useRouter()
 
 const handleStopButtonClick = async () => {
-  gtagRenderer('rnrr_stop_button_clicked')
   ipcRenderer.invoke('stop-read-no-reply-auto-reminder')
 }
 
 const isStopping = ref(false)
 const handleStopping = () => {
-  gtagRenderer('rnrr_become_stopping')
   isStopping.value = true
 }
 ipcRenderer.once('read-no-reply-auto-reminder-stopping', handleStopping)
 
 const handleStopped = () => {
-  gtagRenderer('rnrr_become_stopped')
   router.replace('/main-layout/ReadNoReplyReminder')
 }
 ipcRenderer.once('read-no-reply-auto-reminder-stopped', handleStopped)
@@ -50,14 +46,12 @@ onMounted(async () => {
     await electron.ipcRenderer.invoke('run-read-no-reply-auto-reminder')
   } catch (err) {
     if (err instanceof Error && err.message.includes('NEED_TO_CHECK_RUNTIME_DEPENDENCIES')) {
-      gtagRenderer('rnrr_cannot_run_for_corrupt')
       toast.error({
         message: `核心组件损坏，正在尝试修复`
       })
       router.replace('/')
     }
     console.error(err)
-    gtagRenderer('rnrr_cannot_run_for_unknown_error', { err })
   }
 })
 </script>

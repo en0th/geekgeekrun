@@ -14,21 +14,6 @@ const mainPlugins = [
       'find-chrome-bin',
       '@geekgeekrun/launch-bosszhipin-login-page-with-preload-extension'
     ]
-  }),
-  Replace({
-    delimiters: ['', ''],
-    sourcemap: true,
-    include: ['**/src/main/utils/gtag/Analytics.ts'],
-    values: [
-      {
-        find: /<measurement_id>/g,
-        replacement: process.env.VITE_APP_GTAG_MEASUREMENT_ID as string
-      },
-      {
-        find: /<api_secret>/g,
-        replacement: process.env.VITE_APP_GTAG_API_SECRET as string
-      }
-    ]
   })
 ]
 const preloadPlugins = [externalizeDepsPlugin()]
