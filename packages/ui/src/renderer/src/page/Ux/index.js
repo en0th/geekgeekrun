@@ -1,5 +1,6 @@
 /* Task-oriented UI migrated from the accepted prototype. All execution uses native IPC. */
 import { toast } from "../../features/Toast";
+import { exportTemplates, parseTemplateFile, uniqueName } from "./template-io.js";
 import * as Vue from "vue";
 import {
   modelPair,
@@ -567,14 +568,15 @@ export default Vue.defineComponent({
       }
     };
     const navCollapsed = ref(readFlag("ux-nav-collapsed")),
-      railCollapsed = ref(readFlag("ux-rail-collapsed"));
+      // the section rail starts folded; only a rail the user opened stays open
+      railCollapsed = ref(!readFlag("ux-rail-expanded"));
     function toggleNav() {
       navCollapsed.value = !navCollapsed.value;
       writeFlag("ux-nav-collapsed", navCollapsed.value);
     }
     function toggleRail() {
       railCollapsed.value = !railCollapsed.value;
-      writeFlag("ux-rail-collapsed", railCollapsed.value);
+      writeFlag("ux-rail-expanded", !railCollapsed.value);
     }
     const allowedShared = [
       "titles",
@@ -5073,6 +5075,7 @@ export default Vue.defineComponent({
             ["browser", "浏览器"],
             ["ai", "AI模型配置"],
             ["notify", "钉钉通知"],
+            ["templates", "配置模板"],
             ["pace", "运行节奏"],
             ["data", "数据、备份与日志"],
           ],
@@ -5221,6 +5224,7 @@ export default Vue.defineComponent({
         tab === "ai" ? aiSettings() : null,
         tab === "ai" ? aiFooter() : null,
         ...(tab === "data" ? dataSettings() : []),
+        ...(tab === "templates" ? templateSettings() : []),
         tab === "pace"
           ? card(
               "全局运行节奏",
@@ -5441,6 +5445,291 @@ export default Vue.defineComponent({
       } finally {
         browsing = false;
       }
+    }
+    // ---- configuration template management (settings → 配置模板) ----
+    const templateView = ref(null),
+      templateImporting = ref(false);
+    function templateFacts(sn = {}) {
+      const list = (v) => (Array.isArray(v) && v.length ? v.join("、") : "");
+      const collect = sn.runMode === "collect";
+      const sources = (sn.sourceList || [])
+        .filter((x) => x.enabled)
+        .map((x) => {
+          const label = sourceInfo[x.type]?.[0] || x.type;
+          const words = (x.children || [])
+            .filter((c) => c.enabled && c.keyword)
+            .map((c) => c.keyword);
+          return words.length ? `${label}（${words.join("、")}）` : label;
+        });
+      return [
+        [
+          "运行方式",
+          collect
+            ? sn.collectOnlyMatchingJobs === false
+              ? "只收集 · 全部岗位"
+              : "只收集 · 符合条件的岗位"
+            : "自动打招呼",
+        ],
+        [
+          "目标岗位",
+          sn.regexMode
+            ? "高级规则：" + (sn.regexTitle || "—")
+            : list(sn.titles) || (sn.legacyPatterns?.titles ? "沿用原有条件" : "未设置"),
+        ],
+        ["职位分类", list(sn.categories) || "不限"],
+        ["岗位描述包含", list(sn.description) || "不限"],
+        ["工作城市", list(sn.cities) || "不限"],
+        [
+          "期望薪资",
+          sn.salary
+            ? ((unit) =>
+                sn.low != null && sn.high != null
+                  ? `${sn.low} – ${sn.high} ${unit}`
+                  : sn.low != null
+                    ? `${sn.low} ${unit}以上`
+                    : `${sn.high} ${unit}以下`)(sn.unit === "year" ? "元/年" : "元/月")
+            : "不限",
+        ],
+        ["工作经验", list(sn.experience) || "不限"],
+        ["只看公司", list(sn.companies) || "不限"],
+        ["排除公司", list(sn.excluded) || (sn.legacyPatterns?.excluded ? "沿用原有规则" : "无")],
+        ["招聘者活跃", sn.activity || "不限"],
+        ["职位来源", sources.join("；") || "未选择"],
+        ["默认处理方式", strategyLabel(sn.strategy)],
+        [
+          "运行节奏",
+          sn.useGlobalPace
+            ? "使用全局运行节奏"
+            : sn.pause
+              ? `每 ${sn.actions} 次操作休息 ${sn.minutes} 分钟`
+              : "不定时休息",
+        ],
+      ];
+    }
+    const fileDate = () => new Date().toISOString().slice(0, 10);
+    async function exportTemplatesToFile(items, fileName) {
+      if (!items.length) return;
+      const result = await ipc("save-file-with-dialog", {
+        defaultPath: fileName,
+        filters: [{ name: "配置模板", extensions: ["json"] }],
+        content: exportTemplates(items),
+      });
+      if (result?.canceled) return;
+      R.message({
+        type: "success",
+        title: "已导出 " + items.length + " 个模板",
+        message: result.filePath,
+      });
+      ipc("show-item-in-folder", result.filePath).catch(() => void 0);
+    }
+    function pickTextFile(accept) {
+      return new Promise((resolve) => {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = accept;
+        input.onchange = () => resolve(input.files?.[0] || null);
+        input.click();
+      });
+    }
+    async function importTemplatesFromFile() {
+      if (templateImporting.value) return;
+      const file = await pickTextFile(".json,application/json");
+      if (!file) return;
+      templateImporting.value = true;
+      try {
+        const { templates: incoming, skipped } = parseTemplateFile(await file.text());
+        if (!(await flushDraft())) throw new Error("当前草稿保存失败，请重试。");
+        const items = clone(templates.value);
+        const renamed = [];
+        for (const t of incoming) {
+          const name = uniqueName(
+            t.name,
+            items.map((x) => x.name),
+          );
+          if (name !== t.name) renamed.push(name);
+          // fields a template from another version lacks take the current values
+          const snapshot = keywordDraft({ ...templateSnapshot(), ...clone(t.snapshot) });
+          snapshot.inherit = false;
+          snapshot.inheritedFields = [];
+          items.push({
+            id:
+              globalThis.crypto?.randomUUID?.() ||
+              "template-" + Date.now() + "-" + Math.random().toString(36).slice(2),
+            name,
+            snapshot,
+          });
+        }
+        if (!(await writeTemplateState(items, activeTemplate.value, templateBaseline.value)))
+          return;
+        templates.value = items;
+        R.message({
+          type: "success",
+          title: "已导入 " + incoming.length + " 个模板",
+          message:
+            [
+              renamed.length ? "重名的已改名为：" + renamed.join("、") : "",
+              skipped ? skipped + " 个缺少名称或内容的模板未导入" : "",
+            ]
+              .filter(Boolean)
+              .join("；") || "可在自动化页的“配置模板”中选用。",
+        });
+      } catch (error) {
+        R.message({ type: "error", title: "导入失败", message: error.message });
+      } finally {
+        templateImporting.value = false;
+      }
+    }
+    async function deleteTemplateById(t) {
+      if (running.value.auto) {
+        R.message({ type: "warning", message: "自动化运行中，停止后才能删除模板。" });
+        return;
+      }
+      if (
+        !(await confirmBox(
+          `删除模板“${t.name}”？删除后可在提示中撤销。`,
+          "删除配置模板",
+          "删除",
+        ))
+      )
+        return;
+      await commitTemplate("delete", "", t.id);
+    }
+    function useTemplate(t) {
+      if (running.value.auto) {
+        R.message({ type: "warning", message: "自动化运行中，停止后才能切换模板。" });
+        return;
+      }
+      templateView.value = null;
+      selectTemplate(t.id);
+      navigate("auto");
+    }
+    function templateSettings() {
+      const items = templates.value;
+      const column = (props, cell) =>
+        E("ElTableColumn", props, cell ? { default: ({ row }) => cell(row) } : undefined);
+      const view = templateView.value;
+      return [
+        card(
+          "配置模板",
+          [
+            explain(
+              "模板保存一整套自动化配置（运行方式、求职条件、职位来源、处理方式、运行节奏）。可以在这里查看、删除，或导出成文件备份、在另一台电脑上导入。",
+            ),
+            inline([
+              button("导入模板…", importTemplatesFromFile, {
+                type: "primary",
+                plain: true,
+                loading: templateImporting.value,
+              }),
+              button(
+                "导出全部",
+                () => exportTemplatesToFile(items, `牛人快跑配置模板-${fileDate()}.json`),
+                { plain: true, disabled: !items.length },
+              ),
+            ]),
+            E(
+              "ElTable",
+              {
+                data: items,
+                rowKey: "id",
+                size: "small",
+                border: true,
+                class: "ux-template-table",
+                emptyText: "还没有配置模板。在自动化页顶部“配置模板”中新建，或从文件导入。",
+              },
+              () => [
+                column({ label: "名称", minWidth: 160 }, (row) =>
+                  h("span", { class: "ux-template-name" }, [
+                    h("strong", row.name),
+                    row.id === activeTemplate.value
+                      ? E("ElTag", { size: "small", disableTransitions: true }, () => "当前使用")
+                      : null,
+                    templateDrafts.value[row.id] ||
+                    (row.id === activeTemplate.value && templateModified())
+                      ? E(
+                          "ElTag",
+                          { size: "small", type: "warning", disableTransitions: true },
+                          () => "有未保存修改",
+                        )
+                      : null,
+                  ]),
+                ),
+                column({ label: "运行方式", width: 150 }, (row) => templateFacts(row.snapshot)[0][1]),
+                column({ label: "目标岗位", minWidth: 160, showOverflowTooltip: true }, (row) =>
+                  templateFacts(row.snapshot)[1][1],
+                ),
+                column({ label: "职位来源", minWidth: 180, showOverflowTooltip: true }, (row) =>
+                  templateFacts(row.snapshot)[10][1],
+                ),
+                column({ label: "操作", width: 230, fixed: "right" }, (row) =>
+                  h("span", { class: "ux-task-actions" }, [
+                    button("查看", () => (templateView.value = row), {
+                      link: true,
+                      type: "primary",
+                      size: "small",
+                    }),
+                    button("使用", () => useTemplate(row), {
+                      link: true,
+                      type: "primary",
+                      size: "small",
+                      disabled: row.id === activeTemplate.value,
+                    }),
+                    button(
+                      "导出",
+                      () => exportTemplatesToFile([row], `牛人快跑配置模板-${row.name}.json`),
+                      { link: true, type: "primary", size: "small" },
+                    ),
+                    button("删除", () => deleteTemplateById(row), {
+                      link: true,
+                      type: "danger",
+                      size: "small",
+                    }),
+                  ]),
+                ),
+              ],
+            ),
+            hint("导出的文件只包含配置条件，不包含登录凭证、API 密钥等敏感信息。"),
+          ],
+          { class: "ux-card ux-data-card" },
+        ),
+        E(
+          "ElDialog",
+          {
+            modelValue: Boolean(view),
+            title: view ? "模板：" + view.name : "",
+            width: "min(640px, calc(100vw - 48px))",
+            appendToBody: true,
+            "onUpdate:modelValue": (v) => {
+              if (!v) templateView.value = null;
+            },
+          },
+          {
+            default: () =>
+              view
+                ? h(
+                    "dl",
+                    { class: "ux-template-facts" },
+                    templateFacts(view.snapshot).flatMap(([label, value]) => [
+                      h("dt", label),
+                      h("dd", value),
+                    ]),
+                  )
+                : null,
+            footer: () =>
+              view
+                ? inline([
+                    button("导出", () =>
+                      exportTemplatesToFile([view], `牛人快跑配置模板-${view.name}.json`),
+                    ),
+                    button("使用这个模板", () => useTemplate(view), {
+                      type: "primary",
+                      disabled: view.id === activeTemplate.value,
+                    }),
+                  ])
+                : null,
+          },
+        ),
+      ];
     }
     async function loadGlobalPace() {
       try {

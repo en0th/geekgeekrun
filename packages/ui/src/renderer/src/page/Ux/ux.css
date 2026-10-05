@@ -2276,3 +2276,29 @@ html:not(.replica-child) body {
     transform: none;
   }
 }
+
+/* settings → 配置模板 */
+.ux-template-table {
+  margin-top: 12px;
+}
+.ux-template-name {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.ux-template-facts {
+  display: grid;
+  grid-template-columns: 7em 1fr;
+  gap: 8px 16px;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.ux-template-facts dt {
+  color: var(--el-text-color-secondary);
+}
+.ux-template-facts dd {
+  margin: 0;
+  word-break: break-word;
+}
