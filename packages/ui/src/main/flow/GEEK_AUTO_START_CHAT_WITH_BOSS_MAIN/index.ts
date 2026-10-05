@@ -91,9 +91,26 @@ const runAutoChat = async () => {
     '@geekgeekrun/geek-auto-start-chat-with-boss/index.mjs'
   )
   const taskProgress = createTaskProgress()
-  autoStartChatEventBus.on('TASK_PROGRESS', ({ kind, detail, state, listSummary }) =>
-    taskProgress.update(kind, detail, state || 'running', { listSummary })
-  )
+  // the job being looked at, named in the execution log
+  let currentJob = ''
+  const jobLabel = (data) =>
+    [data?.brandComInfo?.brandName, data?.jobInfo?.jobName].filter(Boolean).join(' · ') ||
+    data?.jobInfo?.encryptId ||
+    ''
+  autoStartChatEventBus.on('TASK_PROGRESS', ({ kind, detail, state, listSummary }) => {
+    const named = (prefix) => (currentJob ? `${prefix}：${currentJob}` : '')
+    const logText =
+      kind === 'viewed'
+        ? named('查看并入库')
+        : kind === 'collected'
+          ? named('收集')
+          : kind === 'sent'
+            ? named('打招呼')
+            : kind === 'skipped'
+              ? named('跳过') + (currentJob && detail ? `（${detail}）` : '')
+              : ''
+    taskProgress.update(kind, detail, state || 'running', { listSummary }, logText || undefined)
+  })
   taskProgress.update(undefined, '准备查找岗位')
   process.on('disconnect', () => {
     closeBrowserWindow()
@@ -122,6 +139,18 @@ const runAutoChat = async () => {
     checkpoint: new AsyncSeriesHook([])
   }
   initPlugins(hooks)
+  hooks.jobDetailIsGetFromRecommendList.tapPromise('TaskProgress', async (data) => {
+    currentJob = jobLabel(data)
+  })
+  // the hook passes (jobData, { markOp, ... }); its declared typing only knows one argument
+  hooks.jobMarkedAsNotSuit.tapPromise('TaskProgress', async (...args: unknown[]) => {
+    const [data, markDetail] = args as [unknown, { markOp?: number } | undefined]
+    taskProgress.log(
+      'marked',
+      `${markDetail?.markOp === 1 ? '在BOSS标记不合适' : '本地标记不合适'}：${jobLabel(data)}`,
+      'marked'
+    )
+  })
   hooks.checkpoint.tapPromise('TaskQueue', () =>
     yieldIfRequested(async () => {
       taskProgress.update(undefined, '排队中的任务先运行，本任务稍后自动继续', 'yielded')

@@ -26,7 +26,7 @@ import {
 import cheerio from 'cheerio'
 
 import fs from 'node:fs'
-import { Target } from 'puppeteer'
+import type { Browser, ElementHandle, HTTPResponse, Page, Target } from 'puppeteer'
 import { pipeWriteRegardlessError } from '../utils/pipe'
 import * as JSONStream from 'JSONStream'
 import { ChatStartupFrom } from '@geekgeekrun/sqlite-plugin/dist/entity/ChatStartupLog'
@@ -41,6 +41,36 @@ import {
 } from '@geekgeekrun/launch-bosszhipin-login-page-with-preload-extension/utils.mjs'
 
 const dbInitPromise = initDb(getPublicDbFilePath())
+
+const JOB_DETAIL_URL_RE = /^https:\/\/www\.zhipin\.com\/job_detail\/([^/?#]+)\.html/
+const isAddFriendResponse = (url: string, encryptJobId: string) =>
+  url.startsWith('https://www.zhipin.com/wapi/zpgeek/friend/add.json') &&
+  new URL(url).searchParams.get('jobId') === encryptJobId
+
+// the job detail page has no logged-in user data to read; reuse the account of earlier records
+async function currentUserIdFromDb() {
+  const ds = await dbInitPromise
+  const [log] = await ds.query(
+    'SELECT encryptCurrentUserId AS id FROM chat_startup_log ORDER BY id DESC LIMIT 1'
+  )
+  if (log?.id) return log.id as string
+  const [user] = await ds.query('SELECT encryptUserId AS id FROM user_info LIMIT 1')
+  return (user?.id as string) ?? ''
+}
+
+/**
+ * friend/add.json answered: did BOSS start the chat? The page may jump to the chat page before
+ * the body can be read, which also means the chat was started.
+ */
+async function readAddFriendResult(page: Page, response: HTTPResponse) {
+  try {
+    const body = await response.json()
+    return { ok: body?.code === 0, body }
+  } catch {
+    await new Promise((r) => setTimeout(r, 2000))
+    return { ok: page.url().startsWith('https://www.zhipin.com/web/geek/chat'), body: null }
+  }
+}
 
 const attachRequestsListener = async (target: Target) => {
   const page = await target.page()
@@ -158,6 +188,20 @@ const attachRequestsListener = async (target: Target) => {
   }
 
   page.on('response', async (response) => {
+    const detailJobId = page.url().match(JOB_DETAIL_URL_RE)?.[1]
+    if (detailJobId && isAddFriendResponse(response.url(), detailJobId)) {
+      // 立即沟通 on a job detail page: clicked by the user, or by 资料库 → 打招呼
+      const { ok } = await readAddFriendResult(page, response)
+      if (ok) {
+        await saveChatStartupRecord(
+          await dbInitPromise,
+          { jobInfo: { encryptId: detailJobId } },
+          { encryptUserId: await currentUserIdFromDb() },
+          { chatStartupFrom: ChatStartupFrom.ManuallyFromRecommendList }
+        )
+      }
+      return
+    }
     if (response.url().match(/^https:\/\/www.zhipin.com\/job_detail\/(.+)\.html/)) {
       const encryptJobId = response
         .url()
@@ -348,6 +392,90 @@ const attachRequestsListener = async (target: Target) => {
   })
 }
 
+export type GreetJobStatus =
+  | 'sent'
+  | 'already'
+  | 'confirm-in-browser'
+  | 'closed'
+  | 'missing'
+  | 'login'
+  | 'failed'
+
+// 资料库 → 打招呼: open the job detail page and press 立即沟通 once; the page stays open so the
+// user sees what BOSS answered
+async function greetJob(
+  browser: Browser,
+  encryptJobId: string
+): Promise<{ status: GreetJobStatus; message?: string }> {
+  const page = await browser.newPage()
+  try {
+    await page.goto(`https://www.zhipin.com/job_detail/${encryptJobId}.html`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 30 * 1000
+    })
+  } catch {
+    // slow pages still render the button; the wait below decides
+  }
+  const stateHandle = await page
+    .waitForFunction(
+      () => {
+        if (/\/web\/user|login/.test(location.pathname)) return 'login'
+        const button = [...document.querySelectorAll<HTMLElement>('a, button, span, div')].find(
+          (el) =>
+            el.offsetParent !== null &&
+            ['立即沟通', '继续沟通'].includes(el.innerText?.trim()) &&
+            ![...el.children].some((c) => (c as HTMLElement).innerText?.trim())
+        )
+        if (button) return button.innerText.trim() === '立即沟通' ? 'start' : 'continue'
+        const text = document.body?.innerText ?? ''
+        if (text.includes('您访问的页面不存在')) return 'missing'
+        if (text.includes('职位已关闭')) return 'closed'
+        return false
+      },
+      { timeout: 25 * 1000, polling: 300 }
+    )
+    .catch(() => null)
+  const state = (await stateHandle?.jsonValue()) as string | null
+  if (!state)
+    return { status: 'failed', message: '页面中没有找到“立即沟通”按钮，可能需要先完成安全验证' }
+  if (state === 'login') return { status: 'login' }
+  if (state === 'missing') return { status: 'missing' }
+  if (state === 'closed') return { status: 'closed' }
+  if (state === 'continue') return { status: 'already' }
+
+  const responsePromise = page.waitForResponse(
+    (response) => isAddFriendResponse(response.url(), encryptJobId),
+    { timeout: 20 * 1000 }
+  )
+  const button = await page.evaluateHandle(() =>
+    [...document.querySelectorAll<HTMLElement>('a, button, span, div')].find(
+      (el) =>
+        el.offsetParent !== null &&
+        el.innerText?.trim() === '立即沟通' &&
+        ![...el.children].some((c) => (c as HTMLElement).innerText?.trim())
+    )
+  )
+  const element = button.asElement() as ElementHandle<Element> | null
+  if (!element) return { status: 'failed', message: '“立即沟通”按钮已消失，请在打开的页面中查看' }
+  await element.click()
+  let response: HTTPResponse
+  try {
+    response = await responsePromise
+  } catch {
+    return { status: 'failed', message: 'BOSS没有响应开聊请求，请在打开的页面中查看' }
+  }
+  const { ok, body } = await readAddFriendResult(page, response)
+  if (ok) return { status: 'sent' }
+  // BOSS asks to confirm when few chances are left today; leave that decision to the user
+  if (body?.zpData?.bizData?.chatRemindDialog) {
+    return {
+      status: 'confirm-in-browser',
+      message: body.zpData.bizData.chatRemindDialog.content ?? ''
+    }
+  }
+  return { status: 'failed', message: body?.message || body?.zpData?.bizData?.toast || '' }
+}
+
 export async function launchBossSite() {
   app.dock?.hide()
   await ensureEditThisCookie()
@@ -385,6 +513,17 @@ export async function launchBossSite() {
     console.warn('pipeForRead is not available')
   }
   pipeForRead?.pipe(JSONStream.parse())?.on('data', async function handler(data) {
+    if (data.type === 'GREET_JOB') {
+      const result = await greetJob(browser, data.encryptJobId).catch((err) => ({
+        status: 'failed' as const,
+        message: String(err?.message ?? err)
+      }))
+      pipeWriteRegardlessError(
+        pipeForWrite,
+        JSON.stringify({ type: 'GREET_JOB_RESULT', requestId: data.requestId, ...result })
+      )
+      return
+    }
     if (data.type !== 'NEW_WINDOW') {
       return
     }

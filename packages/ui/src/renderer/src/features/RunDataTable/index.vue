@@ -15,6 +15,16 @@
       <ElBadge :value="advancedRows.length" :hidden="!advancedRows.length" type="primary">
         <ElButton size="small" :icon="Operation" @click="filterDialogVisible = true">过滤</ElButton>
       </ElBadge>
+      <FilterPresets
+        :saved="memory.saved.value"
+        :recent="memory.recent.value"
+        :can-save="hasConditions"
+        :describe="describeSnapshot"
+        @apply="applyStored"
+        @save="saveFilter"
+        @remove-saved="memory.removeSaved"
+        @remove-recent="memory.removeRecent"
+      />
       <div class="run-data-table__tools">
         <ElButton size="small" :icon="DataAnalysis" @click="openStats">统计</ElButton>
         <ElButton
@@ -79,6 +89,7 @@
         @close="columnFilters[item.field.key] = null"
         >{{ item.text }}</ElTag
       >
+      <ElButton link size="small" type="primary" @click="saveFilter()">保存条件</ElButton>
       <ElButton link size="small" type="primary" @click="clearAllConditions">清除全部</ElButton>
     </div>
 
@@ -137,6 +148,8 @@
           size="small"
           border
           highlight-current-row
+          :cell-class-name="cellClassName"
+          @cell-click="handleCellClick"
           @sort-change="handleSortChange"
           @selection-change="(rows) => (selection = rows)"
           @header-dragend="handleHeaderDragend"
@@ -194,6 +207,28 @@
       />
     </div>
 
+    <Teleport to="body">
+      <div
+        v-if="cellMenu"
+        ref="cellMenuEl"
+        class="run-data-cell-menu"
+        role="menu"
+        :style="{ left: `${cellMenu.x}px`, top: `${cellMenu.y}px` }"
+      >
+        <div class="run-data-cell-menu__title">加入过滤条件并重新检索</div>
+        <div class="run-data-cell-menu__value" :title="cellMenu.title">{{ cellMenu.title }}</div>
+        <button
+          v-for="(option, index) in cellMenu.options"
+          :key="index"
+          type="button"
+          role="menuitem"
+          class="run-data-cell-menu__item"
+          @click="applyCellFilter(option)"
+        >
+          {{ option.label }}
+        </button>
+      </div>
+    </Teleport>
     <FilterBuilder
       v-model:visible="filterDialogVisible"
       v-model="advancedRows"
@@ -217,7 +252,17 @@
 
 <script setup lang="ts">
 import { toast } from '@renderer/features/Toast'
-import { computed, h, onBeforeUnmount, onMounted, reactive, ref, useSlots, watch } from 'vue'
+import {
+  computed,
+  h,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  useSlots,
+  watch
+} from 'vue'
 import {
   ElBadge,
   ElButton,
@@ -259,7 +304,9 @@ import type { RunDataColumn, RunDataRow, RunDataStatsPreset } from './types'
 import { useRunDataTablePrefs } from './prefs'
 import { enumLabel, formatFieldValue, toPlain } from './format'
 import {
+  type CellFilterOption,
   type FilterRow,
+  cellFilterOptions,
   describeFilterRow,
   drillToFilter,
   isFilterRowComplete,
@@ -269,6 +316,8 @@ import { exportFormatOptions, exportRows, rowsToTsv, type ExportFormat } from '.
 import ColumnHeaderFilter from './ColumnHeaderFilter.vue'
 import ColumnSettings from './ColumnSettings.vue'
 import FilterBuilder from './FilterBuilder.vue'
+import FilterPresets from './FilterPresets.vue'
+import { type FilterSnapshot, sessionFilters, useFilterMemory } from './filter-memory'
 import StatsPanel from './StatsPanel.vue'
 import ImportDialog from './ImportDialog.vue'
 import FavoriteFolderPicker from './FavoriteFolderPicker.vue'
@@ -417,25 +466,20 @@ const describeAdvanced = (row: FilterRow) => {
   const f = fieldByKey(row.field)
   return f ? describeFilterRow(row, f) : row.field
 }
+function describeColumn(key: string, values: (string | number | null)[]) {
+  const field = fieldByKey(key)
+  if (!field) return key
+  const shown = values
+    .slice(0, 3)
+    .map((v) =>
+      field.type === 'enum' ? enumLabel(field, v) || '(空)' : v === null || v === '' ? '(空)' : v
+    )
+  return `${field.label}：${shown.join('、')}${values.length > 3 ? ` 等${values.length}项` : ''}`
+}
 const activeColumnFilters = computed(() =>
   Object.entries(columnFilters)
     .filter(([, values]) => values?.length)
-    .map(([key, values]) => {
-      const field = fieldByKey(key)!
-      const shown = values!
-        .slice(0, 3)
-        .map((v) =>
-          field.type === 'enum'
-            ? enumLabel(field, v) || '(空)'
-            : v === null || v === ''
-              ? '(空)'
-              : v
-        )
-      return {
-        field,
-        text: `${field.label}：${shown.join('、')}${values!.length > 3 ? ` 等${values!.length}项` : ''}`
-      }
-    })
+    .map(([key, values]) => ({ field: fieldByKey(key)!, text: describeColumn(key, values!) }))
 )
 const hasConditions = computed(
   () =>
@@ -447,6 +491,153 @@ function clearAllConditions() {
   advancedRows.value = []
   Object.keys(columnFilters).forEach((k) => (columnFilters[k] = null))
 }
+
+// ---------- remembered conditions ----------
+const memory = useFilterMemory(props.dataset, () => datasetDef.value.fields)
+function currentSnapshot(): FilterSnapshot {
+  return {
+    keyword: appliedKeyword.value,
+    rows: advancedRows.value.filter(isFilterRowComplete),
+    columns: Object.fromEntries(
+      Object.entries(columnFilters)
+        .filter(([, values]) => values?.length)
+        .map(([key, values]) => [key, [...values!]])
+    )
+  }
+}
+function applySnapshot(snapshot: FilterSnapshot) {
+  const s = memory.copy(snapshot)
+  clearTimeout(keywordTimer)
+  keywordInput.value = s.keyword
+  appliedKeyword.value = s.keyword
+  advancedRows.value = s.rows
+  Object.keys(columnFilters).forEach((k) => (columnFilters[k] = null))
+  Object.entries(s.columns).forEach(([k, values]) => (columnFilters[k] = values))
+}
+function describeSnapshot(s: FilterSnapshot) {
+  return [
+    s.keyword ? `搜索：${s.keyword}` : '',
+    ...s.rows.map(describeAdvanced),
+    ...Object.entries(s.columns).map(([k, values]) => describeColumn(k, values))
+  ]
+    .filter(Boolean)
+    .join('；')
+}
+function applyStored(snapshot: FilterSnapshot) {
+  applySnapshot(snapshot)
+  toast.success(`已应用过滤条件：${describeSnapshot(snapshot)}`)
+}
+async function saveFilter(snapshot: FilterSnapshot = currentSnapshot()) {
+  const text = describeSnapshot(snapshot)
+  if (!text) return
+  let name: string
+  try {
+    const { value } = (await ElMessageBox.prompt(`条件：${text}`, '保存过滤条件', {
+      inputValue: text.length > 20 ? text.slice(0, 20) + '…' : text,
+      inputPlaceholder: '给这组条件起个名字',
+      inputValidator: (v) => !!v?.trim() || '请输入名称',
+      confirmButtonText: '保存',
+      cancelButtonText: '取消'
+    })) as { value: string }
+    name = value.trim()
+  } catch {
+    return
+  }
+  toast.success(
+    memory.save(name, snapshot) ? `已保存过滤条件“${name}”` : `已更新同样条件的名称为“${name}”`
+  )
+}
+// switching tabs or pages remounts the table: bring back this session's conditions
+const restored = sessionFilters.get(props.dataset)
+if (restored) applySnapshot(restored)
+let rememberTimer: ReturnType<typeof setTimeout> | undefined
+watch(
+  () => JSON.stringify([appliedKeyword.value, advancedRows.value, columnFilters]),
+  () => {
+    const snapshot = currentSnapshot()
+    sessionFilters.set(props.dataset, snapshot)
+    // conditions kept for a moment count as used
+    clearTimeout(rememberTimer)
+    rememberTimer = setTimeout(() => memory.remember(snapshot), 1500)
+  }
+)
+
+// ---------- click a cell to filter by its value ----------
+const cellMenu = ref<{ x: number; y: number; title: string; options: CellFilterOption[] } | null>(
+  null
+)
+const cellMenuEl = ref<HTMLElement>()
+const filterableKeys = computed(
+  () => new Set(displayedColumns.value.filter((c) => c.field).map((c) => c.key))
+)
+const cellClassName = ({ column }: { column: TableColumnCtx<RunDataRow> }) =>
+  column.columnKey && filterableKeys.value.has(column.columnKey) ? 'is-filterable' : ''
+function handleCellClick(
+  row: RunDataRow,
+  column: TableColumnCtx<RunDataRow>,
+  _cell: HTMLElement,
+  event: MouseEvent
+) {
+  // links, buttons and checkboxes in a cell keep their own click; so does selecting text
+  const target = event.target as HTMLElement
+  if (target.closest('a, button, input, textarea, label, .el-button, [role="button"]')) return
+  if (window.getSelection()?.toString()) return
+  const col = displayedColumns.value.find((c) => c.key === column.columnKey)
+  if (!col?.field) return
+  const options = cellFilterOptions(col.field, row[col.field.key])
+  if (!options.length) return
+  cellMenu.value = {
+    x: Math.max(8, Math.min(event.clientX, innerWidth - 268)),
+    y: Math.max(8, Math.min(event.clientY + 6, innerHeight - 64 - options.length * 34)),
+    title: `${col.field.label}：${cellText(col, row) || '(空)'}`,
+    options
+  }
+  nextTick(() => cellMenuEl.value?.querySelector<HTMLElement>('button')?.focus())
+}
+function closeCellMenu() {
+  cellMenu.value = null
+}
+function applyCellFilter(option: CellFilterOption) {
+  closeCellMenu()
+  const action = option.action
+  if (action.kind === 'row') {
+    const key = JSON.stringify(action.row)
+    if (advancedRows.value.some((r) => JSON.stringify(r) === key)) {
+      toast.info('这个过滤条件已经存在')
+      return
+    }
+    advancedRows.value = [...advancedRows.value, action.row]
+  } else if (action.mode === 'set') {
+    columnFilters[action.field] = [action.value]
+  } else {
+    // exclude one enum value: keep the others that are selected, or all the other options
+    const field = fieldByKey(action.field)
+    const current =
+      columnFilters[action.field] ??
+      (field?.enumOptions ?? []).map((o) => o.value as string | number | null)
+    const rest = current.filter((v) => String(v) !== String(action.value))
+    if (!rest.length) {
+      toast.info('排除后没有可显示的值')
+      return
+    }
+    columnFilters[action.field] = rest
+  }
+  toast.success(`已加入过滤条件：${option.label}`)
+}
+function handleOutsidePointer(e: MouseEvent) {
+  if (cellMenu.value && !cellMenuEl.value?.contains(e.target as Node)) closeCellMenu()
+}
+onMounted(() => {
+  document.addEventListener('mousedown', handleOutsidePointer, true)
+  window.addEventListener('resize', closeCellMenu)
+  document.addEventListener('scroll', closeCellMenu, true)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('mousedown', handleOutsidePointer, true)
+  window.removeEventListener('resize', closeCellMenu)
+  document.removeEventListener('scroll', closeCellMenu, true)
+  clearTimeout(rememberTimer)
+})
 
 // ---------- opened from elsewhere with filters (task history) ----------
 const jumpStore = useRunDataJumpStore()
@@ -518,7 +709,8 @@ function handlePageSizeChange(size: number) {
 function handleRefresh() {
   fetchData()
 }
-
+// pages reload the rows after changing them elsewhere (e.g. 打招呼)
+defineExpose({ refresh: fetchData })
 
 // ---------- table height ----------
 const tableHeight = ref<number | undefined>(undefined)
@@ -746,6 +938,10 @@ function handleKeydown(e: KeyboardEvent) {
   const overlayOpen = [...document.querySelectorAll<HTMLElement>('.el-overlay, .el-popper')].some(
     (el) => el.offsetParent !== null || getComputedStyle(el).display !== 'none'
   )
+  if (e.key === 'Escape' && cellMenu.value) {
+    closeCellMenu()
+    return
+  }
   if (e.key === 'Escape' && isFullscreen.value && !overlayOpen) {
     isFullscreen.value = false
   }
@@ -817,6 +1013,9 @@ onBeforeUnmount(() => {
       row-gap: 6px;
     }
   }
+  :deep(td.is-filterable) {
+    cursor: pointer;
+  }
   &__batch {
     display: flex;
     flex-wrap: wrap;
@@ -829,6 +1028,56 @@ onBeforeUnmount(() => {
     background: var(--el-color-primary-light-9);
     .el-button + .el-button {
       margin-left: 0;
+    }
+  }
+}
+</style>
+
+<style lang="scss">
+.run-data-cell-menu {
+  position: fixed;
+  z-index: 3000;
+  width: 260px;
+  box-sizing: border-box;
+  padding: 6px;
+  border-radius: 8px;
+  background: var(--el-bg-color-overlay);
+  box-shadow: var(--el-box-shadow-light);
+  border: 1px solid var(--el-border-color-lighter);
+  font-size: 13px;
+  &__title {
+    padding: 4px 8px 0;
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+  }
+  &__value {
+    padding: 2px 8px 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+    border-bottom: 1px solid var(--el-border-color-lighter);
+    margin-bottom: 4px;
+  }
+  &__item {
+    display: block;
+    width: 100%;
+    padding: 7px 8px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--el-text-color-regular);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    &:hover,
+    &:focus-visible {
+      background: var(--el-color-primary-light-9);
+      color: var(--el-color-primary);
+      outline: none;
     }
   }
 }

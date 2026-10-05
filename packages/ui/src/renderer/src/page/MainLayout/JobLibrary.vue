@@ -1,13 +1,24 @@
 <template>
   <div class="page-wrap flex flex-col of-hidden">
     <RunDataTable
+      ref="tableRef"
       dataset="jobLibrary"
       :columns="columns"
       :stats-preset="runDataStatsPresets.jobLibrary"
-      :actions-width="240"
+      :actions-width="300"
       class="flex-1"
     >
       <template #actions="{ row }">
+        <ElButton
+          link
+          :type="row.chattedAt ? 'info' : 'success'"
+          size="small"
+          :loading="greetingJobId === row.encryptJobId"
+          :disabled="!!greetingJobId && greetingJobId !== row.encryptJobId"
+          :title="row.chattedAt ? '已开聊，可再次打开继续沟通' : '在BOSS中向这个职位的招聘者打招呼'"
+          @click="handleGreetButtonClick(row)"
+          >{{ row.chattedAt ? '已开聊' : '打招呼' }}</ElButton
+        >
         <ElButton link type="primary" size="small" @click="handleViewJobSnapshotButtonClick(row)"
           >已保存详情</ElButton
         >
@@ -72,6 +83,7 @@ import RunDataTable from '../../features/RunDataTable/index.vue'
 import { runDataStatsPresets } from '../../features/RunDataTable/stats-presets'
 import { formatSalary } from '../../features/RunDataTable/format'
 import type { RunDataColumn } from '../../features/RunDataTable/types'
+import { greetJobManually, type GreetableJob } from '../../features/greet-job'
 
 const columns: RunDataColumn[] = [
   { key: 'companyName' },
@@ -86,8 +98,21 @@ const columns: RunDataColumn[] = [
     headerFilter: false
   },
   { key: 'bossName' },
-  { key: 'bossTitle' }
+  { key: 'bossTitle' },
+  { key: 'chattedAt', minWidth: 150 }
 ]
+
+const tableRef = ref<{ refresh: () => void }>()
+const greetingJobId = ref<string | null>(null)
+async function handleGreetButtonClick(row: GreetableJob) {
+  if (greetingJobId.value) return
+  greetingJobId.value = row.encryptJobId
+  try {
+    if (await greetJobManually(row)) tableRef.value?.refresh()
+  } finally {
+    greetingJobId.value = null
+  }
+}
 
 const drawVisibleModelValue = ref(false)
 const selectedJobInfoForViewSnapshot = ref<VChatStartupLog | null>(null)

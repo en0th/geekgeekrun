@@ -39,7 +39,7 @@ import {
   Compass,
   TopRight,
 } from "@element-plus/icons-vue";
-import RunningOverlay from "../../features/RunningOverlay/index.vue";
+import { getAutoStartChatSteps } from "../../../../common/prerequisite-step-by-step-check";
 import {
   useTaskManagerStore,
   useUpdateStore,
@@ -506,6 +506,8 @@ export default Vue.defineComponent({
           title: navCollapsed.value ? label : undefined,
           onClick: (e) => {
             e.preventDefault();
+            // the navigation entry opens the list, not the last task looked at
+            if (key === "tasks") taskDetailId.value = null;
             navigate(key);
           },
         },
@@ -2769,55 +2771,70 @@ export default Vue.defineComponent({
         ),
       ];
     }
-    function summary(d) {
-      const words = d.independentWords ? d.sourceWords : d.titles;
-      return h("ul", { class: "ux-summary" }, [
+    // 开始前确认: one line on what the run will do, then only the settings this run mode uses
+    function checkLead() {
+      if (checks.value === "follow")
+        return ["确认开始后将向已读未回复的招聘者发送跟进消息。", "warning"];
+      const d = draft.value;
+      if (d.runMode !== "collect")
+        return [
+          "确认开始后将向符合条件的招聘者打招呼，不符合的岗位按处理方式处理（可能在BOSS标记不合适）。",
+          "warning",
+        ];
+      return [
+        isCollectAll(d)
+          ? "确认开始后将浏览岗位并把全部岗位保存到资料库；不会打招呼，也不会标记不合适。"
+          : "确认开始后将浏览岗位，只把符合求职条件的岗位保存到资料库；不会打招呼，也不会标记不合适。",
+        "info",
+      ];
+    }
+    function checkFactRows() {
+      if (checks.value === "follow") {
+        const f = follow.value;
+        return [
+          ["会话范围", (f.days === 0 ? "不限时间" : "最近" + f.days + "天") + "的已读未回复会话"],
+          ["消息来源", f.source === "emotion" ? "期待回复表情" : "AI生成"],
+          ["发送间隔", "每次间隔 " + f.interval + " 分钟"],
+        ];
+      }
+      const d = effective();
+      const facts = Object.fromEntries(templateFacts(d));
+      const g = globalPace.value;
+      const pace =
+        d.useGlobalPace && g
+          ? "全局设置：" +
+            (g.pause ? `每 ${g.actions} 次操作休息 ${g.minutes} 分钟` : "不定时休息")
+          : facts["运行节奏"];
+      const keys = isCollectAll(d)
+        ? ["运行方式", "职位来源"]
+        : [
+            "运行方式",
+            "职位来源",
+            "目标岗位",
+            "工作城市",
+            "期望薪资",
+            ...[
+              "职位分类",
+              "岗位描述包含",
+              "工作经验",
+              "只看公司",
+              "排除公司",
+              "招聘者活跃",
+            ].filter((k) => !["不限", "无"].includes(facts[k])),
+            ...(d.runMode === "collect" ? [] : ["默认处理方式"]),
+          ];
+      return [...keys.map((k) => [k, facts[k]]), ["运行节奏", pace]];
+    }
+    function checkFacts() {
+      const rows = checkFactRows();
+      return h("details", { class: "ux-check-facts" }, [
+        h("summary", [
+          h("span", "本次使用的配置"),
+          h("span", { class: "ux-hint" }, rows.length + " 项，展开核对"),
+        ]),
         h(
-          "li",
-          "岗位：" +
-            (d.regexMode
-              ? "高级规则（保留原有且 / 或逻辑）"
-              : d.titles.join("、") || "尚未填写"),
-        ),
-        h(
-          "li",
-          "城市：" +
-            (d.cities.join("、") || "不限") +
-            "；薪资：" +
-            (d.salary
-              ? (d.low ?? "不限") +
-                " — " +
-                (d.high ?? "不限") +
-                (d.unit === "month" ? " 元 / 月" : " 万元 / 年")
-              : "不限"),
-        ),
-        h(
-          "li",
-          "查找来源：" +
-            (d.sourceList
-              ? d.sourceList
-                  .filter((s) => s.enabled)
-                  .map((s) => sourceInfo[s.type]?.[0] || s.type)
-                  .join(" → ")
-              : d.source),
-        ),
-        h(
-          "li",
-          "不匹配：默认" +
-            strategyLabel(d.strategy) +
-            "；" +
-            Object.keys(d.overrides).filter((k) => d.overrides[k]).length +
-            "项按原因覆盖。平台标记可能改变推荐，实际以原因设置为准。",
-        ),
-        h(
-          "li",
-          "条件来源：" +
-            (d.inherit ? "已保存偏好 + 本次覆盖" : "本次独立设置") +
-            "；" +
-            (d.pause
-              ? "每 " + d.actions + " 次浏览器操作休息 " + d.minutes + " 分钟"
-              : "未启用定时休息") +
-            "（默认节奏不是安全保证）。",
+          "dl",
+          rows.flatMap(([k, v]) => [h("dt", k), h("dd", v || "—")]),
         ),
       ]);
     }
@@ -3502,10 +3519,63 @@ export default Vue.defineComponent({
     const queueDetail = (position, yielded = false) =>
       (yielded ? "已让出给排队的任务；" : "其他任务运行中；") +
       `排在队列第 ${position || 1} 位，轮到时自动${yielded ? "继续" : "开始"}`;
-    const runIds = ref({ auto: null, follow: null }),
-      overlays = { auto: null, follow: null };
-    function showRuntime(task) {
-      overlays[task]?.show();
+    const runIds = ref({ auto: null, follow: null });
+    // ---- live state of every BOSS task, for the task dashboard and the page curtain ----
+    // workerId -> { runRecordId, progress, base (counts from before a restart), log, steps, firstStartedAt }
+    const liveTasks = ref({});
+    // the task whose dashboard the 任务列表 page shows
+    const taskDetailId = ref(null);
+    // runs for which the user chose to keep editing under the curtain
+    const curtainDismissed = ref({ auto: null, follow: null });
+    const COUNTERS = ["viewed", "collected", "sent", "skipped", "marked"];
+    const isCountedKind = (kind) => COUNTERS.includes(kind);
+    function mergeLive(workerId, runRecordId, progress, steps) {
+      if (!(workerId in queuedTaskLabels) || !progress) return;
+      const cur = liveTasks.value[workerId];
+      const sameRun = cur && String(cur.runRecordId) === String(runRecordId);
+      // a task restarted after making way for another run starts its counters again
+      const restarted =
+        sameRun && cur.progress?.startedAt && cur.progress.startedAt !== progress.startedAt;
+      const base = !sameRun
+        ? {}
+        : restarted
+          ? Object.fromEntries(
+              COUNTERS.map((k) => [k, (cur.base?.[k] || 0) + (cur.progress?.[k] || 0)]),
+            )
+          : cur.base || {};
+      const log = sameRun ? cur.log.slice() : [];
+      const seen = new Set(log.map((e) => e.at + "|" + e.text));
+      for (const e of progress.log || []) {
+        if (seen.has(e.at + "|" + e.text)) continue;
+        const last = log[log.length - 1];
+        // a repeated status line moves forward instead of piling up
+        if (last && !isCountedKind(e.kind) && last.kind === e.kind && last.text === e.text) {
+          last.at = Math.max(last.at, e.at);
+          continue;
+        }
+        log.push({ ...e });
+        seen.add(e.at + "|" + e.text);
+      }
+      log.sort((a, b) => a.at - b.at);
+      if (log.length > 1000) log.splice(0, log.length - 1000);
+      liveTasks.value = {
+        ...liveTasks.value,
+        [workerId]: {
+          runRecordId,
+          progress,
+          base,
+          log,
+          steps: steps || cur?.steps || null,
+          firstStartedAt: sameRun ? cur.firstStartedAt : progress.startedAt,
+        },
+      };
+    }
+    // counts over the whole run, across restarts
+    const liveCount = (live, key) => (live?.base?.[key] || 0) + (live?.progress?.[key] || 0);
+    function openTaskDetail(workerId) {
+      taskDetailId.value = workerId;
+      tasksTab.value = "current";
+      navigate("tasks");
     }
     async function begin(task) {
       if (
@@ -3587,16 +3657,28 @@ export default Vue.defineComponent({
           ),
         );
         checks.value = task;
+        const fixIn = (tab) => () => {
+          modal.value = "";
+          navigate("settings");
+          settingTab.value = tab;
+        };
         runtimeSteps.value = [
           {
-            label:
-              bossLogin.value.status === "valid"
-                ? "BOSS直聘登录有效（刚刚已检测）"
-                : "登录凭证已保存（暂时无法联网确认，运行时会再次确认）",
+            label: !cookieValid
+              ? "BOSS直聘尚未登录或登录已失效"
+              : bossLogin.value.status === "valid"
+                ? "BOSS直聘登录有效"
+                : "登录凭证已保存（运行时会再次确认）",
             ok: cookieValid,
+            fix: "修复登录",
+            onFix: fixIn("account"),
           },
-          { label: "浏览器已配置", ok: browser.value },
-          { label: "当前条件已保存", ok: true },
+          {
+            label: browser.value ? "浏览器已配置" : "尚未配置浏览器",
+            ok: browser.value,
+            fix: "修复浏览器",
+            onFix: fixIn("browser"),
+          },
         ];
         modal.value = "check";
       } catch (error) {
@@ -3654,7 +3736,6 @@ export default Vue.defineComponent({
               },
         );
         await taskStore.getRunningTasks();
-        if (!result.queued) R.nextTick(() => showRuntime(task));
       } catch (error) {
         R.message({
           type: "error",
@@ -3760,7 +3841,7 @@ export default Vue.defineComponent({
               ])
             : active
             ? inline([
-                button("查看运行状态", () => showRuntime(task)),
+                button("查看任务", () => openTaskDetail(workerIds[task])),
                 button("停止运行", () => stop(task), {
                   type: "danger",
                   plain: true,
@@ -3784,31 +3865,6 @@ export default Vue.defineComponent({
                   })
                 : null,
         ],
-      );
-    }
-    function runtimeOverlay(task) {
-      return h(
-        RunningOverlay,
-        {
-          ref: (v) => (overlays[task] = v),
-          workerId: workerIds[task],
-          runRecordId: runIds.value[task],
-        },
-        {
-          "op-buttons": () =>
-            inline([
-              button("返回页面", () => overlays[task]?.hide(), {
-                size: "small",
-              }),
-              running.value[task]
-                ? button("停止任务", () => stop(task), {
-                    type: "danger",
-                    size: "small",
-                    loading: stopping.value,
-                  })
-                : null,
-            ]),
-        },
       );
     }
     function jumpAutoSection(id, focusSelector) {
@@ -4011,7 +4067,9 @@ export default Vue.defineComponent({
       const steps = autoSteps();
       const current = currentStepId(steps);
       const { sections } = autoProgress();
+      const curtain = taskCurtain("auto");
       return [
+        curtain,
         heading("找岗位"),
         templateBar(),
         problems(errors.value),
@@ -4019,8 +4077,95 @@ export default Vue.defineComponent({
         railCollapsed.value ? null : sectionRail(),
         stepBar(steps, current, sections),
         stepContent(current),
-        footer("auto"),
+        // under the curtain the page is read-only; the curtain offers the way back in
+        curtain ? null : footer("auto"),
       ];
+    }
+    // ---- page curtain while a task runs: covers this page only, the rest of the app stays usable ----
+    const progressTitles = {
+      running: "正在运行",
+      searching: "正在检查下一批岗位",
+      blocked: "已停止，请检查条件",
+      waiting: "等待新岗位或会话",
+      resting: "定时休息中",
+      retrying: "正在重新检查",
+      stopped: "已停止",
+      error: "任务异常结束",
+      queued: "排队等待中",
+      yielded: "已让出，等待继续",
+    };
+    function sinceText(at) {
+      if (!at) return "";
+      const s = Math.max(0, Math.round((progressClock.value - at) / 1000));
+      return s < 60 ? s + " 秒前" : Math.round(s / 60) + " 分钟前";
+    }
+    const curtainRunId = (task) =>
+      runIds.value[task] ?? liveTasks.value[workerIds[task]]?.runRecordId ?? "current";
+    function curtainShown(task) {
+      return (
+        Boolean(running.value[task] || queued.value[task]) &&
+        String(curtainDismissed.value[task]) !== String(curtainRunId(task))
+      );
+    }
+    function taskCurtain(task) {
+      if (!curtainShown(task)) return null;
+      const id = workerIds[task];
+      const live = liveTasks.value[id];
+      const runId = curtainRunId(task);
+      const p = live?.progress || taskProgress.value[task] || {};
+      const waiting = queued.value[task] && !running.value[task];
+      const collect = task === "auto" && draft.value.runMode === "collect";
+      const name = queuedTaskLabels[id];
+      const numbers =
+        task === "follow"
+          ? [["已检查会话", "viewed"], ["已发送", "sent"], ["已跳过", "skipped"]]
+          : collect
+            ? [["已查看并入库", "viewed"], ["已收集", "collected"], ["已跳过", "skipped"]]
+            : [["已查看并入库", "viewed"], ["已打招呼", "sent"], ["已跳过", "skipped"]];
+      return h(
+        "div",
+        { class: "ux-task-curtain", role: "dialog", "aria-label": name + "任务运行中" },
+        [
+          h("div", { class: "ux-task-curtain-card" }, [
+            h("div", { class: "ux-task-curtain-head" }, [
+              h("span", { class: ["ux-live-dot", waiting ? "is-waiting" : ""], "aria-hidden": "true" }),
+              h("h2", (waiting ? name + "任务排队中" : name + "任务运行中")),
+            ]),
+            h(
+              "p",
+              { class: "ux-task-curtain-detail" },
+              waiting
+                ? p.detail || "其他任务运行中，轮到时自动开始。"
+                : (progressTitles[p.state] || "正在运行") + (p.detail ? "：" + p.detail : ""),
+            ),
+            waiting
+              ? null
+              : h(
+                  "div",
+                  { class: "ux-task-curtain-numbers" },
+                  numbers.map(([label, key]) =>
+                    h("div", [h("strong", String(liveCount(live, key) || p[key] || 0)), h("span", label)]),
+                  ),
+                ),
+            inline([
+              button("查看任务", () => openTaskDetail(id), { type: "primary" }),
+              button(waiting ? "移出队列" : "停止任务", () => stop(task), {
+                type: "danger",
+                plain: true,
+                loading: stopping.value,
+              }),
+            ]),
+            hint(
+              "任务在后台运行，可以随时去资料库、求职记录等页面查看数据；在“任务列表”中能看到这个任务的实时进度和执行日志。",
+            ),
+            button(
+              "继续编辑配置（下次开始时生效）",
+              () => (curtainDismissed.value = { ...curtainDismissed.value, [task]: runId }),
+              { link: true, size: "small" },
+            ),
+          ]),
+        ],
+      );
     }
     // Checklist behind the section rail. Only required and validated items count towards
     // completion: optional conditions left empty mean 不限, which is a valid choice.
@@ -4383,6 +4528,25 @@ export default Vue.defineComponent({
       // follow-up messages have no data table
       return null;
     }
+    // a table asked to show another table's rows (e.g. 招聘者 → 全部职位): open that tab
+    const tabOfDataset = {
+      jobLibrary: ["library", "jobs"],
+      favoriteJobs: ["library", "favorites"],
+      bossLibrary: ["library", "boss"],
+      companyLibrary: ["library", "company"],
+      chatStartupLog: ["records", "chat"],
+      markAsNotSuitLog: ["records", "skip"],
+    };
+    R.watch(
+      () => jumpStore.pending,
+      (target) => {
+        const place = target && tabOfDataset[target.dataset];
+        if (!place) return;
+        if (place[0] === "library") libraryTab.value = place[1];
+        else recordTab.value = place[1];
+        navigate(place[0]);
+      },
+    );
     function openHistoryData(t) {
       const target = historyTarget(t);
       if (!target) return;
@@ -4397,7 +4561,226 @@ export default Vue.defineComponent({
     }
     const column = (props, cell) =>
       E("ElTableColumn", props, cell ? { default: ({ row }) => cell(row) } : undefined);
+    // ---- task dashboard (任务列表 → 查看任务) ----
+    const logFilter = ref("all");
+    const logKinds = {
+      viewed: ["入库", "primary"],
+      collected: ["收集", "success"],
+      sent: ["打招呼", "success"],
+      skipped: ["跳过", "info"],
+      marked: ["标记", "danger"],
+      resting: ["休息", "warning"],
+      yielded: ["让出", "warning"],
+      waiting: ["等待", "info"],
+      searching: ["翻页", "info"],
+      retrying: ["重试", "warning"],
+      blocked: ["停止", "danger"],
+      error: ["异常", "danger"],
+      stopped: ["停止", "info"],
+      running: ["状态", "info"],
+    };
+    const logFilterOf = (kind) =>
+      ["viewed", "collected", "sent", "marked"].includes(kind)
+        ? "data"
+        : kind === "skipped"
+          ? "skipped"
+          : "status";
+    const clockSeconds = (ms) =>
+      new Date(ms).toLocaleTimeString("zh-CN", { hour12: false });
+    function taskDetailPage(workerId) {
+      const name = queuedTaskLabels[workerId] || workerId;
+      const runningEntry = taskStore.runningTasks.find((t) => t.workerId === workerId);
+      const queueEntry = taskStore.taskQueue.find((t) => t.workerId === workerId);
+      const lastRun = taskStore.taskHistory.find((t) => t.workerId === workerId);
+      const live = liveTasks.value[workerId];
+      const p = live?.progress || {};
+      const args = runningEntry?.args || queueEntry?.args || [];
+      const runMode =
+        args.find((a) => String(a).startsWith("--run-mode="))?.split("=")[1] ||
+        (workerId === workerIds.auto ? lastRun?.runMode || draft.value.runMode : null);
+      const task = Object.keys(workerIds).find((k) => workerIds[k] === workerId);
+      const active = Boolean(runningEntry || queueEntry);
+      const status = runningEntry
+        ? runningEntry.yielding
+          ? ["即将让出", "warning"]
+          : ["运行中", "primary"]
+        : queueEntry
+          ? queueEntry.reason === "yielded"
+            ? ["已让出，等待继续", "warning"]
+            : ["排队中", "info"]
+          : p.state === "error"
+            ? ["异常结束", "danger"]
+            : p.state === "blocked"
+              ? ["已停止", "warning"]
+              : live || lastRun
+                ? ["已结束", "info"]
+                : ["没有运行记录", "info"];
+      const startedAt = live?.firstStartedAt || lastRun?.startedAt;
+      const endAt = active ? progressClock.value : p.updatedAt || lastRun?.endedAt;
+      const metric = (label, value, note, unit) =>
+        h("div", { class: "ux-task-metric" }, [
+          h("span", { class: "ux-task-metric-label" }, label),
+          h("strong", [value, unit ? h("small", unit) : null]),
+          note ? h("span", { class: "ux-hint" }, note) : null,
+        ]);
+      const count = (key) => String(liveCount(live, key));
+      const metrics =
+        workerId === workerIds.follow
+          ? [["已检查会话", "viewed"], ["已发送跟进", "sent"], ["已跳过", "skipped"]]
+          : workerId === "jobStatusPollMain"
+            ? [["已检查职位", "viewed"], ["暂时无法确认", "skipped"]]
+            : runMode === "collect"
+              ? [["已查看并入库", "viewed"], ["已收集", "collected"], ["已跳过", "skipped"], ["已标记不合适", "marked"]]
+              : [["已查看并入库", "viewed"], ["已打招呼", "sent"], ["已跳过", "skipped"], ["已标记不合适", "marked"]];
+      const minutes = startedAt && endAt ? Math.max(1, (endAt - startedAt) / 60000) : 0;
+      const viewed = liveCount(live, "viewed");
+      const reasons = Object.entries(p.skippedReasons || {})
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 8);
+      const maxReason = reasons[0]?.[1] || 1;
+      const steps =
+        workerId === workerIds.auto && live?.steps
+          ? getAutoStartChatSteps().map((step) => ({
+              ...step,
+              status: live.steps[step.id]?.step?.status || "todo",
+            }))
+          : null;
+      const log = (live?.log || [])
+        .filter((e) => logFilter.value === "all" || logFilterOf(e.kind) === logFilter.value)
+        .slice(-400)
+        .reverse();
+      return [
+        h("div", { class: "ux-task-detail-head" }, [
+          button("‹ 返回任务列表", () => (taskDetailId.value = null), { link: true }),
+          h("div", { class: "ux-page-title" }, [h("h1", name + "任务")]),
+          E("ElTag", { type: status[1], disableTransitions: true }, () => status[0]),
+          runMode && workerId === workerIds.auto
+            ? h("span", { class: "ux-hint" }, runMode === "collect" ? "只收集岗位数据" : "自动打招呼")
+            : null,
+          live?.runRecordId ? h("span", { class: "ux-hint" }, "运行记录 #" + live.runRecordId) : null,
+        ]),
+        inline([
+          active
+            ? button(
+                queueEntry && !runningEntry ? "移出队列" : "停止任务",
+                () => (task ? stop(task) : removeQueued(workerId)),
+                { type: "danger", plain: true, loading: stopping.value },
+              )
+            : null,
+          startedAt && historyTarget({ workerId, runMode })
+            ? button(
+                "查看本次产生的数据",
+                () =>
+                  openHistoryData({
+                    workerId,
+                    runMode,
+                    startedAt,
+                    endedAt: endAt || Date.now(),
+                  }),
+                { plain: true },
+              )
+            : null,
+          task
+            ? button("查看配置", () => navigate(task), { plain: true })
+            : null,
+        ]),
+        h("div", { class: "ux-task-metrics" }, [
+          metric(
+            active ? "已运行" : "运行时长",
+            startedAt ? durationText((endAt || Date.now()) - startedAt) : "—",
+            startedAt ? "开始于 " + clockTime(startedAt) : "",
+          ),
+          ...metrics.map(([label, key]) => metric(label, count(key))),
+          metric(
+            "速度",
+            minutes && viewed ? (viewed / (minutes / 60)).toFixed(0) : "—",
+            "按已查看计算",
+            minutes && viewed ? " 个/小时" : "",
+          ),
+        ]),
+        h("div", { class: "ux-task-detail-grid" }, [
+          card("当前操作", [
+            h("p", { class: "ux-task-current" }, [
+              h("strong", progressTitles[p.state] || (active ? "正在运行" : "未在运行")),
+              p.detail ? "：" + p.detail : "",
+            ]),
+            p.listSummary ? hint(p.listSummary) : null,
+            p.updatedAt ? hint("更新于 " + sinceText(p.updatedAt)) : null,
+            steps
+              ? h(
+                  "ol",
+                  { class: "ux-task-steps" },
+                  steps.map((step) =>
+                    h("li", { class: "is-" + step.status }, [
+                      h(
+                        "span",
+                        { "aria-hidden": "true" },
+                        { fulfilled: "✓", rejected: "×", pending: "…" }[step.status] || "·",
+                      ),
+                      step.describe,
+                    ]),
+                  ),
+                )
+              : null,
+          ]),
+          card(
+            "跳过原因",
+            reasons.length
+              ? [
+                  h(
+                    "ul",
+                    { class: "ux-task-reasons" },
+                    reasons.map(([reason, n]) =>
+                      h("li", [
+                        h("span", { class: "ux-task-reason-text", title: reason }, reason),
+                        h("span", { class: "ux-task-reason-bar" }, [
+                          h("i", { style: { width: (n / maxReason) * 100 + "%" } }),
+                        ]),
+                        h("strong", String(n)),
+                      ]),
+                    ),
+                  ),
+                ]
+              : [hint("还没有跳过的岗位。")],
+          ),
+        ]),
+        card("执行日志", [
+          h("div", { class: "ux-task-log-toolbar" }, [
+            E(
+              "ElRadioGroup",
+              {
+                modelValue: logFilter.value,
+                size: "small",
+                "onUpdate:modelValue": (v) => (logFilter.value = v),
+              },
+              () => [
+                ["all", "全部"],
+                ["data", "入库/打招呼"],
+                ["skipped", "跳过"],
+                ["status", "状态"],
+              ].map(([value, label]) => E("ElRadioButton", { value }, () => label)),
+            ),
+            h("span", { class: "ux-hint" }, `共 ${live?.log?.length || 0} 条，最新的在上面`),
+          ]),
+          log.length
+            ? h(
+                "ol",
+                { class: "ux-task-log", "aria-live": "polite" },
+                log.map((e) => {
+                  const [label, type] = logKinds[e.kind] || ["状态", "info"];
+                  return h("li", { key: e.at + e.text }, [
+                    h("time", clockSeconds(e.at)),
+                    E("ElTag", { size: "small", type, disableTransitions: true }, () => label),
+                    h("span", e.text),
+                  ]);
+                }),
+              )
+            : hint(active ? "任务刚开始，日志会在这里实时出现。" : "这次运行没有可显示的日志。"),
+        ]),
+      ];
+    }
     function tasksPage() {
+      if (taskDetailId.value) return taskDetailPage(taskDetailId.value);
       const workerTasks = taskStore.runningTasks.filter(
         (t) => t.workerId in queuedTaskLabels,
       );
@@ -4465,6 +4848,8 @@ export default Vue.defineComponent({
                 border: true,
                 class: "ux-task-table",
                 emptyText: "当前没有运行或排队的任务",
+                rowClassName: () => "is-linkable",
+                onRowClick: (row) => openTaskDetail(row.workerId),
               },
               () => [
                 column({ label: "状态", width: 150 }, (row) =>
@@ -4485,17 +4870,19 @@ export default Vue.defineComponent({
                 column({ label: "已运行 / 已等待", width: 130 }, (row) =>
                   durationText(progressClock.value - row.since),
                 ),
+                column({ label: "当前操作", minWidth: 200, showOverflowTooltip: true }, (row) =>
+                  liveTasks.value[row.workerId]?.progress?.detail || "—",
+                ),
                 column({ label: "操作", width: 190, fixed: "right" }, (row) =>
-                  h("span", { class: "ux-task-actions" }, [
+                  // buttons act on their own; a click elsewhere on the row opens the task
+                  h("span", { class: "ux-task-actions", onClick: (e) => e.stopPropagation() }, [
+                    button("查看任务", () => openTaskDetail(row.workerId), {
+                      link: true,
+                      type: "primary",
+                      size: "small",
+                    }),
                     row.state === "running" || row.state === "yielding"
                       ? [
-                          taskOf(row.workerId)
-                            ? button("查看运行状态", () => showRuntime(taskOf(row.workerId)), {
-                                link: true,
-                                type: "primary",
-                                size: "small",
-                              })
-                            : null,
                           button(
                             "停止",
                             () =>
@@ -4820,6 +5207,7 @@ export default Vue.defineComponent({
         d = effective(),
         roleReady = d.categories.length || d.legacyPatterns?.categories;
       return [
+        taskCurtain("follow"),
         heading("消息跟进"),
         hint("仅跟进已读未回的会话，不自动回复来信。"),
         problems(errors.value),
@@ -4983,7 +5371,7 @@ export default Vue.defineComponent({
           ],
           { id: "follow-message-content" },
         ),
-        footer("follow"),
+        curtainShown("follow") ? null : footer("follow"),
       ];
     }
     function openFollowCondition(key) {
@@ -6879,69 +7267,32 @@ export default Vue.defineComponent({
       }
       if (kind === "check") {
         title = "开始前确认";
+        const failed = runtimeSteps.value.filter((s) => !s.ok);
         content = [
-          checks.value === "auto" && draft.value.runMode === "collect"
-            ? alert(
-                "确认开始后将在BOSS中浏览岗位并把岗位详情保存到资料库；只收集模式不会打招呼，也不会标记不合适。",
-                "info",
-              )
-            : alert(
-                "确认开始后将执行真实任务，可能向招聘者发送消息或在BOSS标记不合适。请确认联系范围。",
-                "warning",
-              ),
-          ...runtimeSteps.value.map((s) =>
-            h("div", { class: "ux-check" }, [
-              h("span", s.label),
-              E(
-                "ElTag",
-                { type: s.ok ? "success" : "danger" },
-                s.ok ? "已通过" : "需要修复",
-              ),
-            ]),
-          ),
-          preparing.value ? hint("正在检查…") : null,
+          alert(...checkLead()),
+          preparing.value
+            ? hint("正在检查…")
+            : failed.length
+              ? h("div", { class: "ux-check-failed" }, [
+                  ...failed.map((s) =>
+                    h("div", { class: "ux-check" }, [
+                      h("span", s.label),
+                      button(s.fix, s.onFix, { type: "primary", plain: true, size: "small" }),
+                    ]),
+                  ),
+                ])
+              : h(
+                  "p",
+                  { class: "ux-check-passed" },
+                  runtimeSteps.value.map((s) => h("span", "✓ " + s.label)),
+                ),
           shortResume.value
             ? alert(
                 "简历内容不足800字，AI生成质量可能较差。可返回补充，或确认继续。",
                 "warning",
               )
             : null,
-          checks.value === "auto"
-            ? summary(effective())
-            : hint(
-                (follow.value.days === 0
-                  ? "不限时间的"
-                  : "最近" + follow.value.days + "天的") +
-                  "已读未回复会话；消息来源：" +
-                  (follow.value.source === "emotion"
-                    ? "期待回复表情"
-                    : "AI生成") +
-                  "；每次间隔" +
-                  follow.value.interval +
-                  "分钟。",
-              ),
-          !login.value
-            ? button(
-                "修复登录",
-                () => {
-                  modal.value = "";
-                  navigate("settings");
-                  settingTab.value = "account";
-                },
-                { type: "primary", plain: true },
-              )
-            : null,
-          !browser.value
-            ? button(
-                "修复浏览器",
-                () => {
-                  modal.value = "";
-                  navigate("settings");
-                  settingTab.value = "browser";
-                },
-                { type: "primary", plain: true },
-              )
-            : null,
+          checkFacts(),
         ];
         footerNodes = [
           button("返回修改", () => (modal.value = "")),
@@ -7280,8 +7631,6 @@ export default Vue.defineComponent({
                 onClose: closeImagePreview,
               })
             : null,
-          runtimeOverlay("auto"),
-          runtimeOverlay("follow"),
           route.value === "auto" ? railToggle() : null,
           ],
         );
@@ -7365,6 +7714,18 @@ export default Vue.defineComponent({
     const unwatch = R.watch(
       () => [taskStore.runningTasks, taskStore.taskQueue],
       ([tasks, queue]) => {
+        // the daemon keeps each task's last progress: the dashboard works for a run started
+        // before this window opened
+        for (const t of tasks) {
+          const stored = t.runtimeStorage?.taskProgress;
+          if (stored?.progress)
+            mergeLive(
+              t.workerId,
+              stored.runRecordId,
+              stored.progress,
+              t.runtimeStorage?.stepStatusMapByStepId,
+            );
+        }
         for (const [task, id] of Object.entries(workerIds)) {
           const worker = tasks.find((t) => t.workerId === id);
           const waiting = queue.find((t) => t.workerId === id);
@@ -7401,6 +7762,7 @@ export default Vue.defineComponent({
       "worker-to-gui-message",
       (_, message) => {
         if (message.data?.type !== "task-progress") return;
+        mergeLive(message.workerId, message.data.runRecordId, message.data.progress);
         const task = Object.keys(workerIds).find(
           (k) => workerIds[k] === message.workerId,
         );

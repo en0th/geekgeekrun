@@ -2369,3 +2369,290 @@ html:not(.replica-child) body {
   border: 0;
   border-top: 1px solid var(--el-border-color-lighter);
 }
+
+/* curtain over the 找岗位 / 消息跟进 page while its task runs; the rest of the app stays usable */
+.ux-inner {
+  position: relative;
+}
+.ux-task-curtain {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 72px 20px;
+  background: rgba(255, 255, 255, 0.62);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+.ux-task-curtain-card {
+  position: sticky;
+  top: 72px;
+  width: min(480px, 100%);
+  padding: 22px 24px 16px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 14px;
+  background: var(--el-bg-color);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.12);
+}
+.ux-task-curtain-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ux-task-curtain-head h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.ux-task-curtain-detail {
+  margin: 10px 0 14px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--el-text-color-regular);
+}
+.ux-task-curtain-numbers {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.ux-task-curtain-numbers > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 6px;
+  border-radius: 8px;
+  background: var(--el-fill-color-lighter);
+}
+.ux-task-curtain-numbers strong {
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+  color: var(--el-color-primary);
+}
+.ux-task-curtain-numbers span {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.ux-live-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--el-color-success);
+  box-shadow: 0 0 0 0 rgba(103, 194, 58, 0.5);
+  animation: ux-live-pulse 1.6s ease-out infinite;
+}
+.ux-live-dot.is-waiting {
+  background: var(--el-color-warning);
+  animation: none;
+}
+@keyframes ux-live-pulse {
+  to {
+    box-shadow: 0 0 0 10px rgba(103, 194, 58, 0);
+  }
+}
+
+/* task dashboard */
+.ux-task-detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.ux-task-detail-head .ux-page-title h1 {
+  margin: 0;
+}
+.ux-task-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.ux-task-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 10px;
+  background: var(--el-bg-color);
+}
+.ux-task-metric-label {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.ux-task-metric strong {
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+.ux-task-metric .ux-hint {
+  margin: 0;
+}
+.ux-task-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 0 12px;
+}
+@media (max-width: 900px) {
+  .ux-task-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.ux-task-current {
+  margin: 0 0 4px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.ux-task-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.ux-task-steps li span {
+  margin-right: 4px;
+  font-weight: 700;
+}
+.ux-task-steps li.is-fulfilled span {
+  color: var(--el-color-success);
+}
+.ux-task-steps li.is-rejected {
+  color: var(--el-color-danger);
+}
+.ux-task-reasons {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ux-task-reasons li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 90px 32px;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.ux-task-reason-text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ux-task-reason-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--el-fill-color);
+  overflow: hidden;
+}
+.ux-task-reason-bar i {
+  display: block;
+  height: 100%;
+  background: var(--el-color-warning-light-3);
+}
+.ux-task-reasons strong {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.ux-task-log-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.ux-task-log {
+  max-height: 420px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+.ux-task-log li {
+  display: grid;
+  grid-template-columns: 70px 56px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 6px 2px;
+  border-bottom: 1px solid var(--el-border-color-extra-light);
+  font-size: 13px;
+}
+.ux-task-log time {
+  color: var(--el-text-color-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.ux-task-log li span:last-child {
+  word-break: break-word;
+}
+.ux-task-metric strong small {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--el-text-color-secondary);
+}
+/* 开始前确认 */
+.ux-check-passed {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin: 12px 0 0;
+  color: var(--el-color-success);
+  font-size: 13px;
+}
+.ux-check-failed {
+  margin-top: 8px;
+}
+.ux-check-failed .ux-check {
+  align-items: center;
+  color: var(--el-color-danger);
+}
+.ux-check-facts {
+  margin-top: 14px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+}
+.ux-check-facts > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 500;
+}
+.ux-check-facts > summary::-webkit-details-marker {
+  display: none;
+}
+.ux-check-facts > summary::before {
+  content: "›";
+  display: inline-block;
+  width: 10px;
+  color: var(--el-text-color-secondary);
+  transition: transform 0.15s;
+}
+.ux-check-facts[open] > summary::before {
+  transform: rotate(90deg);
+}
+.ux-check-facts > summary .ux-hint {
+  margin: 0;
+  font-weight: 400;
+}
+.ux-check-facts dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 0;
+  padding: 4px 14px 12px 34px;
+  font-size: 13px;
+}
+.ux-check-facts dt {
+  color: var(--el-text-color-secondary);
+}
+.ux-check-facts dd {
+  margin: 0;
+  word-break: break-word;
+}

@@ -57,11 +57,13 @@ const baseSql: Record<RunDataDatasetKey, string> = {
   jobLibrary: `SELECT
     j.rowid AS _rowid, j.encryptJobId, ${jobColumns},
     b.name AS bossName, b.title AS bossTitle, c.name AS companyName,
-    h.hireStatus, h.lastSeenDate AS hireStatusCheckedAt
+    h.hireStatus, h.lastSeenDate AS hireStatusCheckedAt, ch.chattedAt
   FROM job_info j
     LEFT JOIN boss_info b ON b.encryptBossId = j.encryptBossId
     LEFT JOIN company_info c ON c.encryptCompanyId = j.encryptCompanyId
-    LEFT JOIN job_hire_status_record h ON h.encryptJobId = j.encryptJobId`,
+    LEFT JOIN job_hire_status_record h ON h.encryptJobId = j.encryptJobId
+    LEFT JOIN (SELECT encryptJobId, MAX(date) AS chattedAt FROM chat_startup_log
+      GROUP BY encryptJobId) ch ON ch.encryptJobId = j.encryptJobId`,
   // one row per favourite; a job saved into two folders shows twice
   favoriteJobs: `SELECT
     f.id, f.folderId, f.encryptJobId, f.createdAt AS favoritedAt, ff.name AS folderName,
@@ -76,10 +78,24 @@ const baseSql: Record<RunDataDatasetKey, string> = {
     LEFT JOIN boss_info b ON b.encryptBossId = j.encryptBossId
     LEFT JOIN company_info c ON c.encryptCompanyId = j.encryptCompanyId
     LEFT JOIN job_hire_status_record h ON h.encryptJobId = f.encryptJobId`,
+  // BOSS has no profile page for job seekers: the recruiter is reached through the job they
+  // posted most recently (the last one saved), which is recorded as the access link
   bossLibrary: `SELECT
-    b.encryptBossId, b.encryptCompanyId, b.name, b.title, b.date, c.name AS companyName
+    b.encryptBossId, b.encryptCompanyId, b.name, b.title, b.date, c.name AS companyName,
+    jb.jobCount, lj.encryptJobId AS latestJobId, lj.jobName AS latestJobName,
+    'https://www.zhipin.com/job_detail/' || lj.encryptJobId || '.html' AS bossUrl,
+    a.lastActiveStatus, ch.lastChatAt
   FROM boss_info b
-    LEFT JOIN company_info c ON c.encryptCompanyId = b.encryptCompanyId`,
+    LEFT JOIN company_info c ON c.encryptCompanyId = b.encryptCompanyId
+    LEFT JOIN (SELECT encryptBossId, COUNT(*) AS jobCount, MAX(rowid) AS lastRowid
+      FROM job_info GROUP BY encryptBossId) jb ON jb.encryptBossId = b.encryptBossId
+    LEFT JOIN job_info lj ON lj.rowid = jb.lastRowid
+    LEFT JOIN (SELECT encryptBossId, lastActiveStatus, MAX(id) AS _id
+      FROM boss_active_status_record GROUP BY encryptBossId) a
+      ON a.encryptBossId = b.encryptBossId
+    LEFT JOIN (SELECT j.encryptBossId, MAX(l.date) AS lastChatAt FROM chat_startup_log l
+      JOIN job_info j ON j.encryptJobId = l.encryptJobId GROUP BY j.encryptBossId) ch
+      ON ch.encryptBossId = b.encryptBossId`,
   companyLibrary: `SELECT
     encryptCompanyId, name, brandName, scaleLow, scaleHigh, stageName, industryName
   FROM company_info`

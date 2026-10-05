@@ -248,6 +248,7 @@ export const runDataDatasets: Record<RunDataDatasetKey, RunDataDatasetDef> = {
       ...jobFields,
       { key: 'bossName', label: 'BOSS', type: 'string', searchable: true },
       { key: 'bossTitle', label: 'BOSS身份', type: 'string', searchable: true },
+      { key: 'chattedAt', label: '开聊时间', type: 'date' },
       ...hireStatusFields,
       ...jobIdFields
     ]
@@ -282,9 +283,15 @@ export const runDataDatasets: Record<RunDataDatasetKey, RunDataDatasetDef> = {
       { key: 'companyName', label: '公司', type: 'string', searchable: true },
       { key: 'name', label: 'BOSS', type: 'string', searchable: true },
       { key: 'title', label: 'BOSS身份', type: 'string', searchable: true },
+      { key: 'latestJobName', label: '最近职位', type: 'string', searchable: true },
+      { key: 'jobCount', label: '职位数', type: 'number' },
+      { key: 'lastActiveStatus', label: '活跃状态', type: 'string' },
+      { key: 'lastChatAt', label: '最近开聊', type: 'date' },
+      { key: 'bossUrl', label: '访问链接', type: 'string' },
       { key: 'date', label: '收录时间', type: 'date' },
       { key: 'encryptBossId', label: 'BOSS ID', type: 'string', searchable: true },
-      { key: 'encryptCompanyId', label: '公司ID', type: 'string' }
+      { key: 'encryptCompanyId', label: '公司ID', type: 'string' },
+      { key: 'latestJobId', label: '最近职位ID', type: 'string' }
     ]
   },
   companyLibrary: {

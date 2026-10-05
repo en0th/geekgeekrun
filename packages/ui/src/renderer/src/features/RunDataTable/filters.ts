@@ -5,7 +5,8 @@ import type {
   RunDataFilter,
   RunDataFilterOp
 } from '../../../../common/run-data'
-import { DISPLAY_DATE_FORMAT, enumLabel, isBlank, toDbDate } from './format'
+import { DISPLAY_DATE_FORMAT, enumLabel, formatDbDate, isBlank, toDbDate } from './format'
+import { transformUtcDateToLocalDate } from '@geekgeekrun/utils/date.mjs'
 import dayjs from 'dayjs'
 
 export interface FilterRow {
@@ -129,14 +130,18 @@ export function drillToFilter(
   if (!bucket) return { kind: 'column', field, values: [raw as string | number | null] }
   if (['day', 'week', 'month'].includes(bucket)) {
     const range = bucketRange(bucket, String(raw))
-    return range ? { kind: 'rows', rows: [{ field, op: 'between', value: range }] } : { kind: 'unsupported' }
+    return range
+      ? { kind: 'rows', rows: [{ field, op: 'between', value: range }] }
+      : { kind: 'unsupported' }
   }
   if (bucket === 'numberRange') {
     // labels from the stats query: "<a", "a-b" (a <= v < b) or "a+"
     const text = String(raw)
     let m
-    if ((m = /^<(-?[\d.]+)$/.exec(text))) return { kind: 'rows', rows: [{ field, op: 'lt', value: Number(m[1]) }] }
-    if ((m = /^(-?[\d.]+)\+$/.exec(text))) return { kind: 'rows', rows: [{ field, op: 'gte', value: Number(m[1]) }] }
+    if ((m = /^<(-?[\d.]+)$/.exec(text)))
+      return { kind: 'rows', rows: [{ field, op: 'lt', value: Number(m[1]) }] }
+    if ((m = /^(-?[\d.]+)\+$/.exec(text)))
+      return { kind: 'rows', rows: [{ field, op: 'gte', value: Number(m[1]) }] }
     if ((m = /^(-?[\d.]+)-(-?[\d.]+)$/.exec(text)))
       return {
         kind: 'rows',
@@ -148,4 +153,92 @@ export function drillToFilter(
   }
   // hour of day / weekday have no matching filter
   return { kind: 'unsupported' }
+}
+
+export type CellFilterAction =
+  | { kind: 'row'; row: FilterRow }
+  // header value filter: `set` replaces it, `exclude` drops the value from it
+  | { kind: 'column'; field: string; mode: 'set' | 'exclude'; value: string | number | null }
+
+export interface CellFilterOption {
+  label: string
+  action: CellFilterAction
+}
+
+const short = (text: string, max = 24) => (text.length > max ? text.slice(0, max) + '…' : text)
+
+/** Filters offered when a table cell is clicked: its raw value under the field's type. */
+export function cellFilterOptions(field: RunDataField, raw: unknown): CellFilterOption[] {
+  const key = field.key
+  if (field.type === 'enum') {
+    const value = (isBlank(raw) ? null : raw) as string | number | null
+    const text = enumLabel(field, value) || '(空)'
+    return [
+      { label: `只看「${text}」`, action: { kind: 'column', field: key, mode: 'set', value } },
+      { label: `排除「${text}」`, action: { kind: 'column', field: key, mode: 'exclude', value } }
+    ]
+  }
+  if (isBlank(raw)) {
+    return [
+      { label: `${field.label}为空`, action: { kind: 'row', row: { field: key, op: 'isEmpty' } } },
+      {
+        label: `${field.label}不为空`,
+        action: { kind: 'row', row: { field: key, op: 'isNotEmpty' } }
+      }
+    ]
+  }
+  if (field.type === 'date') {
+    const d = transformUtcDateToLocalDate(raw)
+    if (!d.isValid()) return []
+    const day = d.format('YYYY-MM-DD')
+    const time = formatDbDate(raw, DISPLAY_DATE_FORMAT)
+    return [
+      {
+        label: `同一天（${day}）`,
+        action: {
+          kind: 'row',
+          row: {
+            field: key,
+            op: 'between',
+            value: [d.startOf('day').toDate(), d.endOf('day').toDate()]
+          }
+        }
+      },
+      {
+        label: `晚于 ${time}`,
+        action: { kind: 'row', row: { field: key, op: 'gte', value: d.toDate() } }
+      },
+      {
+        label: `早于 ${time}`,
+        action: { kind: 'row', row: { field: key, op: 'lte', value: d.toDate() } }
+      }
+    ]
+  }
+  if (field.type === 'number') {
+    const n = Number(raw)
+    return [
+      { label: `等于 ${n}`, action: { kind: 'row', row: { field: key, op: 'eq', value: n } } },
+      { label: `大于等于 ${n}`, action: { kind: 'row', row: { field: key, op: 'gte', value: n } } },
+      { label: `小于等于 ${n}`, action: { kind: 'row', row: { field: key, op: 'lte', value: n } } }
+    ]
+  }
+  const text = String(raw)
+  const options: CellFilterOption[] = [
+    {
+      label: `只看「${short(text)}」`,
+      action: { kind: 'column', field: key, mode: 'set', value: text }
+    },
+    {
+      label: `排除「${short(text)}」`,
+      action: { kind: 'row', row: { field: key, op: 'neq', value: text } }
+    }
+  ]
+  // long text: offer the first words as a "contains" filter
+  if (text.length > 24) {
+    options.push({
+      label: `包含「${short(text, 12)}」`,
+      action: { kind: 'row', row: { field: key, op: 'contains', value: text.slice(0, 12) } }
+    })
+  }
+  return options
 }

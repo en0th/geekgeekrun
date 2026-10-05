@@ -68,6 +68,7 @@ import {
 import { pipeWriteRegardlessError } from '../../utils/pipe'
 import fs, { WriteStream } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 // eslint-disable-next-line vue/prefer-import-from-vue
 import { hasOwn } from '@vue/shared'
 import { createLlmConfigWindow, llmConfigWindow } from '../../../window/llmConfigWindow'
@@ -487,8 +488,10 @@ export default function initIpc() {
 
   let subProcessOfOpenBossSiteDefer: null | PromiseWithResolvers<ChildProcess> = null
   let subProcessOfOpenBossSite: null | ChildProcess = null
-  ipcMain.handle('open-site-with-boss-cookie', async (ev, data) => {
-    const url = data.url
+  // replies of the BOSS site process to GREET_JOB, by request id
+  const greetJobResolvers = new Map<string, (result: Record<string, unknown>) => void>()
+  // starts the BOSS site process (the 自己逛 browser) when needed; false = no usable browser
+  async function ensureBossSite(ev: Electron.IpcMainInvokeEvent) {
     if (
       !subProcessOfOpenBossSiteDefer ||
       !subProcessOfOpenBossSite ||
@@ -518,7 +521,7 @@ export default function initIpc() {
           title: '未找到可用的浏览器',
           message: '请在“设置 → 浏览器”中配置浏览器后重试'
         })
-        return
+        return false
       }
       const subProcessEnv = {
         ...process.env,
@@ -536,11 +539,19 @@ export default function initIpc() {
       )
       subProcessOfOpenBossSite.once('exit', () => {
         subProcessOfOpenBossSiteDefer = null
+        for (const resolve of greetJobResolvers.values())
+          resolve({ status: 'failed', message: '浏览器已关闭' })
+        greetJobResolvers.clear()
       })
       subProcessOfOpenBossSite.stdio[3]!.pipe(JSONStream.parse()).on(
         'data',
         async function handler(data) {
           switch (data?.type) {
+            case 'GREET_JOB_RESULT': {
+              greetJobResolvers.get(data.requestId)?.(data)
+              greetJobResolvers.delete(data.requestId)
+              break
+            }
             case 'SUB_PROCESS_OF_OPEN_BOSS_SITE_READY': {
               subProcessOfOpenBossSiteDefer!.resolve(subProcessOfOpenBossSite as ChildProcess)
               break
@@ -564,15 +575,36 @@ export default function initIpc() {
       )
     }
 
-    await subProcessOfOpenBossSiteDefer.promise
-
+    await subProcessOfOpenBossSiteDefer!.promise
+    return true
+  }
+  ipcMain.handle('open-site-with-boss-cookie', async (ev, data) => {
+    if (!(await ensureBossSite(ev))) return
     pipeWriteRegardlessError(
       subProcessOfOpenBossSite!.stdio[3]! as WriteStream,
       JSON.stringify({
         type: 'NEW_WINDOW',
-        url: url ?? 'about:blank'
+        url: data.url ?? 'about:blank'
       })
     )
+  })
+  // 资料库 → 打招呼: press 立即沟通 on the job page in the BOSS browser (see LAUNCH_BOSS_SITE)
+  ipcMain.handle('greet-job-manually', async (ev, { encryptJobId }: { encryptJobId: string }) => {
+    if (!encryptJobId) return { status: 'failed', message: '缺少职位ID' }
+    if (!(await ensureBossSite(ev))) return { status: 'failed', message: '未找到可用的浏览器' }
+    const requestId = randomUUID()
+    const result = new Promise<Record<string, unknown>>((resolve) => {
+      greetJobResolvers.set(requestId, resolve)
+      setTimeout(() => {
+        if (greetJobResolvers.delete(requestId))
+          resolve({ status: 'failed', message: '等待BOSS页面超时，请在打开的页面中查看' })
+      }, 90 * 1000)
+    })
+    pipeWriteRegardlessError(
+      subProcessOfOpenBossSite!.stdio[3]! as WriteStream,
+      JSON.stringify({ type: 'GREET_JOB', encryptJobId, requestId })
+    )
+    return await result
   })
 
   ipcMain.handle('get-job-history-by-encrypt-id', async (_, encryptJobId) => {
