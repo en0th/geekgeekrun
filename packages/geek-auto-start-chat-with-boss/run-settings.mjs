@@ -57,3 +57,40 @@ export function readJobStatusPollSettings(saved) {
       : DEFAULT_JOB_STATUS_POLL.intervalHours
   }
 }
+
+// Run pace shared by every configuration that ticks "使用全局运行节奏" (config/run-pace.json).
+// Same keys as the settings page draft: a timed rest every `actions` operations for `minutes`,
+// and the waits after loading a list batch / opening a job detail.
+export const RUN_PACE_FILE = 'run-pace.json'
+export const DEFAULT_RUN_PACE = {
+  pause: true,
+  actions: 100,
+  minutes: 15,
+  jobListLoadWaitSeconds: DEFAULT_JOB_LIST_LOAD_WAIT_SECONDS,
+  jobDetailViewWaitSeconds: DEFAULT_JOB_DETAIL_VIEW_WAIT_SECONDS
+}
+
+export function readRunPace(saved) {
+  saved = saved && typeof saved === 'object' ? saved : {}
+  const d = DEFAULT_RUN_PACE
+  const actions = Number(saved.actions)
+  const minutes = Number(saved.minutes)
+  return {
+    pause: typeof saved.pause === 'boolean' ? saved.pause : d.pause,
+    actions: Number.isInteger(actions) && actions >= 1 ? actions : d.actions,
+    minutes: Number.isFinite(minutes) && minutes >= 0 ? minutes : d.minutes,
+    jobListLoadWaitSeconds: waitSeconds(saved.jobListLoadWaitSeconds, d.jobListLoadWaitSeconds),
+    jobDetailViewWaitSeconds: waitSeconds(saved.jobDetailViewWaitSeconds, d.jobDetailViewWaitSeconds)
+  }
+}
+
+/** the pace an existing boss.json uses, as the starting point of the global setting */
+export function runPaceFromBossConfig(bossConfig = {}) {
+  return readRunPace({
+    pause: typeof bossConfig.isSageTimeEnabled === 'boolean' ? bossConfig.isSageTimeEnabled : undefined,
+    actions: bossConfig.sageTimeOpTimes,
+    minutes: bossConfig.sageTimePauseMinute,
+    jobListLoadWaitSeconds: bossConfig.jobListLoadWaitSeconds,
+    jobDetailViewWaitSeconds: bossConfig.jobDetailViewWaitSeconds
+  })
+}

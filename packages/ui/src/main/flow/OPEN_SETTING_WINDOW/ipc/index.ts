@@ -32,7 +32,10 @@ import {
 import {
   JOB_STATUS_POLL_INTERVAL_HOURS,
   JOB_STATUS_POLL_SETTINGS_FILE,
-  readJobStatusPollSettings
+  readJobStatusPollSettings,
+  RUN_PACE_FILE,
+  readRunPace,
+  runPaceFromBossConfig
 } from '@geekgeekrun/geek-auto-start-chat-with-boss/run-settings.mjs'
 import path from 'path'
 import * as childProcess from 'node:child_process'
@@ -412,6 +415,17 @@ export default function initIpc() {
   ipcMain.handle('data-location-info', () => getDataLocationInfo())
   ipcMain.handle('data-location-change', (_, payload) => changeDataLocation(payload))
   ipcMain.handle('app-relaunch', () => relaunchApp())
+  // ---- global run pace (used by configurations that tick "使用全局运行节奏") ----
+  ipcMain.handle('run-pace-info', () => {
+    const saved = readConfigFile(RUN_PACE_FILE)
+    // until it is saved once, start from the pace boss.json already uses
+    return saved ? readRunPace(saved) : runPaceFromBossConfig(readConfigFile('boss.json') ?? {})
+  })
+  ipcMain.handle('run-pace-save', async (_, payload) => {
+    const pace = readRunPace(payload)
+    await writeConfigFile(RUN_PACE_FILE, pace)
+    return pace
+  })
   ipcMain.handle('db-backup-info', () => getDbBackupInfo())
   // ---- log storage ----
   ipcMain.handle('log-settings-info', () => {

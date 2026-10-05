@@ -1953,3 +1953,147 @@ html:not(.replica-child) body {
 .ux-data-card .el-input-number {
   width: 140px;
 }
+
+/* left navigation groups */
+.ux-nav-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 18px;
+}
+.ux-nav-groups .group-item {
+  margin-top: 0;
+}
+.ux-nav .link-list a {
+  margin: 4px 0;
+}
+.ux-shell.is-nav-collapsed .ux-nav-groups .group-item + .group-item {
+  padding-top: 10px;
+  border-top: 1px solid #b3c8c3;
+}
+
+/* 自动化 configuration steps */
+.ux-steps {
+  display: flex;
+  gap: 6px;
+  margin: 16px 0 4px;
+  padding: 0;
+  list-style: none;
+  counter-reset: none;
+}
+.ux-step {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.ux-step + .ux-step::before {
+  content: "";
+  position: absolute;
+  top: 19px;
+  left: -6px;
+  width: 6px;
+  height: 2px;
+  background: var(--el-border-color);
+}
+.ux-step-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-bg-color);
+  color: var(--el-text-color-regular);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+.ux-step-button:hover:not(:disabled) {
+  border-color: var(--el-color-primary-light-5);
+}
+.ux-step-button:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
+}
+.ux-step-index {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--el-fill-color);
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 22px;
+  text-align: center;
+}
+.ux-step-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.ux-step-label {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.ux-step-sub {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ux-step.is-current .ux-step-button {
+  border-color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+}
+.ux-step.is-current .ux-step-index {
+  background: var(--el-color-primary);
+  color: #fff;
+}
+.ux-step.is-done .ux-step-index {
+  background: var(--el-color-success);
+  color: #fff;
+}
+.ux-step.is-missing .ux-step-index {
+  background: var(--el-color-danger-light-8);
+  color: var(--el-color-danger);
+}
+.ux-step.is-missing .ux-step-sub {
+  color: var(--el-color-danger);
+}
+.ux-step.is-skipped .ux-step-button {
+  border-style: dashed;
+  background: transparent;
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+.ux-pace-summary {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--el-fill-color-lighter);
+}
+.ux-pace-summary .ux-hint {
+  margin: 0 0 4px;
+}
+.ux-rail-item.is-skipped {
+  opacity: 0.6;
+}
+@media (max-width: 900px) {
+  .ux-steps {
+    flex-wrap: wrap;
+  }
+  .ux-step {
+    flex: 1 1 30%;
+  }
+  .ux-step + .ux-step::before {
+    display: none;
+  }
+}
+

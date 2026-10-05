@@ -298,6 +298,8 @@ export default Vue.defineComponent({
       const runSettings = readRunSettings(original);
       for (const key of Object.keys(runSettings))
         if (draft.value[key] === undefined) draft.value[key] = runSettings[key];
+      if (draft.value.useGlobalPace === undefined)
+        draft.value.useGlobalPace = original.useGlobalRunPace === true;
     }
     // Previously unchecked salary fields were inactive drafts, not constraints.
     for (const d of [draft.value, shared.value])
@@ -404,7 +406,13 @@ export default Vue.defineComponent({
       searchRotationOpen = ref(false),
       platformFiltersOpen = ref(false),
       policyExceptionsOpen = ref(false),
-      activeAutoSection = ref("job-preferences");
+      activeAutoSection = ref("job-run-mode");
+    // the 自动化 configuration is a step-by-step form; this is the step on screen
+    const autoStep = ref("job-run-mode"),
+      // global run pace (settings → 运行节奏); paceForm is its edit copy
+      globalPace = ref(null),
+      paceForm = ref(null),
+      paceSaving = ref(false);
     const companyEditor = ref(null),
       companyKey = ref("companies"),
       companyBusy = ref(false),
@@ -462,13 +470,78 @@ export default Vue.defineComponent({
     const promptKind = ref("rechat"),
       promptText = ref("");
     const nav = [
-      ["auto", "自动打招呼"],
+      ["auto", "自动化"],
       ["follow", "消息跟进"],
       ["records", "求职记录"],
       ["library", "资料库"],
       ["tasks", "任务队列"],
       ["settings", "设置"],
     ];
+    // groups of the left navigation; "browse" is the 自己逛 action, not a page
+    const navGroups = [
+      ["逛BOSS", ["auto", "follow", "browse"]],
+      ["数据", ["records", "library"]],
+      ["系统", ["tasks", "settings"]],
+    ];
+    function navLink(key, taskCount) {
+      const label = nav.find((n) => n[0] === key)[1];
+      return h(
+        "a",
+        {
+          href: "#/ux/" + key,
+          "data-v-e836690d": "",
+          class: route.value === key ? "router-link-active" : "",
+          "aria-current": route.value === key ? "page" : undefined,
+          "aria-label": navCollapsed.value ? label : undefined,
+          title: navCollapsed.value ? label : undefined,
+          onClick: (e) => {
+            e.preventDefault();
+            navigate(key);
+          },
+        },
+        [
+          E("ElIcon", { class: "ux-nav-icon", size: 16 }, () => h(navIcons[key])),
+          h("span", { class: "ux-nav-label" }, label),
+          key === "tasks" && taskCount
+            ? h(
+                "span",
+                {
+                  class: "ux-nav-badge",
+                  "aria-label": taskCount + " 个任务运行或排队中",
+                },
+                String(taskCount),
+              )
+            : null,
+        ],
+      );
+    }
+    // 自己逛: the user's own BOSS session in a browser; what they view, chat and mark is
+    // still recorded in the library
+    function browseLink() {
+      return h(
+        "a",
+        {
+          href: "#",
+          "data-v-e836690d": "",
+          class: "ux-nav-browse",
+          "aria-label": navCollapsed.value ? "自己逛（打开BOSS直聘）" : undefined,
+          title: navCollapsed.value
+            ? "自己逛"
+            : "打开已登录的BOSS直聘自己浏览；浏览、开聊、标记都会记录到资料库",
+          onClick: (e) => {
+            e.preventDefault();
+            browseBossSelf();
+          },
+        },
+        [
+          E("ElIcon", { class: "ux-nav-icon", size: 16 }, () => h(Compass)),
+          h("span", { class: "ux-nav-label" }, "自己逛"),
+          E("ElIcon", { class: "ux-nav-label ux-nav-external", size: 12 }, () =>
+            h(TopRight),
+          ),
+        ],
+      );
+    }
     const navIcons = {
       auto: ChatDotRound,
       follow: Bell,
@@ -739,7 +812,12 @@ export default Vue.defineComponent({
         ];
       obj[key] = value;
       // standalone settings forms with their own save buttons; don't mark the AI form dirty
-      if (obj === browserForm.value || obj === dingtalkForm.value) return;
+      if (
+        obj === browserForm.value ||
+        obj === dingtalkForm.value ||
+        obj === paceForm.value
+      )
+        return;
       if (["low", "high"].includes(key))
         obj.salary = obj.low != null || obj.high != null;
       if (
@@ -1623,7 +1701,33 @@ export default Vue.defineComponent({
       }
       return true;
     }
+    // settings every run uses, whatever the run mode
+    function runConfig(d) {
+      // the global pace is read when the configuration is saved (begin() loads it first)
+      const pace = d.useGlobalPace && globalPace.value ? globalPace.value : d;
+      return {
+        autoChatRunMode: d.runMode === "collect" ? "collect" : "chat",
+        collectOnlyMatchingJobs: d.collectOnlyMatchingJobs !== false,
+        skipUnparseableSalaryJob: d.skipUnparseableSalaryJob !== false,
+        useGlobalRunPace: Boolean(d.useGlobalPace),
+        isSageTimeEnabled: pace.pause,
+        ...(pace.pause
+          ? { sageTimeOpTimes: pace.actions, sageTimePauseMinute: pace.minutes }
+          : {}),
+        jobListLoadWaitSeconds: waitSeconds(
+          pace.jobListLoadWaitSeconds,
+          DEFAULT_JOB_LIST_LOAD_WAIT_SECONDS,
+        ),
+        jobDetailViewWaitSeconds: waitSeconds(
+          pace.jobDetailViewWaitSeconds,
+          DEFAULT_JOB_DETAIL_VIEW_WAIT_SECONDS,
+        ),
+      };
+    }
     function basicToConfig(d) {
+      // collecting every job uses no conditions: the saved ones stay as they are and are
+      // checked again once a mode that uses them is chosen
+      if (isCollectAll(d)) return runConfig(d);
       if (d.legacyNeedsReview?.length)
         throw new Error("请重新填写或确认旧筛选条件，避免扩大筛选范围。");
       const hasSalary = d.low != null || d.high != null;
@@ -1663,19 +1767,7 @@ export default Vue.defineComponent({
           d.hrRule ??
           (original.fieldsForUseCommonConfig?.jobDetail ? common : original)
             .posterHrTitleRegExpStr,
-        isSageTimeEnabled: d.pause,
-        ...(d.pause ? { sageTimeOpTimes: d.actions, sageTimePauseMinute: d.minutes } : {}),
-        skipUnparseableSalaryJob: d.skipUnparseableSalaryJob !== false,
-        autoChatRunMode: d.runMode === "collect" ? "collect" : "chat",
-        collectOnlyMatchingJobs: d.collectOnlyMatchingJobs !== false,
-        jobListLoadWaitSeconds: waitSeconds(
-          d.jobListLoadWaitSeconds,
-          DEFAULT_JOB_LIST_LOAD_WAIT_SECONDS,
-        ),
-        jobDetailViewWaitSeconds: waitSeconds(
-          d.jobDetailViewWaitSeconds,
-          DEFAULT_JOB_DETAIL_VIEW_WAIT_SECONDS,
-        ),
+        ...runConfig(d),
         expectWorkExpList: d.experience
           .map(
             (v) =>
@@ -1835,8 +1927,29 @@ export default Vue.defineComponent({
       });
       focusError(issues[0]);
     }
+    // collect mode without "只收集符合求职条件的岗位" saves every job: conditions and the
+    // not-matching policy don't apply
+    const isCollectAll = (d) =>
+      d.runMode === "collect" && d.collectOnlyMatchingJobs === false;
     function validation(d) {
       const a = [];
+      if (!isCollectAll(d)) conditionIssues(d, a);
+      sourceIssues(d, a);
+      if (
+        !d.useGlobalPace &&
+        d.pause &&
+        (!Number.isInteger(d.actions) ||
+          d.actions < 1 ||
+          !Number.isFinite(d.minutes) ||
+          d.minutes < 0)
+      )
+        a.push({
+          field: "rhythm",
+          text: "休息前操作次数须为正整数，休息时长不能留空或小于0。",
+        });
+      return a;
+    }
+    function conditionIssues(d, a) {
       for (const field of d.legacyNeedsReview || [])
         a.push({
           field,
@@ -1879,17 +1992,6 @@ export default Vue.defineComponent({
         } catch {
           a.push({ field: key, text: "原有规则格式无效，请改用关键词。" });
         }
-      if (
-        d.pause &&
-        (!Number.isInteger(d.actions) ||
-          d.actions < 1 ||
-          !Number.isFinite(d.minutes) ||
-          d.minutes < 0)
-      )
-        a.push({
-          field: "rhythm",
-          text: "休息前操作次数须为正整数，休息时长不能留空或小于0。",
-        });
       for (const key of ["low", "high"])
         if (d[key] != null && (!Number.isFinite(d[key]) || d[key] < 0))
           a.push({ field: "salary", text: "薪资须为非负数。" });
@@ -1900,6 +2002,8 @@ export default Vue.defineComponent({
         });
       if (d.salary && !["month", "year"].includes(d.unit))
         a.push({ field: "salary", text: "填写薪资金额后，请选择薪资单位。" });
+    }
+    function sourceIssues(d, a) {
       if (d.sourceList) {
         if (!d.sourceList.some((s) => s.enabled))
           a.push({
@@ -1935,7 +2039,6 @@ export default Vue.defineComponent({
         )
           a.push({ field: "source", text: "请输入用于BOSS搜索的普通关键词。" });
       }
-      return a;
     }
     function focusError(e) {
       if (e.action === "model") {
@@ -1955,6 +2058,10 @@ export default Vue.defineComponent({
         openCompanies("companies");
         companyError.value = e.text;
         return;
+      }
+      if (route.value === "auto" && stepOfField(e.field)) {
+        autoStep.value = stepOfField(e.field);
+        activeAutoSection.value = autoStep.value;
       }
       const extra = {
         regexTitle: "titles",
@@ -3111,11 +3218,10 @@ export default Vue.defineComponent({
         ),
       ];
     }
-    function rhythmControls() {
-      const d = draft.value;
+    function rhythmControls(d = draft.value, key = "rhythm") {
       return [
-        validationArea("rhythm", [
-          inline([check(d, "pause", "定时休息"), requiredBadge("rhythm")]),
+        validationArea(key, [
+          inline([check(d, "pause", "定时休息"), requiredBadge(key)]),
           d.pause
             ? h("div", { class: "ux-rhythm-line" }, [
                 h("span", "每操作"),
@@ -3367,7 +3473,7 @@ export default Vue.defineComponent({
     };
     // every task that takes a turn in the daemon's BOSS task queue
     const queuedTaskLabels = {
-      geekAutoStartWithBossMain: "自动打招呼",
+      geekAutoStartWithBossMain: "自动化",
       readNoReplyAutoReminderMain: "消息跟进",
       jobStatusPollMain: "检查收藏职位状态",
     };
@@ -3409,6 +3515,7 @@ export default Vue.defineComponent({
       shortResume.value = false;
       try {
         if (!(await ensureBossLogin(task))) return;
+        if (task === "auto" && draft.value.useGlobalPace) await loadGlobalPace();
         if (!(await save(false, task))) return;
         if (
           task === "follow" &&
@@ -3694,6 +3801,7 @@ export default Vue.defineComponent({
       );
     }
     function jumpAutoSection(id, focusSelector) {
+      if (autoSteps().some((s) => s.id === id)) autoStep.value = id;
       activeAutoSection.value = id;
       R.nextTick(() => {
         const section = document.getElementById(id);
@@ -3707,58 +3815,199 @@ export default Vue.defineComponent({
       });
     }
     function updateAutoSection() {
-      if (route.value !== "auto") return;
-      const scroller = document.querySelector(".ux-main");
-      if (
-        scroller &&
-        scroller.scrollTop > 0 &&
-        scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 4
-      ) {
-        activeAutoSection.value = "job-policy";
-        return;
+      // steps show one section at a time; the rail follows the step, not the scroll position
+    }
+    // ---- 自动化 configuration steps ----
+    function autoSteps(d = draft.value) {
+      const all = isCollectAll(d);
+      return [
+        { id: "job-run-mode", label: "运行方式" },
+        {
+          id: "job-preferences",
+          label: "求职条件",
+          skipped: all ? "收集全部岗位，无需配置" : "",
+        },
+        { id: "job-sources", label: "职位来源" },
+        {
+          id: "job-policy",
+          label: "处理方式",
+          skipped: all ? "收集全部岗位，无需配置" : "",
+        },
+        {
+          id: "job-pace",
+          label: "运行节奏",
+          skipped: d.useGlobalPace ? "使用全局运行节奏" : "",
+        },
+      ];
+    }
+    // the step a validation field belongs to; null for fields outside the 自动化 form
+    function stepOfField(field) {
+      if (!field || field.startsWith("follow-") || field.startsWith("ai-")) return null;
+      if (["source", "source-selection"].includes(field)) return "job-sources";
+      if (field === "rhythm") return "job-pace";
+      if (field === "template-name") return null;
+      return "job-preferences";
+    }
+    // a step that became skipped (e.g. after switching to collect everything) shows the next one
+    function currentStepId(steps = autoSteps()) {
+      const at = steps.findIndex((s) => s.id === autoStep.value);
+      if (at >= 0 && !steps[at].skipped) return steps[at].id;
+      return (
+        steps.slice(Math.max(0, at)).find((s) => !s.skipped) ||
+        [...steps].reverse().find((s) => !s.skipped)
+      ).id;
+    }
+    function goStep(id) {
+      autoStep.value = id;
+      activeAutoSection.value = id;
+      R.nextTick(() => document.querySelector(".ux-main")?.scrollTo(0, 0));
+    }
+    function moveStep(delta) {
+      const steps = autoSteps().filter((s) => !s.skipped);
+      const current = currentStepId();
+      const at = steps.findIndex((s) => s.id === current);
+      if (delta > 0) {
+        // the step being left has to be complete before going on
+        const issues = validation(effective()).filter(
+          (i) => stepOfField(i.field) === current,
+        );
+        if (issues.length) {
+          validationAttempted.value = true;
+          validationTask = "auto";
+          errors.value = taskErrors("auto");
+          R.message({ type: "warning", title: "这一步还没完成", message: issues[0].text });
+          focusError(issues[0]);
+          return;
+        }
       }
-      // the section nav now floats on the right, so measure from the top of the scroller
-      const top =
-        (document.querySelector(".ux-main")?.getBoundingClientRect().top || 0) +
-        64;
-      const ids = ["job-preferences", "job-sources", "job-policy"];
-      activeAutoSection.value =
-        ids
-          .filter(
-            (id) =>
-              (document.getElementById(id)?.getBoundingClientRect().top ??
-                Infinity) <=
-              top + 24,
-          )
-          .pop() || ids[0];
+      const next = steps[Math.min(steps.length - 1, Math.max(0, at + delta))];
+      if (next) goStep(next.id);
+    }
+    function stepBar(steps, current, sections) {
+      const order = steps.filter((s) => !s.skipped).map((s) => s.id);
+      return h(
+        "ol",
+        { class: "ux-steps", "aria-label": "配置步骤" },
+        steps.map((step, i) => {
+          const section = sections.find((x) => x.id === step.id);
+          const done = section ? section.checks.every((c) => c.done) : true;
+          const state = step.skipped
+            ? "skipped"
+            : step.id === current
+              ? "current"
+              : done
+                ? "done"
+                : "missing";
+          return h("li", { class: ["ux-step", "is-" + state] }, [
+            h(
+              "button",
+              {
+                type: "button",
+                class: "ux-step-button",
+                disabled: Boolean(step.skipped),
+                "aria-current": step.id === current ? "step" : undefined,
+                title: step.skipped || undefined,
+                onClick: () => goStep(step.id),
+              },
+              [
+                h(
+                  "span",
+                  { class: "ux-step-index", "aria-hidden": "true" },
+                  state === "done" ? "✓" : state === "skipped" ? "–" : String(i + 1),
+                ),
+                h("span", { class: "ux-step-text" }, [
+                  h("span", { class: "ux-step-label" }, step.label),
+                  h(
+                    "span",
+                    { class: "ux-step-sub" },
+                    step.skipped
+                      ? step.skipped
+                      : state === "missing"
+                        ? "待完善"
+                        : order.indexOf(step.id) === order.length - 1
+                          ? "最后一步"
+                          : state === "done"
+                            ? "已完成"
+                            : "",
+                  ),
+                ]),
+              ],
+            ),
+          ]);
+        }),
+      );
+    }
+    function paceStep() {
+      const d = draft.value;
+      const g = globalPace.value;
+      return card(
+        "运行节奏",
+        [
+          globalPaceCheck(),
+          d.useGlobalPace
+            ? h("div", { class: "ux-pace-summary" }, [
+                hint(
+                  g
+                    ? (g.pause
+                        ? `每操作 ${g.actions} 次休息 ${g.minutes} 分钟；`
+                        : "不定时休息；") +
+                        `加载下一批后等待 ${g.jobListLoadWaitSeconds} 秒，查看详情后等待 ${g.jobDetailViewWaitSeconds} 秒。`
+                    : "正在读取全局运行节奏…",
+                ),
+                button(
+                  "去设置中修改",
+                  () => {
+                    settingTab.value = "pace";
+                    loadGlobalPace();
+                    navigate("settings");
+                  },
+                  { link: true, type: "primary" },
+                ),
+              ])
+            : h("div", { class: "ux-preference-group" }, rhythmControls()),
+        ],
+        { id: "job-pace", tabIndex: -1 },
+      );
+    }
+    function globalPaceCheck() {
+      return h("div", { class: "ux-run-mode-option" }, [
+        check(draft.value, "useGlobalPace", "使用全局运行节奏设置"),
+        hint(
+          "勾选后跳过“运行节奏”这一步，按“设置 → 运行节奏”中的全局设置运行；多份配置模板可共用同一节奏。",
+        ),
+      ]);
+    }
+    function stepContent(id) {
+      if (id === "job-run-mode") return runModeCard();
+      if (id === "job-preferences")
+        return card("我的求职条件", prefs(draft.value), {
+          id: "job-preferences",
+          tabIndex: -1,
+        });
+      if (id === "job-sources")
+        return card(sourceTitle(), sourceControls(), {
+          id: "job-sources",
+          tabIndex: -1,
+        });
+      if (id === "job-policy")
+        return card("遇到不符合条件的岗位", policyControls(), {
+          id: "job-policy",
+          tabIndex: -1,
+        });
+      return paceStep();
     }
     function autoPage() {
+      const steps = autoSteps();
+      const current = currentStepId(steps);
+      const { sections } = autoProgress();
       return [
-        heading("自动打招呼"),
+        heading("自动化"),
         templateBar(),
         problems(errors.value),
         runPanel("auto"),
         railCollapsed.value ? null : sectionRail(),
-        runModeCard(),
-        card("我的求职条件", prefs(draft.value), {
-          id: "job-preferences",
-          tabIndex: -1,
-        }),
-        card(sourceTitle(), sourceControls(), {
-          id: "job-sources",
-          tabIndex: -1,
-        }),
-        card(
-          "遇到不符合条件的岗位",
-          [
-            ...policyControls(),
-            h("div", { class: "ux-preference-group" }, [
-              h("h3", "运行节奏"),
-              ...rhythmControls(),
-            ]),
-          ],
-          { id: "job-policy", tabIndex: -1 },
-        ),
+        stepBar(steps, current, sections),
+        stepContent(current),
         footer("auto"),
       ];
     }
@@ -3776,11 +4025,24 @@ export default Vue.defineComponent({
         excluded: "排除公司",
         companies: "只看公司",
       };
+      const collectAll = isCollectAll(d);
       const sections = [
+        {
+          id: "job-run-mode",
+          label: "运行方式",
+          checks: [],
+          extra:
+            d.runMode === "collect"
+              ? collectAll
+                ? "只收集 · 全部岗位"
+                : "只收集 · 符合条件的岗位"
+              : "自动打招呼",
+        },
         {
           id: "job-preferences",
           label: "求职条件",
-          checks: [
+          skipped: collectAll,
+          checks: collectAll ? [] : [
             check("目标岗位", ["titles", "regexTitle", "regexType", "regexDesc"]),
             ...(d.salary ? [check("期望薪资", ["salary"])] : []),
             ...(needsCompanyList(d) ? [check("公司名单", ["companies"])] : []),
@@ -3805,7 +4067,11 @@ export default Vue.defineComponent({
               d.categories.length,
               d.description.length,
             ].filter(Boolean).length;
-            return n ? `已设置 ${n} 项条件` : "其余条件不限";
+            return collectAll
+              ? "收集全部岗位，无需配置"
+              : n
+                ? `已设置 ${n} 项条件`
+                : "其余条件不限";
           })(),
         },
         {
@@ -3820,21 +4086,37 @@ export default Vue.defineComponent({
         {
           id: "job-policy",
           label: "处理方式",
-          checks: [
-            { label: "默认处理方式", done: Boolean(d.strategy) },
-            ...(d.pause ? [check("定时休息", ["rhythm"])] : []),
-          ],
+          skipped: collectAll,
+          checks: collectAll
+            ? []
+            : [{ label: "默认处理方式", done: Boolean(d.strategy) }],
           extra: (() => {
             const n = Object.values(d.overrides || {}).filter(Boolean).length;
-            return n ? `单独处理 ${n} 种情况` : "全部按默认方式处理";
+            return collectAll
+              ? "收集全部岗位，无需配置"
+              : n
+                ? `单独处理 ${n} 种情况`
+                : "全部按默认方式处理";
           })(),
+        },
+        {
+          id: "job-pace",
+          label: "运行节奏",
+          checks: d.useGlobalPace || !d.pause ? [] : [check("定时休息", ["rhythm"])],
+          extra: d.useGlobalPace
+            ? "使用全局运行节奏"
+            : d.pause
+              ? `每 ${d.actions} 次操作休息 ${d.minutes} 分钟`
+              : "不定时休息",
         },
       ];
       const all = sections.flatMap((section) => section.checks);
       const done = all.filter((c) => c.done).length;
       // an issue no checklist item covers still keeps the total below 100%
       const ready = !issues.length;
-      const percent = ready ? 100 : Math.min(99, Math.round((done / all.length) * 100));
+      const percent = ready
+        ? 100
+        : Math.min(99, Math.round((done / Math.max(1, all.length)) * 100));
       // count what the rail lists; one item can stand for several validation issues
       const todoCount = all.length - done || issues.length;
       return { sections, issues, ready, percent, todoCount };
@@ -3879,7 +4161,11 @@ export default Vue.defineComponent({
                 "a",
                 {
                   href: "#" + section.id,
-                  class: ["ux-rail-item", complete ? "is-complete" : "is-missing"],
+                  class: [
+                    "ux-rail-item",
+                    complete ? "is-complete" : "is-missing",
+                    section.skipped ? "is-skipped" : "",
+                  ],
                   "aria-current":
                     activeAutoSection.value === section.id ? "location" : undefined,
                   onClick: (event) => {
@@ -3909,13 +4195,19 @@ export default Vue.defineComponent({
                       "span",
                       {
                         class: "ux-rail-count",
-                        "aria-label": `必填 ${doneCount} / ${section.checks.length} 项已完成`,
+                        "aria-label": section.checks.length
+                          ? `必填 ${doneCount} / ${section.checks.length} 项已完成`
+                          : "没有必填项",
                       },
-                      doneCount + "/" + section.checks.length,
+                      section.checks.length
+                        ? doneCount + "/" + section.checks.length
+                        : "—",
                     ),
                   ]),
                   E("ElProgress", {
-                    percentage: Math.round((doneCount / section.checks.length) * 100),
+                    percentage: section.checks.length
+                      ? Math.round((doneCount / section.checks.length) * 100)
+                      : 100,
                     showText: false,
                     strokeWidth: 4,
                     status: complete ? "success" : "exception",
@@ -3963,11 +4255,12 @@ export default Vue.defineComponent({
             : null,
           hint(
             !collect
-              ? "查看岗位详情后，向符合条件的岗位发起沟通；不符合的按下方处理方式处理。"
+              ? "查看岗位详情后，向符合条件的岗位发起沟通；不符合的按“处理方式”一步的设置处理。"
               : d.collectOnlyMatchingJobs !== false
                 ? "只把符合求职条件的岗位详情保存到资料库，不打招呼，也不在BOSS标记不合适。"
-                : "把遇到的所有岗位详情保存到资料库，不检查求职条件，不打招呼，也不标记。",
+                : "把遇到的所有岗位详情保存到资料库，不检查求职条件，不打招呼，也不标记；无需配置求职条件和处理方式。",
           ),
+          globalPaceCheck(),
         ],
         { id: "job-run-mode", class: "ux-card ux-run-mode" },
       );
@@ -4141,7 +4434,7 @@ export default Vue.defineComponent({
       return [
         heading("任务队列"),
         explain(
-          "自动打招呼、只收集岗位数据、消息跟进和收藏职位状态检查都会操作BOSS页面，因此一次只运行一个，其余按顺序排队。长时间运行的任务每 20 分钟会在安全的检查点让出一次，之后自动继续；收藏职位检查会排在最前面。",
+          "自动化（打招呼或只收集岗位数据）、消息跟进和收藏职位状态检查都会操作BOSS页面，因此一次只运行一个，其余按顺序排队。长时间运行的任务每 20 分钟会在安全的检查点让出一次，之后自动继续；收藏职位检查会排在最前面。",
         ),
         tabBar(
           tab,
@@ -4334,6 +4627,7 @@ export default Vue.defineComponent({
         draftSaveError.value
           ? button("重试保存", () => save(false, task), { plain: true })
           : null,
+        ...(task === "auto" ? stepButtons() : []),
         button(
           (task === "follow"
             ? "开始跟进"
@@ -4343,6 +4637,8 @@ export default Vue.defineComponent({
           () => begin(task),
           {
             type: "primary",
+            // before the last step, starting is still possible but not the suggested action
+            plain: task === "auto" && !onLastStep(),
             loading: preparing.value || starting.value,
             disabled:
               running.value[task] || queued.value[task] || starting.value,
@@ -4352,6 +4648,22 @@ export default Vue.defineComponent({
           },
         ),
       ]);
+    }
+    function onLastStep() {
+      const steps = autoSteps().filter((s) => !s.skipped);
+      return steps[steps.length - 1]?.id === currentStepId();
+    }
+    function stepButtons() {
+      const steps = autoSteps().filter((s) => !s.skipped);
+      const at = steps.findIndex((s) => s.id === currentStepId());
+      return [
+        at > 0 ? button("上一步", () => moveStep(-1), { plain: true }) : null,
+        at < steps.length - 1
+          ? button("下一步：" + steps[at + 1].label, () => moveStep(1), {
+              type: "primary",
+            })
+          : null,
+      ];
     }
     // another BOSS task holds the queue, so starting this one only queues it
     function otherTaskBusy(task) {
@@ -4760,11 +5072,13 @@ export default Vue.defineComponent({
             ["browser", "浏览器"],
             ["ai", "AI模型配置"],
             ["notify", "钉钉通知"],
+            ["pace", "运行节奏"],
             ["data", "数据、备份与日志"],
           ],
           (v) => {
             settingTab.value = v;
             if (v === "data") loadDataSettings();
+            if (v === "pace") loadGlobalPace();
           },
         ),
         tab === "account"
@@ -4906,6 +5220,27 @@ export default Vue.defineComponent({
         tab === "ai" ? aiSettings() : null,
         tab === "ai" ? aiFooter() : null,
         ...(tab === "data" ? dataSettings() : []),
+        tab === "pace"
+          ? card(
+              "全局运行节奏",
+              [
+                explain(
+                  "在“自动化 → 运行节奏”中勾选了“使用全局运行节奏设置”的配置都按这里运行；修改后从下次开始任务起生效。",
+                ),
+                ...(paceForm.value
+                  ? rhythmControls(paceForm.value, "global-rhythm")
+                  : [hint("正在读取…")]),
+                inline([
+                  button("保存全局运行节奏", saveGlobalPace, {
+                    type: "primary",
+                    loading: paceSaving.value,
+                    disabled: !paceForm.value,
+                  }),
+                ]),
+              ],
+              { class: "ux-card ux-data-card" },
+            )
+          : null,
         tab === "notify"
           ? card("钉钉通知", [
               alert(
@@ -5104,6 +5439,40 @@ export default Vue.defineComponent({
         R.message({ type: "error", message: "打开BOSS直聘失败：" + error.message });
       } finally {
         browsing = false;
+      }
+    }
+    async function loadGlobalPace() {
+      try {
+        const pace = await ipc("run-pace-info");
+        globalPace.value = pace;
+        // an open settings form keeps its unsaved edits
+        if (!paceForm.value || route.value !== "settings" || settingTab.value !== "pace")
+          paceForm.value = clone(pace);
+      } catch (error) {
+        R.message({ type: "error", message: "读取全局运行节奏失败：" + error.message });
+      }
+    }
+    async function saveGlobalPace() {
+      const p = paceForm.value;
+      if (
+        p.pause &&
+        (!Number.isInteger(p.actions) || p.actions < 1 || !Number.isFinite(p.minutes) || p.minutes < 0)
+      ) {
+        R.message({
+          type: "error",
+          message: "休息前操作次数须为正整数，休息时长不能留空或小于0。",
+        });
+        return;
+      }
+      paceSaving.value = true;
+      try {
+        globalPace.value = await ipc("run-pace-save", clone(p));
+        paceForm.value = clone(globalPace.value);
+        R.message({ type: "success", message: "全局运行节奏已保存，下次开始任务时生效。" });
+      } catch (error) {
+        R.message({ type: "error", message: "保存失败：" + error.message });
+      } finally {
+        paceSaving.value = false;
       }
     }
     async function checkLoginNow() {
@@ -6243,89 +6612,32 @@ export default Vue.defineComponent({
             ]),
             h(
               "nav",
-              {
-                class: "group-item",
-                "data-v-e836690d": "",
-                "aria-label": "主导航",
-              },
-              [
+              { class: "ux-nav-groups", "aria-label": "主导航" },
+              navGroups.map(([title, items]) =>
                 h(
                   "div",
-                  { class: "group-title", "data-v-e836690d": "" },
-                  "逛BOSS",
-                ),
-                h(
-                  "div",
-                  { class: "link-list", "data-v-e836690d": "" },
+                  {
+                    class: "group-item",
+                    "data-v-e836690d": "",
+                    role: "group",
+                    "aria-label": title,
+                  },
                   [
-                    ...nav.map(([key, label]) =>
                     h(
-                      "a",
-                      {
-                        href: "#/ux/" + key,
-                        "data-v-e836690d": "",
-                        class: route.value === key ? "router-link-active" : "",
-                        "aria-current":
-                          route.value === key ? "page" : undefined,
-                        "aria-label": navCollapsed.value ? label : undefined,
-                        title: navCollapsed.value ? label : undefined,
-                        onClick: (e) => {
-                          e.preventDefault();
-                          navigate(key);
-                        },
-                      },
-                      [
-                        E("ElIcon", { class: "ux-nav-icon", size: 16 }, () =>
-                          h(navIcons[key]),
-                        ),
-                        h("span", { class: "ux-nav-label" }, label),
-                        key === "tasks" && taskCount
-                          ? h(
-                              "span",
-                              {
-                                class: "ux-nav-badge",
-                                "aria-label": taskCount + " 个任务运行或排队中",
-                              },
-                              String(taskCount),
-                            )
-                          : null,
-                      ],
+                      "div",
+                      { class: "group-title", "data-v-e836690d": "" },
+                      title,
                     ),
-                  ),
-                    // 自己逛: the user's own BOSS session in a browser; what they view, chat
-                    // and mark is still recorded in the library
                     h(
-                      "a",
-                      {
-                        href: "#",
-                        "data-v-e836690d": "",
-                        class: "ux-nav-browse",
-                        "aria-label": navCollapsed.value
-                          ? "自己逛（打开BOSS直聘）"
-                          : undefined,
-                        title: navCollapsed.value
-                          ? "自己逛"
-                          : "打开已登录的BOSS直聘自己浏览；浏览、开聊、标记都会记录到资料库",
-                        onClick: (e) => {
-                          e.preventDefault();
-                          browseBossSelf();
-                        },
-                      },
-                      [
-                        E("ElIcon", { class: "ux-nav-icon", size: 16 }, () =>
-                          h(Compass),
-                        ),
-                        h("span", { class: "ux-nav-label" }, "自己逛"),
-                        E(
-                          "ElIcon",
-                          { class: "ux-nav-label ux-nav-external", size: 12 },
-                          () => h(TopRight),
-                        ),
-                      ],
+                      "div",
+                      { class: "link-list", "data-v-e836690d": "" },
+                      items.map((key) =>
+                        key === "browse" ? browseLink() : navLink(key, taskCount),
+                      ),
                     ),
                   ],
                 ),
-              ],
+              ),
             ),
             h("div", { class: "ux-nav-bottom" }, [
               running.value.auto || queued.value.auto
@@ -6527,6 +6839,7 @@ export default Vue.defineComponent({
     fromHash();
     // the rail shows whether the saved login still works
     refreshLoginStatus();
+    loadGlobalPace();
     ipc("db-backup-info")
       .then((info) => showRestoreNotice(info.restoreResult))
       .catch(() => void 0);
@@ -6615,7 +6928,7 @@ export default Vue.defineComponent({
                 : "请修复问题后重新开始；不会从原位置续跑";
         }
         const labels = exitCodeLabels;
-        const name = task === "follow" ? "消息跟进" : "自动打招呼";
+        const name = task === "follow" ? "消息跟进" : "自动化";
         // a stop the user asked for was already confirmed by stop()
         if (message.restarting)
           R.message({
