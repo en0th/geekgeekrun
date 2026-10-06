@@ -178,8 +178,7 @@ html:not(.replica-child) body {
   overflow: auto;
 }
 .ux-inner {
-  max-width: 1120px;
-  /* content starts next to the navigation instead of floating in the middle */
+  /* content starts next to the navigation and uses the full width of the main area */
   margin: 0;
   padding: 16px 20px 76px;
 }
@@ -995,7 +994,6 @@ html:not(.replica-child) body {
   --ux-control-width: 320px;
   --ux-section-space: 28px;
   --ux-field-space: 20px;
-  max-width: 968px;
   box-sizing: border-box;
   padding: 24px 24px 104px;
   font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei",
@@ -1438,7 +1436,6 @@ html:not(.replica-child) body {
 
 /* auto-greeting page: content on the left, a floating section rail with progress on the right */
 .ux-inner.ux-inner--with-rail {
-  max-width: 1360px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 208px;
   column-gap: 20px;
@@ -2305,7 +2302,6 @@ html:not(.replica-child) body {
 
 /* section rail folded: the content takes the rail's width, and keeps clear of the pull tab */
 .ux-inner.ux-inner--rail-collapsed {
-  max-width: 1360px;
   padding-right: 48px;
 }
 @media (max-width: 720px) {

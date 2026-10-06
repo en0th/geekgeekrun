@@ -7740,7 +7740,7 @@ export default Vue.defineComponent({
     // macOS liquid-glass nav (see glass.js): a wallpaper behind the panel is blurred, refracted at
     // the rim and colour-mixed by an SVG backdrop filter; the pointer adds a moving reflection and a
     // slight parallax on the wallpaper so the material reacts as things move behind it
-    const vibrant = window.electron?.process?.platform === "darwin";
+    const vibrant = !!window.api?.nativeGlass;
     const GLASS_INSET = 8;
     let glassNav, glassObserver, glassFrame, glassSize = "";
     function attachGlass(el) {

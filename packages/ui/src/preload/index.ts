@@ -2,7 +2,10 @@ import { contextBridge } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 
 // Custom APIs for renderer
-const api = {}
+const api = {
+  // the window shows native glass (macOS vibrancy / Windows acrylic) through transparent areas
+  nativeGlass: process.argv.includes('--ggr-native-glass')
+}
 
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if context isolation is enabled, otherwise

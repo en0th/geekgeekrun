@@ -1,8 +1,23 @@
 import { BrowserWindow, shell } from 'electron'
 import path from 'path'
+import os from 'os'
 import { openDevTools } from '../commands'
 import { daemonEE } from '../flow/OPEN_SETTING_WINDOW/connect-to-daemon'
 export let mainWindow: BrowserWindow | null = null
+
+// tells the renderer that the window has a native glass material behind transparent areas
+const NATIVE_GLASS_ARG = '--ggr-native-glass'
+
+// backgroundMaterial needs Windows 11 22H2 (build 22621) or later
+function isWindowsBackgroundMaterialSupported() {
+  if (process.platform !== 'win32') return false
+  const build = Number(os.release().split('.')[2])
+  return build >= 22621
+}
+
+function hasNativeGlass() {
+  return process.platform === 'darwin' || isWindowsBackgroundMaterialSupported()
+}
 
 export function createMainWindow(): BrowserWindow {
   // Create the browser window.
@@ -26,9 +41,17 @@ export function createMainWindow(): BrowserWindow {
           backgroundColor: '#00000000'
         }
       : {}),
+    // Windows 11 22H2+: acrylic is the closest match to the macOS sidebar vibrancy
+    ...(isWindowsBackgroundMaterialSupported()
+      ? {
+          backgroundMaterial: 'acrylic' as const,
+          backgroundColor: '#00000000'
+        }
+      : {}),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
-      sandbox: false
+      sandbox: false,
+      additionalArguments: hasNativeGlass() ? [NATIVE_GLASS_ARG] : []
     }
   })
 
