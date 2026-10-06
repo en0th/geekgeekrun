@@ -95,10 +95,17 @@ export function describeFilterRow(row: FilterRow, field: RunDataField) {
   return `${field.label} ${op} ${fmt(row.value)}`
 }
 
-export type DrillFilter =
-  | { kind: 'column'; field: string; values: (string | number | null)[] }
-  | { kind: 'rows'; rows: FilterRow[] }
-  | { kind: 'unsupported' }
+// a clicked stats item or table cell always becomes 过滤条件 (rows); header value filters are
+// only ever set from the column header
+export type DrillFilter = { kind: 'rows'; rows: FilterRow[] } | { kind: 'unsupported' }
+
+/** "this value only" as a filter row, for any field type */
+export function valueFilterRow(field: Pick<RunDataField, 'key' | 'type'>, raw: unknown): FilterRow {
+  if (field.type === 'enum') return { field: field.key, op: 'in', value: [enumKey(raw)] }
+  if (isBlank(raw)) return { field: field.key, op: 'isEmpty' }
+  if (field.type === 'number') return { field: field.key, op: 'eq', value: Number(raw) }
+  return { field: field.key, op: 'eq', value: String(raw) }
+}
 
 // local [start, end] of a strftime bucket: day YYYY-MM-DD, month YYYY-MM, week YYYY-Www
 // (SQLite %W: weeks start on Monday, week 00 is the days before the first Monday)
@@ -121,13 +128,14 @@ export function bucketRange(bucket: string, name: string): [Date, Date] | null {
   return null
 }
 
-/** Turn a clicked stats item into table filters. */
+/** Turn a clicked stats item into 过滤条件. fieldType: the grouped field's type (default string). */
 export function drillToFilter(
   group: { field: string; bucket?: string },
-  raw: unknown
+  raw: unknown,
+  fieldType: RunDataField['type'] = 'string'
 ): DrillFilter {
   const { field, bucket } = group
-  if (!bucket) return { kind: 'column', field, values: [raw as string | number | null] }
+  if (!bucket) return { kind: 'rows', rows: [valueFilterRow({ key: field, type: fieldType }, raw)] }
   if (['day', 'week', 'month'].includes(bucket)) {
     const range = bucketRange(bucket, String(raw))
     return range
@@ -155,10 +163,7 @@ export function drillToFilter(
   return { kind: 'unsupported' }
 }
 
-export type CellFilterAction =
-  | { kind: 'row'; row: FilterRow }
-  // header value filter: `set` replaces it, `exclude` drops the value from it
-  | { kind: 'column'; field: string; mode: 'set' | 'exclude'; value: string | number | null }
+export type CellFilterAction = { kind: 'row'; row: FilterRow }
 
 export interface CellFilterOption {
   label: string
@@ -173,9 +178,22 @@ export function cellFilterOptions(field: RunDataField, raw: unknown): CellFilter
   if (field.type === 'enum') {
     const value = (isBlank(raw) ? null : raw) as string | number | null
     const text = enumLabel(field, value) || '(空)'
+    const others = (field.enumOptions ?? [])
+      .map((o) => enumKey(o.value))
+      .filter((k) => k !== enumKey(value))
     return [
-      { label: `只看「${text}」`, action: { kind: 'column', field: key, mode: 'set', value } },
-      { label: `排除「${text}」`, action: { kind: 'column', field: key, mode: 'exclude', value } }
+      { label: `只看「${text}」`, action: { kind: 'row', row: valueFilterRow(field, value) } },
+      ...(others.length
+        ? [
+            {
+              label: `排除「${text}」`,
+              action: {
+                kind: 'row' as const,
+                row: { field: key, op: 'in' as const, value: others }
+              }
+            }
+          ]
+        : [])
     ]
   }
   if (isBlank(raw)) {
@@ -226,7 +244,7 @@ export function cellFilterOptions(field: RunDataField, raw: unknown): CellFilter
   const options: CellFilterOption[] = [
     {
       label: `只看「${short(text)}」`,
-      action: { kind: 'column', field: key, mode: 'set', value: text }
+      action: { kind: 'row', row: { field: key, op: 'eq', value: text } }
     },
     {
       label: `排除「${short(text)}」`,

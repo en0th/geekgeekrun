@@ -20,10 +20,22 @@ await build({
 const { drillToFilter, bucketRange } = await import(pathToFileURL(outfile).href)
 const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 
-test('a plain value becomes a column value filter, keeping the raw value', () => {
-  assert.deepEqual(drillToFilter({ field: 'companyName' }, '腾讯'), { kind: 'column', field: 'companyName', values: ['腾讯'] })
-  assert.deepEqual(drillToFilter({ field: 'markReason' }, 6), { kind: 'column', field: 'markReason', values: [6] })
-  assert.deepEqual(drillToFilter({ field: 'chatStartupFrom' }, null), { kind: 'column', field: 'chatStartupFrom', values: [null] })
+test('a plain value becomes a 过滤条件 row, never a header filter', () => {
+  assert.deepEqual(drillToFilter({ field: 'companyName' }, '腾讯'), {
+    kind: 'rows',
+    rows: [{ field: 'companyName', op: 'eq', value: '腾讯' }]
+  })
+  // enum values use option keys, as the filter builder does
+  assert.deepEqual(drillToFilter({ field: 'markReason' }, 6, 'enum'), {
+    kind: 'rows',
+    rows: [{ field: 'markReason', op: 'in', value: ['6'] }]
+  })
+  assert.deepEqual(drillToFilter({ field: 'chatStartupFrom' }, null, 'enum'), {
+    kind: 'rows',
+    rows: [{ field: 'chatStartupFrom', op: 'in', value: ['null'] }]
+  })
+  assert.deepEqual(drillToFilter({ field: 'jobCount' }, '3', 'number').rows, [{ field: 'jobCount', op: 'eq', value: 3 }])
+  assert.deepEqual(drillToFilter({ field: 'address' }, null).rows, [{ field: 'address', op: 'isEmpty' }])
 })
 
 test('day and month buckets become local date ranges', () => {

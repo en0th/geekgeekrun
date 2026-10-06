@@ -615,30 +615,27 @@ function handleCellClick(
 function closeCellMenu() {
   cellMenu.value = null
 }
+/**
+ * Add 过滤条件 from a stats click or a cell. A row with the same field and operator is
+ * replaced (picking another value changes the condition instead of piling up ones that can't
+ * all match). Returns false when the very same condition is already there.
+ */
+function addConditionRows(rows: FilterRow[]) {
+  const same = (a: FilterRow, b: FilterRow) => JSON.stringify(a) === JSON.stringify(b)
+  if (rows.every((row) => advancedRows.value.some((r) => same(r, row)))) return false
+  advancedRows.value = [
+    ...advancedRows.value.filter(
+      (r) => !rows.some((row) => row.field === r.field && row.op === r.op)
+    ),
+    ...rows
+  ]
+  return true
+}
 function applyCellFilter(option: CellFilterOption) {
   closeCellMenu()
-  const action = option.action
-  if (action.kind === 'row') {
-    const key = JSON.stringify(action.row)
-    if (advancedRows.value.some((r) => JSON.stringify(r) === key)) {
-      toast.info('这个过滤条件已经存在')
-      return
-    }
-    advancedRows.value = [...advancedRows.value, action.row]
-  } else if (action.mode === 'set') {
-    columnFilters[action.field] = [action.value]
-  } else {
-    // exclude one enum value: keep the others that are selected, or all the other options
-    const field = fieldByKey(action.field)
-    const current =
-      columnFilters[action.field] ??
-      (field?.enumOptions ?? []).map((o) => o.value as string | number | null)
-    const rest = current.filter((v) => String(v) !== String(action.value))
-    if (!rest.length) {
-      toast.info('排除后没有可显示的值')
-      return
-    }
-    columnFilters[action.field] = rest
+  if (!addConditionRows([option.action.row])) {
+    toast.info('这个过滤条件已经存在')
+    return
   }
   toast.success(`已加入过滤条件：${option.label}`)
 }
@@ -934,19 +931,16 @@ function handleDrill({
 }) {
   const field = fieldByKey(group.field)
   if (!field) return
-  const filter = drillToFilter(group, raw)
+  const filter = drillToFilter(group, raw, field.type)
   if (filter.kind === 'unsupported') {
-    toast.info('按小时、星期统计的项暂不支持筛选')
+    toast.info('按小时、星期统计的项还不能加入过滤条件')
     return
   }
-  if (filter.kind === 'column') {
-    // replaces any value filter on that column, like picking it in the header filter
-    columnFilters[filter.field] = filter.values
-  } else {
-    advancedRows.value = [...advancedRows.value, ...filter.rows]
-  }
+  // 过滤条件, not the header filter: header filters are only set from the column header
+  const added = addConditionRows(filter.rows)
   statsVisible.value = false
-  toast.success(`已添加筛选：${field.label} ${label}`)
+  if (added) toast.success(`已加入过滤条件：${field.label} ${label}`)
+  else toast.info('这个过滤条件已经存在')
 }
 
 // ---------- fullscreen ----------

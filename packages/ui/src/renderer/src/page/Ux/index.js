@@ -22,7 +22,7 @@ import { ElMessageBox, ElImageViewer } from "element-plus";
 import JobLibrary from "../MainLayout/JobLibrary.vue";
 import RunDataTable from "../../features/RunDataTable/index.vue";
 import { runDataStatsPresets } from "../../features/RunDataTable/stats-presets";
-import { formatSalary, toDbDate } from "../../features/RunDataTable/format";
+import { toDbDate } from "../../features/RunDataTable/format";
 import { EXIT_CODE_LABELS } from "../../../../common/task-labels";
 import BossLibrary from "../MainLayout/BossLibrary.vue";
 import CompanyLibrary from "../MainLayout/CompanyLibrary.vue";
@@ -5185,21 +5185,6 @@ export default Vue.defineComponent({
     }
     // the details drawer, over any page
     const detailColumns = {
-      jobLibrary: [
-        { key: "companyName" },
-        { key: "jobName" },
-        { key: "positionName" },
-        { key: "salary", label: "薪资", field: "salaryLow", formatter: formatSalary, headerFilter: false },
-        { key: "address" },
-        { key: "bossName" },
-        { key: "hireStatusCheckedAt", minWidth: 160 },
-      ],
-      chatStartupLog: [
-        { key: "companyName" },
-        { key: "jobName" },
-        { key: "bossName" },
-        { key: "date", minWidth: 160 },
-      ],
       favoriteJobs: [
         { key: "folderName" },
         { key: "companyName" },
@@ -5208,6 +5193,54 @@ export default Vue.defineComponent({
         { key: "hireStatusCheckedAt", minWidth: 160 },
       ],
     };
+    // 本次数据: the same view as the 资料库 / 求职记录 page (columns, row actions and their detail
+    // panels), limited to the run's time
+    function runDataView(t, target) {
+      const shared = {
+        key: target.dataset + (t.runRecordId || t.startedAt),
+        baseFilters: [
+          {
+            field: target.field,
+            op: "between",
+            value: target.range.map((d) => toDbDate(d)),
+          },
+        ],
+        memoryKey: "taskRun:" + target.dataset,
+        ignoreJumps: true,
+      };
+      if (target.dataset === "jobLibrary")
+        return h(JobLibrary, {
+          ...shared,
+          embedded: true,
+          // the time the rows are limited by
+          extraColumns: [{ key: "hireStatusCheckedAt", minWidth: 160 }],
+        });
+      if (target.dataset === "chatStartupLog")
+        return h(StartChatRecord, { ...shared, embedded: true });
+      // 收藏检查: the favourites page has folders around its table; here only its rows
+      return h(
+        RunDataTable,
+        {
+          ...shared,
+          dataset: target.dataset,
+          columns: detailColumns[target.dataset],
+          statsPreset: runDataStatsPresets[target.dataset],
+          actionsWidth: 120,
+          class: "ux-native-data",
+        },
+        {
+          actions: ({ row }) =>
+            button(
+              "在BOSS查看",
+              () =>
+                ipc("open-site-with-boss-cookie", {
+                  url: `https://www.zhipin.com/job_detail/${row.encryptJobId}.html`,
+                }),
+              { link: true, type: "primary", size: "small", disabled: !row.encryptJobId },
+            ),
+        },
+      );
+    }
     function taskDrawer() {
       const t = selectedTask.value;
       if (!taskDetailId.value || !t) return null;
@@ -5256,22 +5289,7 @@ export default Vue.defineComponent({
                 libraryButton,
               ]),
               h("div", { class: "ux-data-panel ux-task-data-panel" }, [
-                h(RunDataTable, {
-                  key: target.dataset + (t.runRecordId || t.startedAt),
-                  dataset: target.dataset,
-                  columns: detailColumns[target.dataset],
-                  statsPreset: runDataStatsPresets[target.dataset],
-                  baseFilters: [
-                    {
-                      field: target.field,
-                      op: "between",
-                      value: target.range.map((d) => toDbDate(d)),
-                    },
-                  ],
-                  memoryKey: "taskRun:" + target.dataset,
-                  ignoreJumps: true,
-                  class: "ux-native-data",
-                }),
+                runDataView(t, target),
               ]),
             ]
           : [hint("消息跟进没有单独的数据表，发送的内容在“运行概览”的执行日志里。")]; 
