@@ -14,18 +14,18 @@
       <template #title>导入会直接写入本地数据库</template>
       <div class="text-12px leading-18px">
         <div v-if="isLog">
-          · 以 {{ keyDescription }} 识别同一条记录：已存在的记录会跳过，不存在的会新增。
+          用 {{ keyDescription }} 认出同一条记录：已有的跳过，没有的新增。
         </div>
         <div v-else>
-          · 以 {{ keyDescription }}
-          识别同一条记录：已存在的记录只更新文件中有值且有变化的字段，不存在的会新增。
+          用 {{ keyDescription }}
+          认出同一条记录：已有的只更新文件里有值、而且变了的字段，没有的新增。
         </div>
         <div v-if="isLog">
-          · 记录中带有的职位 / BOSS / 公司信息仅在库中不存在时补充，不会覆盖已有信息。
+          记录里带的职位、BOSS、公司信息，只在库里没有时补上，不会覆盖已有的。
         </div>
         <div>
-          · 支持本程序导出的 .xlsx / .csv / .json
-          文件，表头可以是中文列名或字段名。建议导入前先导出一份备份。
+          支持本软件导出的 .xlsx、.csv、.json
+          文件，表头用中文列名或字段名都行。建议导入前先导出一份备份。
         </div>
       </div>
     </ElAlert>

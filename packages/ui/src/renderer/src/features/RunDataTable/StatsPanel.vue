@@ -1,7 +1,7 @@
 <template>
   <ElDrawer
     :model-value="visible"
-    :title="`${datasetDef.label} · 统计分析`"
+    :title="`${datasetDef.label}统计`"
     size="80%"
     append-to-body
     destroy-on-close

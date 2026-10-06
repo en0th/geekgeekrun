@@ -9,6 +9,9 @@ import { AutoStartChatRunRecord } from '@geekgeekrun/sqlite-plugin/dist/entity/A
 import * as runData from './run-data'
 import * as favorites from './favorites'
 import * as backup from './backup'
+import { refreshTaskRuns } from './task-runs'
+import { refreshClientRows } from './client-rows'
+import { runDataDatasets } from '../../../../../../common/run-data'
 
 const dbInitPromise = initDb(getPublicDbFilePath())
 let dataSource: DataSource | null = null
@@ -49,10 +52,11 @@ const payloadHandler = {
     const result = await autoStartChatRunRecordRepository.save(autoStartChatRunRecord)
     return result
   },
-  queryRunData: (payload) => runData.queryRunData(getRawDb(), payload),
-  queryAllRunData: (payload) => runData.queryAllRunData(getRawDb(), payload),
-  getRunDataDistinctValues: (payload) => runData.getRunDataDistinctValues(getRawDb(), payload),
-  getRunDataStats: (payload) => runData.getRunDataStats(getRawDb(), payload),
+  queryRunData: (payload) => runData.queryRunData(withTaskRuns(payload), payload),
+  queryAllRunData: (payload) => runData.queryAllRunData(withTaskRuns(payload), payload),
+  getRunDataDistinctValues: (payload) =>
+    runData.getRunDataDistinctValues(withTaskRuns(payload), payload),
+  getRunDataStats: (payload) => runData.getRunDataStats(withTaskRuns(payload), payload),
   deleteRunData: (payload) => runData.deleteRunData(getRawDb(), payload),
   importRunData: (payload) => runData.importRunData(getRawDb(), payload),
   listFavoriteFolders: () => favorites.listFavoriteFolders(getRawDb()),
@@ -61,8 +65,18 @@ const payloadHandler = {
   deleteFavoriteFolder: (payload) => favorites.deleteFavoriteFolder(getRawDb(), payload),
   addFavoriteJobs: (payload) => favorites.addFavoriteJobs(getRawDb(), payload),
   countJobStatusPollTargets: () => favorites.countJobStatusPollTargets(getRawDb()),
-  backupDatabase: (payload) => backup.backupDatabase(getRawDb() as unknown as backup.BackupDb, payload),
+  backupDatabase: (payload) =>
+    backup.backupDatabase(getRawDb() as unknown as backup.BackupDb, payload),
   copyDatabase: (payload) => backup.copyDatabase(getRawDb() as unknown as backup.BackupDb, payload)
+}
+
+// 任务列表 rows come from the daemon's state that the main process sends along
+function withTaskRuns(payload): runData.Db {
+  const db = getRawDb()
+  if (payload?.dataset === 'taskRuns') refreshTaskRuns(db, payload.context)
+  const def = runDataDatasets[payload?.dataset]
+  if (def?.clientRows) refreshClientRows(db, def, payload.context?.rows)
+  return db
 }
 
 function getRawDb(): runData.Db {

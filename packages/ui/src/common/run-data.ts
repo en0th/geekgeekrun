@@ -8,6 +8,10 @@ export type RunDataDatasetKey =
   | 'bossLibrary'
   | 'companyLibrary'
   | 'favoriteJobs'
+  // 任务列表: task runs from the daemon, not a database table (see worker/task-runs.ts)
+  | 'taskRuns'
+  // 设置 → 配置模板: rows the page sends along with each query (see clientRows)
+  | 'configTemplates'
 
 export type RunDataFieldType = 'string' | 'number' | 'date' | 'enum'
 
@@ -36,6 +40,12 @@ export interface RunDataDatasetDef {
   hasJob: boolean
   // false hides import (rows that only make sense created from the app)
   importable?: boolean
+  // false hides delete (rows the app keeps for itself)
+  deletable?: boolean
+  // rows per page until the user picks another size
+  defaultPageSize?: number
+  // the rows come from the page (query.context.rows), not from the database
+  clientRows?: boolean
   fields: RunDataField[]
 }
 
@@ -70,6 +80,8 @@ export interface RunDataQuery {
   keyword?: string
   filters?: RunDataFilter[]
   sort?: RunDataSort | null
+  // what a dataset built outside the database needs (clientRows: { rows })
+  context?: unknown
 }
 
 export type RunDataPageQuery = RunDataQuery & PageReq
@@ -308,6 +320,52 @@ export const runDataDatasets: Record<RunDataDatasetKey, RunDataDatasetDef> = {
       { key: 'industryName', label: '所在行业', type: 'string', searchable: true },
       { key: 'stageName', label: '融资情况', type: 'string', searchable: true },
       { key: 'encryptCompanyId', label: '公司ID', type: 'string', searchable: true }
+    ]
+  },
+  taskRuns: {
+    key: 'taskRuns',
+    label: '任务',
+    rowKey: 'key',
+    defaultSort: { field: 'startedAt', order: 'desc' },
+    hasJob: false,
+    importable: false,
+    deletable: false,
+    defaultPageSize: 20,
+    fields: [
+      { key: 'mode', label: '方式', type: 'string', searchable: true },
+      { key: 'status', label: '状态', type: 'string', searchable: true },
+      { key: 'startedAt', label: '开始时间', type: 'date' },
+      { key: 'endedAt', label: '结束时间', type: 'date' },
+      { key: 'durationMinutes', label: '用时（分钟）', type: 'number' },
+      { key: 'note', label: '说明', type: 'string', searchable: true },
+      { key: 'task', label: '任务', type: 'string', searchable: true },
+      { key: 'runRecordId', label: '运行编号', type: 'number' },
+      { key: 'phase', label: '列表', type: 'string' },
+      { key: 'workerId', label: '任务ID', type: 'string' },
+      { key: 'runMode', label: '运行方式', type: 'string' },
+      { key: 'code', label: '退出码', type: 'number' },
+      { key: 'key', label: '记录ID', type: 'string' }
+    ]
+  },
+  configTemplates: {
+    key: 'configTemplates',
+    label: '模板',
+    rowKey: 'id',
+    // the order the templates are listed in on the 找岗位 page
+    defaultSort: { field: 'order', order: 'asc' },
+    hasJob: false,
+    importable: false,
+    deletable: false,
+    clientRows: true,
+    defaultPageSize: 10,
+    fields: [
+      { key: 'name', label: '名称', type: 'string', searchable: true },
+      { key: 'status', label: '状态', type: 'string', searchable: true },
+      { key: 'runMode', label: '运行方式', type: 'string', searchable: true },
+      { key: 'titles', label: '目标岗位', type: 'string', searchable: true },
+      { key: 'sources', label: '职位来源', type: 'string', searchable: true },
+      { key: 'order', label: '顺序', type: 'number' },
+      { key: 'id', label: '模板ID', type: 'string' }
     ]
   }
 }

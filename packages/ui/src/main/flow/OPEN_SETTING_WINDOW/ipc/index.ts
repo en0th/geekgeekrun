@@ -69,7 +69,11 @@ import { pipeWriteRegardlessError } from '../../utils/pipe'
 import fs, { WriteStream } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
-import { discardAutoChatResume, readAutoChatResume } from '../../../features/task-resume'
+import {
+  discardAutoChatResume,
+  markAutoChatRunTerminated,
+  readAutoChatResume
+} from '../../../features/task-resume'
 // eslint-disable-next-line vue/prefer-import-from-vue
 import { hasOwn } from '@vue/shared'
 import { createLlmConfigWindow, llmConfigWindow } from '../../../window/llmConfigWindow'
@@ -262,10 +266,22 @@ export default function initIpc() {
   ipcMain.handle('terminate-auto-chat', async () => {
     const workerId = 'geekAutoStartWithBossMain'
     const status = (await sendToDaemon({ type: 'get-status' }, { needCallback: true })) as
-      | { workers?: { workerId: string }[]; queue?: { workerId: string }[] }
+      | {
+          workers?: { workerId: string; args?: string[] }[]
+          queue?: { workerId: string; args?: string[] }[]
+        }
       | undefined
-    const running = status?.workers?.some((it) => it.workerId === workerId)
-    const queued = status?.queue?.some((it) => it.workerId === workerId)
+    const running = status?.workers?.find((it) => it.workerId === workerId)
+    const queued = status?.queue?.find((it) => it.workerId === workerId)
+    // the run being terminated: the one running or queued, else the paused one
+    const runRecordId =
+      Number(
+        (running ?? queued)?.args
+          ?.find((a) => String(a).startsWith('--run-record-id='))
+          ?.split('=')[1]
+      ) || readAutoChatResume()?.runRecordId
+    // first, so nothing written while the task exits can bring the run back
+    markAutoChatRunTerminated(runRecordId)
     if (running || queued) {
       // the worker saves its state on exit, so remove it only after the exit
       const exited = running
@@ -507,10 +523,55 @@ export default function initIpc() {
   ipcMain.handle('db-backup-run', () => runDbBackup('manual'))
   ipcMain.handle('db-backup-restore', (_, { name }) => scheduleDbRestore(name))
 
-  ipcMain.handle('run-data-query', (_, payload) => queryRunData(payload))
-  ipcMain.handle('run-data-query-all', (_, payload) => queryAllRunData(payload))
-  ipcMain.handle('run-data-distinct-values', (_, payload) => getRunDataDistinctValues(payload))
-  ipcMain.handle('run-data-stats', (_, payload) => getRunDataStats(payload))
+  // the 任务列表 table (dataset taskRuns) is built from the daemon's current state
+  const withTaskContext = async (payload) => {
+    if (payload?.dataset !== 'taskRuns') return payload
+    const status = (await sendToDaemon({ type: 'get-status' }, { needCallback: true })) as
+      | {
+          workers?: Record<string, unknown>[]
+          queue?: Record<string, unknown>[]
+          history?: object[]
+        }
+      | undefined
+    // only what the table needs (no screenshots or runtime storage)
+    const keep = ({
+      workerId,
+      args,
+      uptime,
+      yielding,
+      position,
+      queuedAt,
+      reason
+    }: Record<string, unknown>) => ({
+      workerId,
+      args,
+      uptime,
+      yielding,
+      position,
+      queuedAt,
+      reason
+    })
+    return {
+      ...payload,
+      context: {
+        workers: (status?.workers ?? []).map(keep),
+        queue: (status?.queue ?? []).map(keep),
+        history: status?.history ?? []
+      }
+    }
+  }
+  ipcMain.handle('run-data-query', async (_, payload) =>
+    queryRunData(await withTaskContext(payload))
+  )
+  ipcMain.handle('run-data-query-all', async (_, payload) =>
+    queryAllRunData(await withTaskContext(payload))
+  )
+  ipcMain.handle('run-data-distinct-values', async (_, payload) =>
+    getRunDataDistinctValues(await withTaskContext(payload))
+  )
+  ipcMain.handle('run-data-stats', async (_, payload) =>
+    getRunDataStats(await withTaskContext(payload))
+  )
   ipcMain.handle('run-data-delete', (_, payload) => deleteRunData(payload))
   ipcMain.handle('run-data-import', (_, payload) => importRunData(payload))
   ipcMain.handle(

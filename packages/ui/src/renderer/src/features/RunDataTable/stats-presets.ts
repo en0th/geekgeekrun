@@ -166,5 +166,32 @@ export const runDataStatsPresets: Record<RunDataDatasetKey, RunDataStatsPreset> 
         wide: true
       }
     ]
+  },
+  taskRuns: {
+    numericFields: [{ field: 'durationMinutes', label: '用时', unit: '分钟' }],
+    charts: [
+      {
+        id: 'daily',
+        title: '每天运行次数',
+        type: 'line',
+        group: { field: 'startedAt', bucket: 'day', limit: 60 },
+        wide: true
+      },
+      { id: 'mode', title: '运行方式', type: 'pie', group: { field: 'mode', limit: 6 } },
+      { id: 'status', title: '结果', type: 'pie', group: { field: 'status', limit: 10 } },
+      {
+        id: 'duration',
+        title: '每次用时（分钟）',
+        type: 'bar',
+        group: { field: 'durationMinutes', bucket: 'numberRange', ranges: [5, 15, 30, 60, 120] },
+        wide: true
+      }
+    ]
+  },
+  configTemplates: {
+    charts: [
+      { id: 'mode', title: '运行方式', type: 'pie', group: { field: 'runMode', limit: 6 } },
+      { id: 'status', title: '状态', type: 'pie', group: { field: 'status', limit: 6 } }
+    ]
   }
 }

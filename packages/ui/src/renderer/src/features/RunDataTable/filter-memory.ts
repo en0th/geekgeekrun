@@ -2,7 +2,7 @@
 // plus saved and recently used conditions kept in localStorage.
 import { ref, watch } from 'vue'
 import dayjs from 'dayjs'
-import type { RunDataDatasetKey, RunDataField } from '../../../../common/run-data'
+import type { RunDataField } from '../../../../common/run-data'
 import type { FilterRow } from './filters'
 
 export interface FilterSnapshot {
@@ -34,17 +34,17 @@ export const snapshotKey = (s: FilterSnapshot) =>
   ])
 
 // ---------- session ----------
-const session = new Map<RunDataDatasetKey, FilterSnapshot>()
+const session = new Map<string, FilterSnapshot>()
 export const sessionFilters = {
-  get: (dataset: RunDataDatasetKey) => session.get(dataset) ?? null,
-  set: (dataset: RunDataDatasetKey, snapshot: FilterSnapshot) => session.set(dataset, snapshot)
+  get: (key: string) => session.get(key) ?? null,
+  set: (key: string, snapshot: FilterSnapshot) => session.set(key, snapshot)
 }
 
 // ---------- saved / recent ----------
 export const HISTORY_LIMIT_DEFAULT = 5
 export const HISTORY_LIMIT_MAX = 50
 const limitKey = 'ggr:run-data-filter-history-limit'
-const listKey = (dataset: RunDataDatasetKey) => `ggr:run-data-filters:${dataset}`
+const listKey = (key: string) => `ggr:run-data-filters:${key}`
 
 function readLimit() {
   try {
@@ -84,7 +84,8 @@ function revive(snapshot: FilterSnapshot, fields: RunDataField[]): FilterSnapsho
   }
 }
 
-export function useFilterMemory(dataset: RunDataDatasetKey, fields: () => RunDataField[]) {
+/** key: the dataset, or a table's own key when it must not share conditions with it */
+export function useFilterMemory(dataset: string, fields: () => RunDataField[]) {
   const load = (): { saved: StoredFilter[]; recent: StoredFilter[] } => {
     try {
       const raw = JSON.parse(localStorage.getItem(listKey(dataset)) || '{}')

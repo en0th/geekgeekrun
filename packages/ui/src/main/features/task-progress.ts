@@ -94,7 +94,7 @@ export function createTaskProgress(seed?: TaskProgressSeed | null) {
     detail = "",
     state = "running",
     diagnostics?: { listSummary?: string },
-    // the log line for this step, e.g. "入库：公司 · 职位"; defaults to the detail
+    // the log line for this step, e.g. "入库：公司「职位」"; defaults to the detail
     logText?: string,
   ) {
     if (kind) progress[kind]++;

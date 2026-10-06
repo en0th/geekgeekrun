@@ -98,7 +98,11 @@ const baseSql: Record<RunDataDatasetKey, string> = {
       ON ch.encryptBossId = b.encryptBossId`,
   companyLibrary: `SELECT
     encryptCompanyId, name, brandName, scaleLow, scaleHigh, stageName, industryName
-  FROM company_info`
+  FROM company_info`,
+  // rebuilt before each query from the daemon's state (task-runs.ts)
+  taskRuns: `SELECT * FROM temp.task_runs`,
+  // rebuilt before each query from the rows the page sent (client-rows.ts)
+  configTemplates: `SELECT * FROM temp."client_configTemplates"`
 }
 
 const deleteTarget: Record<RunDataDatasetKey, { table: string; pk: string }> = {
@@ -108,7 +112,10 @@ const deleteTarget: Record<RunDataDatasetKey, { table: string; pk: string }> = {
   bossLibrary: { table: 'boss_info', pk: 'encryptBossId' },
   companyLibrary: { table: 'company_info', pk: 'encryptCompanyId' },
   // deleting a favourite only takes it out of its folder
-  favoriteJobs: { table: 'favorite_job', pk: 'id' }
+  favoriteJobs: { table: 'favorite_job', pk: 'id' },
+  // not deletable (deletable: false); listed for completeness
+  taskRuns: { table: 'task_runs', pk: 'key' },
+  configTemplates: { table: 'client_configTemplates', pk: 'id' }
 }
 
 function getDataset(dataset: RunDataDatasetKey) {
@@ -372,6 +379,7 @@ export function getRunDataStats(db: Db, req: RunDataStatsReq): RunDataStatsRes {
 }
 
 export function deleteRunData(db: Db, req: RunDataDeleteReq) {
+  if (getDataset(req.dataset).deletable === false) throw new Error('这类记录不能删除')
   const { table, pk } = deleteTarget[req.dataset] ?? {}
   if (!table) throw new Error(`Unknown dataset: ${req.dataset}`)
   const keys = [...new Set(req.keys ?? [])]
@@ -605,6 +613,9 @@ export function importRunData(db: Db, req: RunDataImportReq): RunDataImportRes {
         })
       case 'favoriteJobs':
         throw new Error('收藏夹不支持导入，请在职位库中选择职位后收藏')
+      case 'taskRuns':
+      case 'configTemplates':
+        throw new Error('这类记录不能导入')
       case 'companyLibrary':
         if (!key(row.encryptCompanyId)) throw new Error('缺少公司ID')
         return upsertCompany(db, row.encryptCompanyId, {

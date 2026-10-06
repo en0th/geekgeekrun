@@ -19,7 +19,9 @@ type GreetResult = {
 }
 
 const jobLabel = (job: GreetableJob) =>
-  [job.companyName, job.jobName].filter(Boolean).join(' · ') || job.encryptJobId
+  (job.companyName && job.jobName
+    ? `${job.companyName}「${job.jobName}」`
+    : job.companyName || job.jobName) || job.encryptJobId
 
 /** true when BOSS confirmed the chat */
 export async function greetJobManually(job: GreetableJob): Promise<boolean> {

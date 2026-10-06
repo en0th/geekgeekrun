@@ -906,7 +906,7 @@ html:not(.replica-child) body {
 .ux-disclosure-toggle svg {
   flex-shrink: 0;
 }
-.ux-disclosure.is-open > .ux-disclosure-toggle svg {
+.ux-disclosure.is-open .ux-disclosure-toggle svg {
   transform: rotate(90deg);
 }
 .ux-disclosure-state {
@@ -2687,4 +2687,273 @@ html:not(.replica-child) body {
   margin: 8px 0 10px;
   font-size: 13px;
   color: var(--el-text-color-regular);
+}
+
+/* "?" tips: the explanation shows on hover or keyboard focus */
+.ux-tip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 6px;
+  vertical-align: -2px;
+  color: var(--el-text-color-placeholder);
+  cursor: help;
+  border-radius: 50%;
+}
+.ux-tip svg {
+  width: 15px;
+  height: 15px;
+}
+.ux-tip:hover,
+.ux-tip:focus-visible {
+  color: var(--el-color-primary);
+  outline: none;
+}
+.ux-tip-popper.el-popper {
+  max-width: 320px;
+  line-height: 1.6;
+}
+
+/* task mode tags (任务列表, details drawer) */
+.task-mode {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.task-mode--chat {
+  color: #215da8;
+  background: #edf4fe;
+}
+.task-mode--collect {
+  color: #17665f;
+  background: #e9f6f3;
+}
+.task-mode--follow {
+  color: #7047a4;
+  background: #f4effb;
+}
+.task-mode--poll {
+  color: #855413;
+  background: #fff5e2;
+}
+
+/* 任务列表 page */
+.ux-task-page-head {
+  display: flex;
+  align-items: center;
+}
+.ux-task-page-head .ux-page-title,
+.ux-task-page-head h1 {
+  margin-bottom: 0;
+}
+.ux-task-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.ux-task-actions .el-button + .el-button {
+  margin-left: 0;
+}
+
+/* task details drawer */
+.ux-task-drawer .el-drawer__header {
+  margin-bottom: 4px;
+}
+.ux-task-drawer .el-drawer__body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding-top: 0;
+}
+.ux-task-drawer-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+.ux-task-drawer .ux-page-title h1 {
+  font-size: 20px;
+}
+.ux-task-data-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+}
+.ux-task-data-head .el-button {
+  margin-left: auto;
+}
+.ux-task-data-panel {
+  min-height: 420px;
+}
+.ux-task-paused-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 4px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--el-color-warning-light-9);
+  color: var(--el-color-warning-dark-2);
+  font-size: 13px;
+}
+
+/* 找岗位 step bar (Element Plus steps); clicking a step opens it */
+.ux-el-steps {
+  margin: 18px 0 14px;
+  padding: 14px 16px 10px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-bg-color);
+}
+.ux-el-step {
+  cursor: pointer;
+  border-radius: 6px;
+}
+.ux-el-step.is-skipped {
+  cursor: default;
+}
+.ux-el-step:not(.is-skipped):hover .el-step__title {
+  color: var(--el-color-primary);
+}
+.ux-el-step:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 4px;
+}
+.ux-el-step .el-step__title {
+  font-size: 14px;
+  line-height: 30px;
+}
+.ux-el-step .el-step__description {
+  padding-right: 8px;
+  font-size: 12px;
+}
+.ux-el-step.is-current .el-step__title {
+  font-weight: 600;
+}
+/* explanations moved behind "?" tips */
+.ux-tip-line {
+  display: flex;
+  align-items: center;
+  min-height: 20px;
+  margin: 2px 0 6px;
+}
+.ux-tip-line .ux-tip {
+  margin-left: 0;
+}
+.ux-with-tip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+.ux-with-tip > .ux-tip {
+  margin-left: 4px;
+}
+.ux-page-title {
+  display: flex;
+  align-items: center;
+}
+h2 > .ux-tip,
+h3 > .ux-tip,
+label > .ux-tip {
+  vertical-align: -2px;
+}
+/* 职位来源: the source options use the card's full width */
+.ux-field#field-source-selection,
+.ux-inner--config .ux-field#field-source-selection {
+  width: 100%;
+  max-width: none;
+}
+.ux-field#field-source-selection .ux-source-options,
+.ux-inner--config .ux-field#field-source-selection .ux-source-options {
+  width: 100%;
+  max-width: none;
+}
+/* a collapsible section's tip sits on its header row, after the toggle */
+.ux-disclosure-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 12px;
+  cursor: pointer;
+  background: var(--el-fill-color-light);
+}
+.ux-disclosure-head:hover {
+  background: var(--el-fill-color);
+}
+.ux-disclosure-head > .ux-disclosure-toggle {
+  width: auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  background: transparent;
+}
+.ux-disclosure-head > .ux-disclosure-toggle:hover {
+  background: transparent;
+}
+.ux-disclosure-tip {
+  display: inline-flex;
+  align-items: center;
+}
+.ux-disclosure-tip .ux-tip {
+  margin-left: 0;
+}
+.ux-disclosure-head > .ux-disclosure-state {
+  margin-left: auto;
+}
+/* tips inside a row of buttons or text stay on that row */
+.ux-inline > .ux-tip,
+.ux-rhythm-line > .ux-tip,
+.ux-explanation > .ux-tip,
+.ux-template-picker-title > .ux-tip {
+  margin-left: 4px;
+}
+/* directories: read-only input group, the path cut off with … when it is too long */
+.ux-path-input {
+  flex: 1;
+  min-width: 0;
+  max-width: 680px;
+}
+.ux-path-input .el-input__inner {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  cursor: default;
+}
+.ux-path-input .el-input-group__prepend {
+  padding: 0 12px;
+  font-size: 12px;
+}
+.ux-path-input .el-input-group__append {
+  padding: 0;
+}
+.ux-path-input .el-input-group__append .el-button {
+  margin: 0;
+  border-radius: 0;
+}
+.ux-path-input .el-input-group__append .el-button + .el-button {
+  border-left: 1px solid var(--el-border-color);
+}
+.ux-path-row {
+  flex-wrap: nowrap;
+}
+/* 设置 → 配置模板: the shared table needs a height to lay out in */
+.ux-template-panel {
+  height: 460px;
+  margin-top: 12px;
+}
+.ux-template-status {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }

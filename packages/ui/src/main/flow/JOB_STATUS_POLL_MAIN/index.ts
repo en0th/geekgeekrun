@@ -131,7 +131,9 @@ async function runPoll() {
     )
     for (const [index, target] of targets.entries()) {
       const name =
-        [target.companyName, target.jobName].filter(Boolean).join(' · ') || target.encryptJobId
+        (target.companyName && target.jobName
+          ? `${target.companyName}「${target.jobName}」`
+          : target.companyName || target.jobName) || target.encryptJobId
       const status = await checkJob(page, target.encryptJobId)
       summary.checked++
       if (status === null) {

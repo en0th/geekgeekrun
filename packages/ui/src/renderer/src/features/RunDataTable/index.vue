@@ -130,9 +130,15 @@
         @click="openFavoritePicker"
         >收藏到…</ElButton
       >
-      <ElButton size="small" link type="danger" :icon="Delete" @click="deleteSelected">{{
-        dataset === 'favoriteJobs' ? '移出收藏夹' : '删除'
-      }}</ElButton>
+      <ElButton
+        v-if="datasetDef.deletable !== false"
+        size="small"
+        link
+        type="danger"
+        :icon="Delete"
+        @click="deleteSelected"
+        >{{ dataset === 'favoriteJobs' ? '移出收藏夹' : '删除' }}</ElButton
+      >
       <ElButton size="small" link @click="clearSelection">取消选择</ElButton>
     </div>
 
@@ -170,7 +176,8 @@
               <span>{{ col.label }}</span>
               <ColumnHeaderFilter
                 v-if="col.headerFilter && col.field"
-                v-model="columnFilters[col.field.key]"
+                :model-value="columnFilters[col.field.key] ?? null"
+                @update:model-value="(v) => (columnFilters[col.field!.key] = v)"
                 :field="col.field"
                 :query="query"
               />
@@ -332,6 +339,14 @@ const props = defineProps<{
   actionsWidth?: number
   // always applied and not shown as removable conditions, e.g. the selected favourite folder
   baseFilters?: RunDataFilter[]
+  // remembered and saved conditions are kept under this key (default: the dataset), so a table
+  // showing part of a dataset (e.g. one run's rows) doesn't share them with the full table
+  memoryKey?: string
+  // ignore "open with these filters" jumps meant for the dataset's own page
+  // (a boolean prop left out is false, so this is opt-in)
+  ignoreJumps?: boolean
+  // sent with every query; a clientRows dataset takes its rows from context.rows
+  context?: unknown
 }>()
 
 const emit = defineEmits<{
@@ -448,7 +463,9 @@ const query = computed<RunDataQuery>(() => ({
       .filter(([, values]) => values?.length)
       .map(([field, values]) => ({ field, op: 'in' as const, value: [...values!] }))
   ],
-  sort: sort.value
+  sort: sort.value,
+  // a change of the page's rows (clientRows) reloads the table like a filter change
+  ...(props.context !== undefined ? { context: props.context } : {})
 }))
 
 const defaultSortForTable = computed(() => {
@@ -493,7 +510,8 @@ function clearAllConditions() {
 }
 
 // ---------- remembered conditions ----------
-const memory = useFilterMemory(props.dataset, () => datasetDef.value.fields)
+const memoryKey = props.memoryKey || props.dataset
+const memory = useFilterMemory(memoryKey, () => datasetDef.value.fields)
 function currentSnapshot(): FilterSnapshot {
   return {
     keyword: appliedKeyword.value,
@@ -548,14 +566,14 @@ async function saveFilter(snapshot: FilterSnapshot = currentSnapshot()) {
   )
 }
 // switching tabs or pages remounts the table: bring back this session's conditions
-const restored = sessionFilters.get(props.dataset)
+const restored = sessionFilters.get(memoryKey)
 if (restored) applySnapshot(restored)
 let rememberTimer: ReturnType<typeof setTimeout> | undefined
 watch(
   () => JSON.stringify([appliedKeyword.value, advancedRows.value, columnFilters]),
   () => {
     const snapshot = currentSnapshot()
-    sessionFilters.set(props.dataset, snapshot)
+    sessionFilters.set(memoryKey, snapshot)
     // conditions kept for a moment count as used
     clearTimeout(rememberTimer)
     rememberTimer = setTimeout(() => memory.remember(snapshot), 1500)
@@ -642,6 +660,7 @@ onBeforeUnmount(() => {
 // ---------- opened from elsewhere with filters (task history) ----------
 const jumpStore = useRunDataJumpStore()
 function applyJump() {
+  if (props.ignoreJumps) return
   const target = jumpStore.take(props.dataset)
   if (!target) return
   clearAllConditions()
@@ -652,10 +671,10 @@ applyJump()
 watch(() => jumpStore.pending, applyJump)
 
 // ---------- data ----------
-const pageSizeList = [50, 100, 200, 500]
+const pageSizeList = [10, 20, 50, 100, 200, 500]
 const pagination = ref({
   pageNo: 1,
-  pageSize: prefs.value.pageSize ?? 100,
+  pageSize: prefs.value.pageSize ?? datasetDef.value.defaultPageSize ?? 100,
   totalItemCount: 0
 })
 const tableData = ref<RunDataRow[]>([])
@@ -792,7 +811,9 @@ const deleteWarning: Record<RunDataDatasetKey, string> = {
   jobLibrary: '引用这些职位的开聊 / 标记记录将无法再显示职位信息。',
   bossLibrary: '引用这些 BOSS 的职位将无法再显示 BOSS 信息。',
   companyLibrary: '引用这些公司的职位 / BOSS 将无法再显示公司信息。',
-  favoriteJobs: '只从收藏夹中移除，职位本身仍保留在职位库中。'
+  favoriteJobs: '只从收藏夹中移除，职位本身仍保留在职位库中。',
+  taskRuns: '',
+  configTemplates: ''
 }
 
 async function deleteSelected() {

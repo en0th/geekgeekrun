@@ -162,7 +162,10 @@ const runAutoChat = async () => {
   // the job being looked at, named in the execution log
   let currentJob = ''
   const jobLabel = (data) =>
-    [data?.brandComInfo?.brandName, data?.jobInfo?.jobName].filter(Boolean).join(' · ') ||
+    ((brand, job) => (brand && job ? `${brand}「${job}」` : brand || job))(
+      data?.brandComInfo?.brandName,
+      data?.jobInfo?.jobName
+    ) ||
     data?.jobInfo?.encryptId ||
     ''
   autoStartChatEventBus.on('TASK_PROGRESS', ({ kind, detail, state, listSummary }) => {
