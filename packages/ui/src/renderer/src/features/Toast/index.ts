@@ -82,7 +82,16 @@ export function listenForAppToasts() {
   ).electron?.ipcRenderer
   if (!ipc) return
   ipc.on('toast-message', (_: unknown, payload: ToastOptions) => toast(payload))
-  ipc.on('worker-to-gui-message', (_: unknown, message: { data?: { type?: string } }) => {
-    if (message?.data?.type === 'toast') toast(message.data as ToastOptions)
-  })
+  // data.type is the message kind ('toast'), so the notice's own type travels as `level`
+  ipc.on(
+    'worker-to-gui-message',
+    (_: unknown, message: { data?: { type?: string; level?: ToastOptions['type'] } }) => {
+      if (message?.data?.type !== 'toast') return
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { type, level, ...rest } = message.data as ToastOptions & {
+        level?: ToastOptions['type']
+      }
+      toast({ ...rest, type: level ?? 'info' })
+    }
+  )
 }

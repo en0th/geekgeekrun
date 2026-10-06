@@ -18,6 +18,7 @@ import { checkShouldExit } from '../../utils/worker'
 import { CookieInvalidHandlePlugin } from '../../features/cookie-invalid-handle-plugin'
 import initPublicIpc from '../../utils/initPublicIpc'
 import { createTaskProgress } from '../../features/task-progress'
+import { readAutoChatResume, writeAutoChatResume } from '../../features/task-resume'
 import { yieldIfRequested } from '../../features/task-queue'
 import { getLastUsedAndAvailableBrowser } from '../DOWNLOAD_DEPENDENCIES/utils/browser-history'
 import { configWithBrowserAssistant } from '../../features/config-with-browser-assistant'
@@ -87,10 +88,77 @@ const runAutoChat = async () => {
     }
   })
   process.env.PUPPETEER_EXECUTABLE_PATH = puppeteerExecutable.executablePath
-  const { initPuppeteer, mainLoop, closeBrowserWindow, autoStartChatEventBus } = await import(
-    '@geekgeekrun/geek-auto-start-chat-with-boss/index.mjs'
-  )
-  const taskProgress = createTaskProgress()
+  const {
+    initPuppeteer,
+    mainLoop,
+    closeBrowserWindow,
+    autoStartChatEventBus,
+    exportRunState,
+    importRunState,
+    resumeFromCurrentPosition,
+    waitUntilSecurityCheckPassed
+  } = await import('@geekgeekrun/geek-auto-start-chat-with-boss/index.mjs')
+  // the same run started again (继续任务, or restarted after making way for another task):
+  // go on with its position, skipped jobs and counters
+  const saved = readAutoChatResume()
+  const resumed = !!runRecordId && Number(saved?.runRecordId) === Number(runRecordId)
+  if (resumed) importRunState(saved!.runState, { skipCurrentFilter: saved!.skipCurrentFilter })
+  const taskProgress = createTaskProgress(resumed ? saved!.progress : null)
+  const runMode = readRunSettings(readConfigFile('boss.json')).runMode
+  let skipCurrentFilterNextTime = false
+  const saveResume = () => {
+    if (!runRecordId) return
+    const { log, ...rest } = taskProgress.progress
+    writeAutoChatResume({
+      runRecordId: Number(runRecordId),
+      runMode,
+      savedAt: Date.now(),
+      skipCurrentFilter: skipCurrentFilterNextTime,
+      runState: exportRunState(),
+      progress: { ...rest, log: log.slice(-100) }
+    })
+  }
+  const resumeSaver = setInterval(saveResume, 5 * 1000)
+  // the stop notice names what the last list was filtered by, not a fixed guess
+  const listSummaryHint = () => {
+    const summary = String(taskProgress.progress.listSummary || '')
+    return summary
+      ? `最近一批${summary.replace(/^当前列表/, '')}；任务已暂停，调整对应条件后可在任务列表中恢复`
+      : '请检查求职条件和BOSS页面筛选，任务已暂停，调整后可在任务列表中恢复'
+  }
+  autoStartChatEventBus.on('RUN_POSITION', saveResume)
+  // every way out of the process (stop, error, yield) leaves the latest state behind
+  process.on('exit', () => {
+    clearInterval(resumeSaver)
+    saveResume()
+  })
+
+  // BOSS asked for a verification: pause and let the user pass it in the open window
+  const PAUSE_TEXT = 'BOSS要求安全验证，任务已暂停；请在打开的BOSS窗口中完成验证，完成后自动继续'
+  let pausedForCheck = false
+  const pauseForSecurityCheck = () => {
+    if (pausedForCheck) return
+    pausedForCheck = true
+    taskProgress.update(undefined, PAUSE_TEXT, 'paused')
+    sendToDaemon({
+      type: 'worker-to-gui-message',
+      workerId: process.env.GEEKGEEKRUND_WORKER_ID,
+      data: {
+        type: 'toast',
+        level: 'warning',
+        title: '找岗位已暂停：需要安全验证',
+        message: '请在打开的BOSS窗口中完成验证，完成后任务会自动继续。',
+        duration: 30 * 1000
+      }
+    })
+  }
+  const securityCheckPassed = () => {
+    if (!pausedForCheck) return
+    pausedForCheck = false
+    taskProgress.update(undefined, '安全验证已完成，继续任务')
+  }
+  autoStartChatEventBus.on('SECURITY_CHECK', pauseForSecurityCheck)
+  autoStartChatEventBus.on('SECURITY_CHECK_PASSED', securityCheckPassed)
   // the job being looked at, named in the execution log
   let currentJob = ''
   const jobLabel = (data) =>
@@ -111,7 +179,7 @@ const runAutoChat = async () => {
               : ''
     taskProgress.update(kind, detail, state || 'running', { listSummary }, logText || undefined)
   })
-  taskProgress.update(undefined, '准备查找岗位')
+  taskProgress.update(undefined, resumed ? '继续上次的任务' : '准备查找岗位')
   process.on('disconnect', () => {
     closeBrowserWindow()
     app.exit()
@@ -171,13 +239,33 @@ const runAutoChat = async () => {
     taskProgress.update(undefined, '休息结束，继续查找')
   )
 
-
   autoStartChatEventBus.once('LOGIN_STATUS_INVALID', () => {})
 
   while (true) {
     try {
       await mainLoop(hooks)
     } catch (err) {
+      if (err instanceof Error && err.message.includes('AUTO_CHAT_SECURITY_CHECK')) {
+        pauseForSecurityCheck()
+        const result = await waitUntilSecurityCheckPassed()
+        if (result === 'passed') {
+          securityCheckPassed()
+          // a fresh browser with the new cookies, from where the run was
+          resumeFromCurrentPosition()
+          await closeBrowserWindow?.()
+          await sleep(2000)
+          continue
+        }
+        pausedForCheck = false
+        taskProgress.update(
+          undefined,
+          '安全验证窗口已关闭，任务已暂停；可在任务列表中恢复，恢复后会重新打开BOSS',
+          'blocked'
+        )
+        await closeBrowserWindow?.()
+        process.exit(AUTO_CHAT_ERROR_EXIT_CODE.SECURITY_CHECK_NOT_PASSED)
+        return
+      }
       if (err instanceof Error) {
         if (
           /AUTO_CHAT_(NO_MATCH_BATCH_LIMIT|LIST_STALLED|DETAIL_NOT_READY|NO_USABLE_SOURCE|COLLECT_MODE_CHAT_BLOCKED|UNMATCHED_JOB_CHAT_BLOCKED)/.test(
@@ -185,10 +273,12 @@ const runAutoChat = async () => {
           )
         ) {
           const noMatch = err.message.includes('NO_MATCH_BATCH_LIMIT')
+          // 继续任务 then starts after the filter combination that had nothing usable
+          skipCurrentFilterNextTime = noMatch
           taskProgress.update(
             undefined,
             noMatch
-              ? '连续检查5批岗位仍无可处理岗位，已停止；请检查公司名单、岗位分类和经验条件'
+              ? `连续检查5批岗位仍无可处理岗位；${listSummaryHint()}`
               : /CHAT_BLOCKED/.test(err.message)
                 ? '已阻止一次不应发生的打招呼（岗位未通过条件检查或处于只收集模式），任务已停止；请反馈此问题'
                 : err.message.includes('NO_USABLE_SOURCE')

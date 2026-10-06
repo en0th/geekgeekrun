@@ -69,6 +69,7 @@ import { pipeWriteRegardlessError } from '../../utils/pipe'
 import fs, { WriteStream } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
+import { discardAutoChatResume, readAutoChatResume } from '../../../features/task-resume'
 // eslint-disable-next-line vue/prefer-import-from-vue
 import { hasOwn } from '@vue/shared'
 import { createLlmConfigWindow, llmConfigWindow } from '../../../window/llmConfigWindow'
@@ -246,21 +247,78 @@ export default function initIpc() {
     return await Promise.all(promiseArr)
   })
 
-  ipcMain.handle('run-geek-auto-start-chat-with-boss', async (ev) => {
-    const mode = 'geekAutoStartWithBossMain'
-    const result = await runCommon({ mode })
-    daemonEE.on('message', function handler(message) {
-      if (message.workerId !== mode) {
-        return
-      }
-      if (message.type === 'worker-exited') {
-        daemonEE.off('message', handler)
-        mainWindow?.webContents.send('worker-exited', message)
-      }
-    })
-    // runRecordId plus whether it had to wait in the task queue
-    return result
+  // the paused 找岗位 run that 任务列表 → 恢复 goes on with (its progress feeds the dashboard)
+  ipcMain.handle('get-auto-chat-resume', () => {
+    const state = readAutoChatResume()
+    if (!state) return null
+    return {
+      runRecordId: state.runRecordId,
+      runMode: state.runMode,
+      savedAt: state.savedAt,
+      progress: state.progress ?? {}
+    }
   })
+  // 终止: stop the run for good; it then shows in the task history and can't be resumed
+  ipcMain.handle('terminate-auto-chat', async () => {
+    const workerId = 'geekAutoStartWithBossMain'
+    const status = (await sendToDaemon({ type: 'get-status' }, { needCallback: true })) as
+      | { workers?: { workerId: string }[]; queue?: { workerId: string }[] }
+      | undefined
+    const running = status?.workers?.some((it) => it.workerId === workerId)
+    const queued = status?.queue?.some((it) => it.workerId === workerId)
+    if (running || queued) {
+      // the worker saves its state on exit, so remove it only after the exit
+      const exited = running
+        ? new Promise<void>((resolve) => {
+            const timer = setTimeout(done, 20 * 1000)
+            function done() {
+              clearTimeout(timer)
+              daemonEE.off('message', handler)
+              resolve()
+            }
+            function handler(message) {
+              if (message.workerId === workerId && message.type === 'worker-exited') done()
+            }
+            daemonEE.on('message', handler)
+          })
+        : Promise.resolve()
+      await sendToDaemon({ type: 'stop-worker', workerId }, { needCallback: true })
+      await exited
+    }
+    discardAutoChatResume()
+  })
+  ipcMain.handle(
+    'run-geek-auto-start-chat-with-boss',
+    async (ev, options?: { resume?: boolean }) => {
+      const mode = 'geekAutoStartWithBossMain'
+      let resumeRunRecordId: number | null = null
+      if (options?.resume) {
+        resumeRunRecordId = Number(readAutoChatResume()?.runRecordId) || null
+        if (!resumeRunRecordId) throw new Error('没有可以恢复的找岗位任务')
+      } else {
+        // a new run replaces the paused one, which is terminated
+        const status = (await sendToDaemon({ type: 'get-status' }, { needCallback: true })) as
+          | { workers?: { workerId: string }[]; queue?: { workerId: string }[] }
+          | undefined
+        if (
+          ![...(status?.workers ?? []), ...(status?.queue ?? [])].some((it) => it.workerId === mode)
+        )
+          discardAutoChatResume()
+      }
+      const result = await runCommon({ mode, resumeRunRecordId })
+      daemonEE.on('message', function handler(message) {
+        if (message.workerId !== mode) {
+          return
+        }
+        if (message.type === 'worker-exited') {
+          daemonEE.off('message', handler)
+          mainWindow?.webContents.send('worker-exited', message)
+        }
+      })
+      // runRecordId plus whether it had to wait in the task queue
+      return result
+    }
+  )
 
   ipcMain.handle('run-read-no-reply-auto-reminder', async () => {
     const mode = 'readNoReplyAutoReminderMain'

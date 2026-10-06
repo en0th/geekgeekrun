@@ -14,6 +14,7 @@ export type TaskLogKind =
   | "resting"
   | "retrying"
   | "yielded"
+  | "paused"
   | "blocked"
   | "stopped"
   | "error";
@@ -25,7 +26,20 @@ export interface TaskLogEntry {
 // enough for a long run's recent history; each progress message carries the whole list
 export const TASK_LOG_LIMIT = 300;
 
-export function createTaskProgress() {
+// a continued run starts from the counters, start time and log it had when it stopped
+export type TaskProgressSeed = Partial<{
+  startedAt: number;
+  viewed: number;
+  sent: number;
+  skipped: number;
+  collected: number;
+  marked: number;
+  lastSkippedDetail: string;
+  skippedReasons: Record<string, number>;
+  log: TaskLogEntry[];
+}>;
+
+export function createTaskProgress(seed?: TaskProgressSeed | null) {
   const progress = {
     startedAt: Date.now(),
     viewed: 0,
@@ -41,6 +55,15 @@ export function createTaskProgress() {
     skippedReasons: {} as Record<string, number>,
     log: [] as TaskLogEntry[],
   };
+  if (seed) {
+    for (const key of ["startedAt", "viewed", "sent", "skipped", "collected", "marked"] as const) {
+      const value = seed[key];
+      if (typeof value === "number") progress[key] = value;
+    }
+    if (seed.lastSkippedDetail) progress.lastSkippedDetail = seed.lastSkippedDetail;
+    if (seed.skippedReasons) progress.skippedReasons = { ...seed.skippedReasons };
+    if (Array.isArray(seed.log)) progress.log = seed.log.slice(-TASK_LOG_LIMIT);
+  }
   const runRecordId = minimist(process.argv.slice(2))["run-record-id"] ?? null;
   function addLog(kind: string, text: string) {
     if (!text) return;

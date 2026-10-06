@@ -16,11 +16,14 @@ export async function runCommon({
   // the poll task doesn't create an auto-greeting run record
   withRunRecord = true,
   // exit codes after which this task must not be restarted, on top of the shared ones
-  extraNoAutoRestartExitCodes = [] as number[]
+  extraNoAutoRestartExitCodes = [] as number[],
+  // 继续任务: go on with this run record instead of creating a new one
+  resumeRunRecordId = null as number | null
 }: {
   mode: string
   withRunRecord?: boolean
   extraNoAutoRestartExitCodes?: number[]
+  resumeRunRecordId?: number | null
 }) {
   await sendToDaemon(
     {
@@ -52,7 +55,11 @@ export async function runCommon({
       queuePosition: queuedTask?.position ?? 0
     }
   }
-  const currentRunRecord = withRunRecord ? (await saveAndGetCurrentRunRecord())?.data : null
+  const currentRunRecord = resumeRunRecordId
+    ? { id: resumeRunRecordId }
+    : withRunRecord
+      ? (await saveAndGetCurrentRunRecord())?.data
+      : null
   const subProcessEnv = {
     ...process.env,
     GEEKGEEKRUND_NO_AUTO_RESTART_EXIT_CODE: [
@@ -62,6 +69,7 @@ export async function runCommon({
       AUTO_CHAT_ERROR_EXIT_CODE.MESSAGE_SEND_UNCONFIRMED,
       AUTO_CHAT_ERROR_EXIT_CODE.NO_MATCHING_JOBS,
       AUTO_CHAT_ERROR_EXIT_CODE.JOB_PAGE_NOT_READY,
+      AUTO_CHAT_ERROR_EXIT_CODE.SECURITY_CHECK_NOT_PASSED,
       ...extraNoAutoRestartExitCodes
     ].join(',')
   }

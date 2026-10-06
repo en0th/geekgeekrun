@@ -47,6 +47,7 @@ import { hasIntersection } from '@geekgeekrun/utils/number.mjs';
 import { missingJobFields, scopedMarkStrategy, ExpiringBlockSet, COOLDOWN_MS } from './job-safety.mjs'
 import { NoMatchBatchGuard, loadNextJobBatch, openJobCardForReview, listSkipReason, describeListScope, assertCanGreet } from './auto-chat-navigation.mjs'
 import { readRunSettings } from './run-settings.mjs'
+import { isSecurityCheckUrl, waitForSecurityCheck } from './security-check.mjs'
 const flattedCityList = []
 ;(cityGroupData?.zpData?.cityGroup ?? []).forEach(it => {
   const firstChar = it.firstChar
@@ -334,6 +335,48 @@ let page
 const blockBossNotNewChat = new Set()
 const blockBossNotActive = new ExpiringBlockSet()
 const blockJobNotSuit = new ExpiringBlockSet()
+
+// where the run is among its sources and BOSS page filter combinations; a run restarted after a
+// security check, or continued by the user, picks up here instead of starting over
+let runPosition = { sourceIndex: 0, filterConditionIndex: 0, fingerprint: '' }
+let pendingResume = null
+const blockEntries = (set) =>
+  [...set].map((value) => [value, set.deadlines?.get(value) ?? null])
+/** what a later run needs to go on from here */
+export function exportRunState () {
+  return {
+    position: { ...runPosition },
+    blockedJobs: blockEntries(blockJobNotSuit),
+    blockedBossesNotActive: blockEntries(blockBossNotActive),
+    blockedBossesNotNewChat: [...blockBossNotNewChat]
+  }
+}
+/**
+ * Go on from a saved state. skipCurrentFilter starts after the saved filter combination,
+ * e.g. when the run stopped because that combination had nothing usable.
+ */
+export function importRunState (state, { skipCurrentFilter = false } = {}) {
+  if (!state) return
+  const restore = (set, entries) => {
+    for (const [value, deadline] of entries ?? []) {
+      if (deadline) set.setExpiry(value, deadline)
+      else set.add(value)
+    }
+  }
+  restore(blockJobNotSuit, state.blockedJobs)
+  restore(blockBossNotActive, state.blockedBossesNotActive)
+  for (const value of state.blockedBossesNotNewChat ?? []) blockBossNotNewChat.add(value)
+  if (state.position) {
+    pendingResume = {
+      ...state.position,
+      filterConditionIndex: state.position.filterConditionIndex + (skipCurrentFilter ? 1 : 0)
+    }
+  }
+}
+/** the next mainLoop in this process goes on where this one was */
+export function resumeFromCurrentPosition () {
+  pendingResume = { ...runPosition }
+}
 
 async function markJobAsNotSuitInRecommendPage (reasonCode) {
   /**
@@ -713,6 +756,9 @@ async function toRecommendPage (hooks) {
   await page.waitForFunction(() => {
     return document.readyState === 'complete'
   }, { timeout: 120 * 1000 })
+  if (isSecurityCheckUrl(page.url())) {
+    throw new Error('AUTO_CHAT_SECURITY_CHECK')
+  }
   if (
     page.url().startsWith('https://www.zhipin.com/web/common/403.html') ||
     page.url().startsWith('https://www.zhipin.com/web/common/error.html')
@@ -804,6 +850,7 @@ async function toRecommendPage (hooks) {
       case 'search': {
         computedSourceList.push({
           type: source.type,
+          keyword: source.keyword,
           async getIsCurrentActiveSource () {
             const elHandle = await page.$(`.page-jobs-main`)
             const currentKeyWord = await elHandle?.evaluate((el) => {
@@ -838,7 +885,23 @@ async function toRecommendPage (hooks) {
   }
 
 
-  let currentSourceIndex = 0
+  // the same sources and filter settings as the saved position, or it means nothing
+  const positionFingerprint = JSON.stringify([
+    computedSourceList.map((it) => [it.type, it.selector ?? null, it.keyword ?? null]),
+    combineRecommendJobFilterType,
+    staticCombineRecommendJobFilterConditions,
+    anyCombineRecommendJobFilter
+  ])
+  const resumeFrom = pendingResume?.fingerprint === positionFingerprint ? pendingResume : null
+  pendingResume = null
+  let currentSourceIndex =
+    resumeFrom && resumeFrom.sourceIndex < computedSourceList.length ? resumeFrom.sourceIndex : 0
+  // filter combinations of the first source to pass over; past the last one, the next source
+  let skipFilterConditions =
+    resumeFrom && resumeFrom.sourceIndex === currentSourceIndex ? resumeFrom.filterConditionIndex : 0
+  if (resumeFrom) {
+    autoStartChatEventBus.emit('TASK_PROGRESS', { detail: '从上次的职位来源和筛选组合继续' })
+  }
   afterPageLoad: while (true) {
     // check set security question tip modal
     let setSecurityQuestionTipModelProxy
@@ -870,6 +933,11 @@ async function toRecommendPage (hooks) {
       const filterCondition of filterConditions
     ) {
       filterConditionIndex++
+      if (filterConditionIndex < skipFilterConditions) {
+        continue iterateFilterCondition
+      }
+      runPosition = { sourceIndex: currentSourceIndex, filterConditionIndex, fingerprint: positionFingerprint }
+      autoStartChatEventBus.emit('RUN_POSITION', { ...runPosition })
       console.log(`current filter condition index to apply: ${filterConditionIndex}`, JSON.stringify(filterCondition))
       findInCurrentFilterCondition: while(true) {
         await sleepWithRandomDelay(2500)
@@ -1757,6 +1825,7 @@ async function toRecommendPage (hooks) {
         }
       }
     }
+    skipFilterConditions = 0
     // for of reach terminal
     if (
       currentSourceIndex + 1 >= computedSourceList.length
@@ -1793,6 +1862,16 @@ export async function mainLoop (hooks) {
     hooks.puppeteerLaunched?.call(browser)
     page = (await browser.pages())[0]
     hooks.pageGotten?.call(page)
+    const ownPage = page
+    // tell the task as soon as BOSS shows a verification page, and when the user has passed it
+    let onSecurityCheck = false
+    ownPage.on('framenavigated', (frame) => {
+      if (frame !== ownPage.mainFrame()) return
+      const checking = isSecurityCheckUrl(frame.url())
+      if (checking && !onSecurityCheck) autoStartChatEventBus.emit('SECURITY_CHECK', { url: frame.url() })
+      if (!checking && onSecurityCheck) autoStartChatEventBus.emit('SECURITY_CHECK_PASSED')
+      onSecurityCheck = checking
+    })
     //set cookies
     const bossCookies = readStorageFile('boss-cookies.json')
     const bossLocalStorage = readStorageFile('boss-local-storage.json')
@@ -1823,9 +1902,41 @@ export async function mainLoop (hooks) {
 
     // ;await browser.close()
   } catch (err) {
+    // a verification page needs the user: keep the window open for them (see waitUntilSecurityCheckPassed)
+    let onSecurityCheck = false
+    try {
+      onSecurityCheck = !!page && !page.isClosed() && isSecurityCheckUrl(page.url())
+    } catch {
+      //
+    }
+    if (onSecurityCheck) {
+      console.error(err)
+      throw new Error('AUTO_CHAT_SECURITY_CHECK', { cause: err })
+    }
     closeBrowserWindow()
     throw err
   }
+}
+
+/**
+ * The task is paused on a BOSS verification page: show it and wait for the user to pass it.
+ * Resolves 'passed' (the new site cookies are saved) or 'closed'.
+ */
+export async function waitUntilSecurityCheckPassed () {
+  const ownPage = page
+  if (!ownPage) return 'closed'
+  await ownPage.bringToFront().catch(() => void 0)
+  const result = await waitForSecurityCheck({
+    currentUrl: async () => ownPage.url(),
+    isClosed: () => ownPage.isClosed() || !browser?.connected,
+    sleep
+  })
+  if (result === 'passed') {
+    // the page goes back to where it was and gets the new site cookies
+    await sleep(3000)
+    await storeStorage(ownPage).catch(() => void 0)
+  }
+  return result
 }
 
 export async function closeBrowserWindow () {

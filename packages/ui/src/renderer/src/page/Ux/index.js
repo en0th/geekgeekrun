@@ -3502,8 +3502,9 @@ export default Vue.defineComponent({
       85: "浏览器不可执行",
       86: "AI服务不可用",
       87: "发送结果未确认，请先在BOSS中核对，避免重复发送",
-      88: "连续检查5批岗位没有可沟通岗位；请检查公司名单、分类和经验条件",
+      88: "连续检查5批岗位没有可处理岗位；调整条件后可恢复",
       89: "岗位列表或详情未能确认，已停止，未继续发送；请检查BOSS页面",
+      91: "安全验证未完成（验证窗口已关闭）；可恢复任务后重新验证",
     };
     const queueDetail = (position, yielded = false) =>
       (yielded ? "已让出给排队的任务；" : "其他任务运行中；") +
@@ -3559,6 +3560,123 @@ export default Vue.defineComponent({
         },
       };
     }
+    // A 找岗位 run that stopped without being terminated is paused: it stays in 当前任务 and can be
+    // resumed (main/features/task-resume.ts). Only terminated runs go to the task history.
+    const autoResume = ref(null);
+    async function refreshResume() {
+      try {
+        autoResume.value = await window.electron.ipcRenderer.invoke("get-auto-chat-resume");
+      } catch {
+        autoResume.value = null;
+      }
+      const r = pausedAutoRun();
+      // after an app restart the dashboard still shows the paused run's numbers and log
+      if (r && String(liveTasks.value[workerIds.auto]?.runRecordId) !== String(r.runRecordId))
+        mergeLive(workerIds.auto, r.runRecordId, r.progress);
+    }
+    R.watch(
+      () => [route.value, taskStore.taskHistory.length, running.value.auto, queued.value.auto],
+      refreshResume,
+      { immediate: true },
+    );
+    /** the paused 找岗位 run, if any: saved, not running or queued, and the latest one */
+    function pausedAutoRun() {
+      const r = autoResume.value;
+      if (!r || running.value.auto || queued.value.auto) return null;
+      const last = taskStore.taskHistory.find((t) => t.workerId === workerIds.auto);
+      return !last || String(last.runRecordId) === String(r.runRecordId) ? r : null;
+    }
+    // why it is paused: the way its last part ended
+    function pauseReason(r) {
+      const last = taskStore.taskHistory.find(
+        (t) => t.workerId === workerIds.auto && String(t.runRecordId) === String(r?.runRecordId),
+      );
+      if (!last || last.code === 0) return "已手动暂停";
+      return exitCodeLabels[last.code] || "运行中断（退出码 " + last.code + "）";
+    }
+    async function resumeTask() {
+      const r = pausedAutoRun();
+      if (!r) return;
+      if (
+        r.runMode !== "collect" &&
+        !(await confirmBox(
+          "恢复找岗位任务：会向符合条件的招聘者打招呼，已处理过的岗位不会重复处理。",
+          "恢复任务",
+          "恢复",
+        ))
+      )
+        return;
+      await startTask("auto", true);
+      await refreshResume();
+    }
+    // pause keeps the run for 恢复; terminate ends it and moves it to the history
+    async function pauseTask() {
+      requestedStop.auto = "pause";
+      await stop("auto", "pause");
+      await refreshResume();
+    }
+    async function terminateTask(task) {
+      if (task !== "auto") return stop(task);
+      if (
+        !(await confirmBox(
+          "终止后这次运行会移到历史记录，不能再恢复；之后可以按当前配置重新开始。",
+          "终止找岗位任务",
+          "终止",
+        ))
+      )
+        return;
+      requestedStop.auto = "terminate";
+      stopping.value = true;
+      try {
+        await window.electron.ipcRenderer.invoke("terminate-auto-chat");
+        await taskStore.getRunningTasks();
+        await taskStore.getTaskHistory?.();
+        running.value.auto = taskStore.runningTasks.some((t) => t.workerId === workerIds.auto);
+        queued.value.auto = taskStore.taskQueue.some((t) => t.workerId === workerIds.auto);
+        await refreshResume();
+        R.message({ type: "success", message: "找岗位任务已终止，已移到历史记录。" });
+      } catch (error) {
+        R.message({ type: "error", message: "终止失败：" + error.message });
+      } finally {
+        stopping.value = false;
+      }
+    }
+    // a new run with the current settings, after the usual checks and 开始前确认
+    function restartTask(task) {
+      navigate(task);
+      R.nextTick(() => begin(task));
+    }
+    /** buttons for a task by its state: running, paused or ended */
+    function taskControls(task, { size, running: isRunning, paused } = {}) {
+      const small = size ? { size, link: true } : {};
+      if (isRunning)
+        return task === "auto"
+          ? [
+              button("暂停", pauseTask, { ...small, type: "warning", plain: !size, loading: stopping.value }),
+              button("终止", () => terminateTask(task), { ...small, type: "danger", plain: !size }),
+            ]
+          : [button("停止", () => stop(task), { ...small, type: "danger", plain: !size, loading: stopping.value })];
+      if (paused)
+        return [
+          button("恢复", resumeTask, {
+            ...small,
+            type: "primary",
+            loading: starting.value,
+            title: "从暂停的位置接着运行，计数和日志接着累计",
+          }),
+          button("终止", () => terminateTask(task), { ...small, type: "danger", plain: !size }),
+        ];
+      return [
+        button("重新启动", () => restartTask(task), {
+          ...small,
+          type: size ? "primary" : undefined,
+          title: "按当前配置开始一次新的运行",
+        }),
+      ];
+    }
+    // 找岗位 is waiting for the user to pass a BOSS security check
+    const autoPaused = () =>
+      running.value.auto && liveTasks.value[workerIds.auto]?.progress?.state === "paused";
     // counts over the whole run, across restarts
     const liveCount = (live, key) => (live?.base?.[key] || 0) + (live?.progress?.[key] || 0);
     function openTaskDetail(workerId) {
@@ -3572,6 +3690,16 @@ export default Vue.defineComponent({
         starting.value ||
         running.value[task] ||
         queued.value[task]
+      )
+        return;
+      if (
+        task === "auto" &&
+        pausedAutoRun() &&
+        !(await confirmBox(
+          "有一个已暂停的找岗位任务。开始新的运行会终止它（移到历史记录，不能再恢复）。如果只是想接着运行，请点“恢复”。",
+          "开始新的运行",
+          "终止并开始",
+        ))
       )
         return;
       validationTask = task;
@@ -3678,9 +3806,12 @@ export default Vue.defineComponent({
       }
     }
     async function confirmRun() {
+      await startTask(checks.value);
+    }
+    // resume: go on with the last 找岗位 run (its position, skipped jobs and counters)
+    async function startTask(task, resume = false) {
       if (starting.value) return;
       starting.value = true;
-      const task = checks.value;
       try {
         await taskStore.getRunningTasks();
         const id = workerIds[task];
@@ -3693,8 +3824,10 @@ export default Vue.defineComponent({
           task === "auto"
             ? "run-geek-auto-start-chat-with-boss"
             : "run-read-no-reply-auto-reminder",
+          resume ? { resume: true } : undefined,
         );
         requestedStop[task] = false;
+        curtainDismissed.value = { ...curtainDismissed.value, [task]: null };
         taskProgress.value[task] = {
           startedAt: Date.now(),
           viewed: 0,
@@ -3720,24 +3853,26 @@ export default Vue.defineComponent({
               }
             : {
                 type: "success",
-                title: "任务已启动",
-                message: "运行中修改的条件用于下次开始，不改变本次任务使用的配置。",
+                title: resume ? "任务已继续" : "任务已启动",
+                message: resume
+                  ? "从上次停下的职位来源和筛选组合继续，已处理过的岗位不会重复处理。"
+                  : "运行中修改的条件用于下次开始，不改变本次任务使用的配置。",
               },
         );
         await taskStore.getRunningTasks();
       } catch (error) {
         R.message({
           type: "error",
-          title: "任务未启动",
+          title: resume ? "任务未能继续" : "任务未启动",
           message: error.message + "。请修复后重试。",
         });
       } finally {
         starting.value = false;
       }
     }
-    async function stop(task) {
+    async function stop(task, kind = "stop") {
       if (stopping.value) return;
-      requestedStop[task] = true;
+      requestedStop[task] = kind;
       stopping.value = true;
       try {
         const wasQueued = queued.value[task] && !running.value[task];
@@ -3757,7 +3892,14 @@ export default Vue.defineComponent({
         R.message(
           running.value[task]
             ? { type: "info", message: "停止请求已发送，等待任务退出。" }
-            : { type: "success", message: wasQueued ? "已移出队列。" : "任务已停止。" },
+            : {
+                type: "success",
+                message: wasQueued
+                  ? "已移出队列。"
+                  : kind === "pause"
+                    ? "任务已暂停，可在任务列表中恢复。"
+                    : "任务已停止。",
+              },
         );
       } catch (error) {
         R.message({ type: "error", message: "停止失败：" + error.message });
@@ -3791,6 +3933,7 @@ export default Vue.defineComponent({
         error: "任务异常结束",
         queued: "排队等待中",
         yielded: "已让出，等待继续",
+        paused: "已暂停，等待安全验证",
       };
       return h(
         "section",
@@ -4052,6 +4195,28 @@ export default Vue.defineComponent({
         });
       return paceStep();
     }
+    // 找岗位 page while its run is paused: the settings stay editable, the run waits for 恢复
+    function pausedBanner() {
+      const r = pausedAutoRun();
+      if (!r) return null;
+      const p = r.progress || {};
+      const collect = r.runMode === "collect";
+      return h("section", { class: "ux-paused-banner", role: "status" }, [
+        h("div", { class: "ux-paused-banner-head" }, [
+          h("span", { class: "ux-live-dot is-waiting", "aria-hidden": "true" }),
+          h("strong", "找岗位任务已暂停"),
+          h("span", { class: "ux-hint" }, pauseReason(r)),
+        ]),
+        h(
+          "p",
+          `已查看并入库 ${p.viewed || 0} · ${collect ? "已收集 " + (p.collected || 0) : "已打招呼 " + (p.sent || 0)} · 已跳过 ${p.skipped || 0}。可以先修改配置，恢复后从暂停的位置接着运行，已处理的岗位不再重复处理。`,
+        ),
+        inline([
+          ...taskControls("auto", { paused: true }),
+          button("查看任务", () => openTaskDetail(workerIds.auto), { plain: true }),
+        ]),
+      ]);
+    }
     function autoPage() {
       const steps = autoSteps();
       const current = currentStepId(steps);
@@ -4062,7 +4227,7 @@ export default Vue.defineComponent({
         heading("找岗位"),
         templateBar(),
         problems(errors.value),
-        runPanel("auto"),
+        pausedBanner() || runPanel("auto"),
         railCollapsed.value ? null : sectionRail(),
         stepBar(steps, current, sections),
         stepContent(current),
@@ -4082,6 +4247,7 @@ export default Vue.defineComponent({
       error: "任务异常结束",
       queued: "排队等待中",
       yielded: "已让出，等待继续",
+      paused: "已暂停，等待安全验证",
     };
     function sinceText(at) {
       if (!at) return "";
@@ -4103,6 +4269,7 @@ export default Vue.defineComponent({
       const runId = curtainRunId(task);
       const p = live?.progress || taskProgress.value[task] || {};
       const waiting = queued.value[task] && !running.value[task];
+      const paused = !waiting && p.state === "paused";
       const collect = task === "auto" && draft.value.runMode === "collect";
       const name = queuedTaskLabels[id];
       const numbers =
@@ -4117,15 +4284,23 @@ export default Vue.defineComponent({
         [
           h("div", { class: "ux-task-curtain-card" }, [
             h("div", { class: "ux-task-curtain-head" }, [
-              h("span", { class: ["ux-live-dot", waiting ? "is-waiting" : ""], "aria-hidden": "true" }),
-              h("h2", (waiting ? name + "任务排队中" : name + "任务运行中")),
+              h("span", {
+                class: ["ux-live-dot", waiting ? "is-waiting" : "", paused ? "is-paused" : ""],
+                "aria-hidden": "true",
+              }),
+              h(
+                "h2",
+                waiting ? name + "任务排队中" : paused ? name + "任务已暂停" : name + "任务运行中",
+              ),
             ]),
             h(
               "p",
               { class: "ux-task-curtain-detail" },
               waiting
                 ? p.detail || "其他任务运行中，轮到时自动开始。"
-                : (progressTitles[p.state] || "正在运行") + (p.detail ? "：" + p.detail : ""),
+                : paused
+                  ? p.detail
+                  : (progressTitles[p.state] || "正在运行") + (p.detail ? "：" + p.detail : ""),
             ),
             waiting
               ? null
@@ -4138,11 +4313,9 @@ export default Vue.defineComponent({
                 ),
             inline([
               button("查看任务", () => openTaskDetail(id), { type: "primary" }),
-              button(waiting ? "移出队列" : "停止任务", () => stop(task), {
-                type: "danger",
-                plain: true,
-                loading: stopping.value,
-              }),
+              ...(waiting
+                ? [button("移出队列", () => removeQueued(id), { type: "danger", plain: true })]
+                : taskControls(task, { running: true })),
             ]),
             hint(
               "任务在后台运行，可以随时去资料库、求职记录等页面查看数据；在“任务列表”中能看到这个任务的实时进度和执行日志。",
@@ -4565,6 +4738,7 @@ export default Vue.defineComponent({
       waiting: ["等待", "info"],
       searching: ["翻页", "info"],
       retrying: ["重试", "warning"],
+      paused: ["暂停", "warning"],
       blocked: ["停止", "danger"],
       error: ["异常", "danger"],
       stopped: ["停止", "info"],
@@ -4591,10 +4765,16 @@ export default Vue.defineComponent({
         (workerId === workerIds.auto ? lastRun?.runMode || draft.value.runMode : null);
       const task = Object.keys(workerIds).find((k) => workerIds[k] === workerId);
       const active = Boolean(runningEntry || queueEntry);
-      const status = runningEntry
+      // a paused 找岗位 run (stopped, not terminated)
+      const pausedHere = workerId === workerIds.auto && !runningEntry && !queueEntry ? pausedAutoRun() : null;
+      const status = pausedHere
+        ? ["已暂停", "warning"]
+        : runningEntry
         ? runningEntry.yielding
           ? ["即将让出", "warning"]
-          : ["运行中", "primary"]
+          : p.state === "paused"
+            ? ["已暂停 · 等待安全验证", "warning"]
+            : ["运行中", "primary"]
         : queueEntry
           ? queueEntry.reason === "yielded"
             ? ["已让出，等待继续", "warning"]
@@ -4651,13 +4831,15 @@ export default Vue.defineComponent({
           live?.runRecordId ? h("span", { class: "ux-hint" }, "运行记录 #" + live.runRecordId) : null,
         ]),
         inline([
-          active
-            ? button(
-                queueEntry && !runningEntry ? "移出队列" : "停止任务",
-                () => (task ? stop(task) : removeQueued(workerId)),
-                { type: "danger", plain: true, loading: stopping.value },
-              )
-            : null,
+          queueEntry && !runningEntry
+            ? button("移出队列", () => removeQueued(workerId), { type: "danger", plain: true })
+            : runningEntry
+              ? task
+                ? taskControls(task, { running: true })
+                : button("停止任务", () => ipc("stop-task", workerId), { type: "danger", plain: true })
+              : task
+                ? taskControls(task, { paused: pausedHere })
+                : null,
           startedAt && historyTarget({ workerId, runMode })
             ? button(
                 "查看本次产生的数据",
@@ -4675,6 +4857,14 @@ export default Vue.defineComponent({
             ? button("查看配置", () => navigate(task), { plain: true })
             : null,
         ]),
+        pausedHere
+          ? alert(
+              "已暂停：" +
+                pauseReason(pausedHere) +
+                "。恢复后从暂停时的职位来源和筛选组合接着查找，已处理的岗位不再重复处理，计数和日志接着累计；可以先修改配置再恢复。终止后这次运行移到历史记录。",
+              "warning",
+            )
+          : null,
         h("div", { class: "ux-task-metrics" }, [
           metric(
             active ? "已运行" : "运行时长",
@@ -4782,7 +4972,11 @@ export default Vue.defineComponent({
         ...workerTasks.map((t) => ({
           key: "run-" + t.workerId,
           workerId: t.workerId,
-          state: t.yielding ? "yielding" : "running",
+          state: t.yielding
+            ? "yielding"
+            : liveTasks.value[t.workerId]?.progress?.state === "paused"
+              ? "verifying"
+              : "running",
           since: Date.now() - (t.uptime || 0),
           args: t.args,
         })),
@@ -4805,16 +4999,48 @@ export default Vue.defineComponent({
           .find((a) => String(a).startsWith("--run-mode="))
           ?.split("=")[1],
       }));
+      const paused = pausedAutoRun();
+      if (paused)
+        current.push({
+          key: "paused-" + paused.runRecordId,
+          workerId: workerIds.auto,
+          state: "suspended",
+          since: paused.savedAt,
+          startedAt: paused.progress?.startedAt,
+          runMode: paused.runMode,
+          reason: pauseReason(paused),
+        });
       const stateTags = {
         running: ["运行中", "primary"],
         yielding: ["即将让出", "warning"],
         waiting: ["排队等待", "info"],
         yielded: ["已让出，等待继续", "warning"],
         restarting: ["等待重启", "danger"],
+        verifying: ["已暂停 · 等待安全验证", "warning"],
+        suspended: ["已暂停", "warning"],
       };
-      const history = taskStore.taskHistory.filter(
-        (t) => t.workerId in queuedTaskLabels,
+      // runs still going (running, queued, paused) are not history yet
+      const runIdOf = (args) =>
+        (args || []).find((a) => String(a).startsWith("--run-record-id="))?.split("=")[1];
+      const openRuns = new Set(
+        [
+          ...taskStore.runningTasks.map((t) => t.workerId + "#" + runIdOf(t.args)),
+          ...taskStore.taskQueue.map((t) => t.workerId + "#" + runIdOf(t.args)),
+          paused ? workerIds.auto + "#" + paused.runRecordId : null,
+        ].filter(Boolean),
       );
+      // a run that made way for another task has several parts: one row from its first start
+      // to its last end (the list is newest first)
+      const runs = new Map();
+      for (const t of taskStore.taskHistory) {
+        if (!(t.workerId in queuedTaskLabels)) continue;
+        const key = Number(t.runRecordId) > 0 ? t.workerId + "#" + t.runRecordId : t.id;
+        if (openRuns.has(key)) continue;
+        const run = runs.get(key);
+        if (!run) runs.set(key, { ...t });
+        else run.startedAt = Math.min(run.startedAt, t.startedAt);
+      }
+      const history = [...runs.values()];
       const tab = tasksTab.value;
       return [
         heading("任务列表"),
@@ -4856,13 +5082,17 @@ export default Vue.defineComponent({
                 ),
                 column({ label: "方式", width: 90 }, (row) => runModeLabel(row)),
                 column({ label: "开始 / 加入时间", width: 130 }, (row) =>
-                  clockTime(row.since),
+                  clockTime(row.startedAt || row.since),
                 ),
                 column({ label: "已运行 / 已等待", width: 130 }, (row) =>
-                  durationText(progressClock.value - row.since),
+                  row.state === "suspended"
+                    ? "已暂停 " + durationText(progressClock.value - row.since)
+                    : durationText(progressClock.value - row.since),
                 ),
                 column({ label: "当前操作", minWidth: 200, showOverflowTooltip: true }, (row) =>
-                  liveTasks.value[row.workerId]?.progress?.detail || "—",
+                  row.state === "suspended"
+                    ? row.reason
+                    : liveTasks.value[row.workerId]?.progress?.detail || "—",
                 ),
                 column({ label: "操作", width: 190, fixed: "right" }, (row) =>
                   // buttons act on their own; a click elsewhere on the row opens the task
@@ -4872,17 +5102,18 @@ export default Vue.defineComponent({
                       type: "primary",
                       size: "small",
                     }),
-                    row.state === "running" || row.state === "yielding"
-                      ? [
-                          button(
-                            "停止",
-                            () =>
-                              taskOf(row.workerId)
-                                ? stop(taskOf(row.workerId))
-                                : ipc("stop-task", row.workerId),
-                            { link: true, type: "danger", size: "small" },
-                          ),
-                        ]
+                    ["running", "yielding", "verifying", "suspended"].includes(row.state)
+                      ? taskOf(row.workerId)
+                        ? taskControls(taskOf(row.workerId), {
+                            size: "small",
+                            running: row.state !== "suspended",
+                            paused: row.state === "suspended",
+                          })
+                        : button("停止", () => ipc("stop-task", row.workerId), {
+                            link: true,
+                            type: "danger",
+                            size: "small",
+                          })
                       : button("移出队列", () => removeQueued(row.workerId), {
                           link: true,
                           type: "danger",
@@ -4907,7 +5138,13 @@ export default Vue.defineComponent({
               },
               () => [
                 column({ label: "结果", width: 120 }, (row) => {
-                  const [label, type] = taskOutcomeLabels[row.outcome] || [row.outcome, "info"];
+                  // 找岗位 runs reach the history only by being terminated (pauses stay current)
+                  const [label, type] =
+                    row.workerId === workerIds.auto
+                      ? ["已终止", "info"]
+                      : row.outcome === "failed" && [88, 89, 91].includes(row.code)
+                        ? ["已停止", "warning"]
+                        : taskOutcomeLabels[row.outcome] || [row.outcome, "info"];
                   return E("ElTag", { size: "small", type, disableTransitions: true }, () => label);
                 }),
                 column({ label: "任务", minWidth: 150 }, (row) =>
@@ -4920,20 +5157,34 @@ export default Vue.defineComponent({
                   durationText(row.endedAt - row.startedAt),
                 ),
                 column({ label: "说明", minWidth: 200, showOverflowTooltip: true }, (row) =>
-                  row.outcome === "failed" && row.code != null
-                    ? exitCodeLabels[row.code] || "退出码 " + row.code
-                    : row.outcome === "yielded"
-                      ? "让出给排队的任务，稍后自动继续"
+                  // a terminated 找岗位 run: why it last stopped, without the "can resume" advice
+                  row.workerId === workerIds.auto
+                    ? row.code
+                      ? "最后一次暂停：" +
+                        (exitCodeLabels[row.code] || "退出码 " + row.code).split("；")[0]
+                      : ""
+                    : row.outcome === "failed" && row.code != null
+                      ? exitCodeLabels[row.code] || "退出码 " + row.code
                       : "",
                 ),
-                column({ label: "数据", width: 110, fixed: "right" }, (row) =>
-                  historyTarget(row)
-                    ? button("查看数据", () => openHistoryData(row), {
-                        link: true,
-                        type: "primary",
-                        size: "small",
-                      })
-                    : h("span", { class: "ux-hint" }, "—"),
+                column({ label: "操作", width: 220, fixed: "right" }, (row) =>
+                  h("span", { class: "ux-task-actions", onClick: (e) => e.stopPropagation() }, [
+                    historyTarget(row)
+                      ? button("查看数据", () => openHistoryData(row), {
+                          link: true,
+                          type: "primary",
+                          size: "small",
+                        })
+                      : null,
+                    // the newest ended run of a task with nothing running, queued or paused
+                    taskOf(row.workerId) &&
+                    history.find((t) => t.workerId === row.workerId)?.id === row.id &&
+                    !running.value[taskOf(row.workerId)] &&
+                    !queued.value[taskOf(row.workerId)] &&
+                    !(taskOf(row.workerId) === "auto" && paused)
+                      ? taskControls(taskOf(row.workerId), { size: "small" })
+                      : null,
+                  ]),
                 ),
               ],
             ),
@@ -7495,17 +7746,31 @@ export default Vue.defineComponent({
                 ? inline([
                     E(
                       "ElTag",
-                      { size: "small", type: queued.value.auto ? "info" : "primary" },
+                      {
+                        size: "small",
+                        type: queued.value.auto
+                          ? "info"
+                          : autoPaused()
+                            ? "warning"
+                            : "primary",
+                      },
                       queued.value.auto
                         ? "打招呼排队中"
-                        : draft.value.runMode === "collect"
+                        : autoPaused()
+                          ? "已暂停 · 需验证"
+                          : draft.value.runMode === "collect"
                           ? "收集中"
                           : "打招呼中",
                     ),
-                    button(queued.value.auto ? "移出队列" : "停止", () => stop("auto"), {
-                      link: true,
-                      loading: stopping.value,
-                    }),
+                    queued.value.auto
+                      ? button("移出队列", () => removeQueued(workerIds.auto), { link: true })
+                      : button("暂停", pauseTask, { link: true, loading: stopping.value }),
+                  ])
+                : null,
+              pausedAutoRun()
+                ? inline([
+                    E("ElTag", { size: "small", type: "warning" }, () => "找岗位已暂停"),
+                    button("恢复", resumeTask, { link: true, loading: starting.value }),
                   ])
                 : null,
               running.value.follow || queued.value.follow
@@ -7780,7 +8045,7 @@ export default Vue.defineComponent({
         if (taskProgress.value[task]) {
           taskProgress.value[task].state = message.restarting
             ? "retrying"
-            : [88, 89].includes(message.code)
+            : [88, 89, 91].includes(message.code)
               ? "blocked"
               : requestedStop[task] || message.code === 0
                 ? "stopped"
@@ -7790,7 +8055,7 @@ export default Vue.defineComponent({
             ? "重新检查后开始，不保证原位置续跑"
             : requestedStop[task] || message.code === 0
               ? "任务已停止，实际累计统计保留"
-              : [88, 89].includes(message.code)
+              : [88, 89, 91].includes(message.code)
                 ? taskProgress.value[task].detail
                 : "请修复问题后重新开始；不会从原位置续跑";
         }
@@ -7808,10 +8073,20 @@ export default Vue.defineComponent({
             R.message({ type: "success", title: name + "已结束", message: "任务已正常结束。" });
         } else
           R.message({
-            type: [88, 89].includes(message.code) ? "warning" : "error",
-            title: name + ([88, 89].includes(message.code) ? "已停止" : "异常结束"),
+            type: [88, 89, 91].includes(message.code) ? "warning" : "error",
+            title:
+              task === "auto"
+                ? name + "已暂停"
+                : name + ([88, 89, 91].includes(message.code) ? "已停止" : "异常结束"),
             message:
-              (labels[message.code] || "退出码 " + message.code) + "。请修复后重新开始。",
+              (labels[message.code] || "退出码 " + message.code) +
+              (task === "auto"
+                ? "。处理后可在任务列表中恢复。"
+                : "。请修复后重新开始。"),
+            action:
+              task === "auto"
+                ? { label: "查看任务", onClick: () => openTaskDetail(workerIds.auto) }
+                : undefined,
           });
       },
     );

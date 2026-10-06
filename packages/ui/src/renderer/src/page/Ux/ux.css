@@ -2446,6 +2446,17 @@ html:not(.replica-child) body {
   background: var(--el-color-warning);
   animation: none;
 }
+/* paused for a BOSS security check: waits on the user */
+.ux-live-dot.is-paused {
+  background: var(--el-color-warning);
+  box-shadow: 0 0 0 0 rgba(230, 162, 60, 0.5);
+  animation: ux-paused-pulse 1.2s ease-out infinite;
+}
+@keyframes ux-paused-pulse {
+  to {
+    box-shadow: 0 0 0 10px rgba(230, 162, 60, 0);
+  }
+}
 @keyframes ux-live-pulse {
   to {
     box-shadow: 0 0 0 10px rgba(103, 194, 58, 0);
@@ -2655,4 +2666,25 @@ html:not(.replica-child) body {
 .ux-check-facts dd {
   margin: 0;
   word-break: break-word;
+}
+/* 找岗位 page while its run is paused */
+.ux-paused-banner {
+  margin: 12px 0 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--el-color-warning-light-5);
+  border-radius: 8px;
+  background: var(--el-color-warning-light-9);
+}
+.ux-paused-banner-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ux-paused-banner-head .ux-hint {
+  margin: 0;
+}
+.ux-paused-banner p {
+  margin: 8px 0 10px;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
 }
