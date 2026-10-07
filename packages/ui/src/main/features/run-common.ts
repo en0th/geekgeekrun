@@ -70,6 +70,7 @@ export async function runCommon({
       AUTO_CHAT_ERROR_EXIT_CODE.NO_MATCHING_JOBS,
       AUTO_CHAT_ERROR_EXIT_CODE.JOB_PAGE_NOT_READY,
       AUTO_CHAT_ERROR_EXIT_CODE.SECURITY_CHECK_NOT_PASSED,
+      AUTO_CHAT_ERROR_EXIT_CODE.ALL_SOURCES_ROTATED,
       ...extraNoAutoRestartExitCodes
     ].join(',')
   }

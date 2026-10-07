@@ -27,7 +27,8 @@ export const EXIT_CODE_LABELS: Record<number, string> = {
   87: '发送结果未确认，请先在BOSS中核对，避免重复发送',
   88: '连续检查5批岗位没有可处理岗位；调整条件后可恢复',
   89: '岗位列表或详情未能确认，已停止，未继续发送；请检查BOSS页面',
-  91: '安全验证未完成（验证窗口已关闭）；可恢复任务后重新验证'
+  91: '安全验证未完成（验证窗口已关闭）；可恢复任务后重新验证',
+  92: '所有职位来源已轮换完成，任务正常结束'
 }
 
 export const OUTCOME_LABELS: Record<string, string> = {

@@ -65,7 +65,12 @@ import {
   DEFAULT_JOB_LIST_LOAD_WAIT_SECONDS,
   DEFAULT_JOB_DETAIL_VIEW_WAIT_SECONDS,
   MAX_WAIT_SECONDS,
+  DEFAULT_PER_SOURCE_SUCCESS_LIMIT,
+  DEFAULT_NO_MATCH_STREAK_LIMIT,
 } from "@geekgeekrun/geek-auto-start-chat-with-boss/run-settings.mjs";
+import {
+  DEFAULT_POSTER_HR_TITLE_REG_EXP_STR,
+} from "@geekgeekrun/geek-auto-start-chat-with-boss/poster-title-filter.mjs";
 import {
   createNativeState,
   validModelList,
@@ -76,6 +81,7 @@ import {
   isSearchRotationEnabled,
   searchOptionsForRun,
   countPlatformCombinations,
+  potentialSourceCount,
 } from "./search-settings.js";
 
 export default Vue.defineComponent({
@@ -142,6 +148,8 @@ export default Vue.defineComponent({
       pause: true,
       actions: 100,
       minutes: 15,
+      perSourceSuccessLimit: null,
+      noMatchStreakLimit: null,
       strategy: 3,
       overrides: {},
       scopes: {},
@@ -186,6 +194,14 @@ export default Vue.defineComponent({
       pause: original.isSageTimeEnabled,
       actions: original.sageTimeOpTimes,
       minutes: original.sageTimePauseMinute,
+      perSourceSuccessLimit:
+        original.autoChatPerSourceSuccessLimit == null
+          ? null
+          : original.autoChatPerSourceSuccessLimit,
+      noMatchStreakLimit:
+        original.autoChatNoMatchStreakLimit == null
+          ? null
+          : original.autoChatNoMatchStreakLimit,
       companies: initial.config["target-company-list.json"] || [],
       hr: original.isPosterHrFilterEnabled,
       hrRule: original.posterHrTitleRegExpStr,
@@ -313,8 +329,6 @@ export default Vue.defineComponent({
       const runSettings = readRunSettings(original);
       for (const key of Object.keys(runSettings))
         if (draft.value[key] === undefined) draft.value[key] = runSettings[key];
-      if (draft.value.useGlobalPace === undefined)
-        draft.value.useGlobalPace = original.useGlobalRunPace === true;
     }
     // Previously unchecked salary fields were inactive drafts, not constraints.
     for (const d of [draft.value, shared.value])
@@ -419,12 +433,13 @@ export default Vue.defineComponent({
       settingTab = ref("account");
     const platformOpen = ref(false),
       searchRotationOpen = ref(false),
+      sourceRotationOpen = ref(false),
       platformFiltersOpen = ref(false),
       policyExceptionsOpen = ref(false),
       activeAutoSection = ref("job-run-mode");
     // the 找岗位 configuration is a step-by-step form; this is the step on screen
     const autoStep = ref("job-run-mode"),
-      // global run pace (settings → 运行节奏); paceForm is its edit copy
+      // the single run pace (设置 → 运行节奏); paceForm is its edit copy
       globalPace = ref(null),
       paceForm = ref(null),
       paceSaving = ref(false);
@@ -954,7 +969,6 @@ export default Vue.defineComponent({
         return "必填";
       if (key === "follow-categories" && follow.value.roleOnly)
         return "启用后需设置分类";
-      if (key === "rhythm" && draft.value.pause) return "启用休息后必填";
       if (key === "companies" && needsCompanyList(effective()))
         return "当前处理方式必填";
       return "";
@@ -1628,7 +1642,7 @@ export default Vue.defineComponent({
                   "aria-label": "模板包含哪些设置",
                 }),
               default: () => [
-                h("p", "模板保存求职条件、职位来源、处理方式与运行节奏。"),
+                h("p", "模板保存运行方式、职位筛选与来源、处理方式。"),
                 hint("选择模板不会切换消息跟进、消息内容或AI配置。"),
               ],
             },
@@ -1753,15 +1767,17 @@ export default Vue.defineComponent({
       }
       return true;
     }
-    // settings every run uses, whatever the run mode
+    // settings every run uses, whatever the run mode; the pace is the single global one
+    // (设置 → 运行节奏), reloaded in begin() before each run starts
     function runConfig(d) {
-      // the global pace is read when the configuration is saved (begin() loads it first)
-      const pace = d.useGlobalPace && globalPace.value ? globalPace.value : d;
+      const pace = globalPace.value || d;
       return {
         autoChatRunMode: d.runMode === "collect" ? "collect" : "chat",
         collectOnlyMatchingJobs: d.collectOnlyMatchingJobs !== false,
         skipUnparseableSalaryJob: d.skipUnparseableSalaryJob !== false,
-        useGlobalRunPace: Boolean(d.useGlobalPace),
+        // null keeps the runtime defaults; 0 disables that rotation trigger
+        autoChatPerSourceSuccessLimit: d.perSourceSuccessLimit ?? null,
+        autoChatNoMatchStreakLimit: d.noMatchStreakLimit ?? null,
         isSageTimeEnabled: pace.pause,
         ...(pace.pause
           ? { sageTimeOpTimes: pace.actions, sageTimePauseMinute: pace.minutes }
@@ -1987,18 +2003,6 @@ export default Vue.defineComponent({
       const a = [];
       if (!isCollectAll(d)) conditionIssues(d, a);
       sourceIssues(d, a);
-      if (
-        !d.useGlobalPace &&
-        d.pause &&
-        (!Number.isInteger(d.actions) ||
-          d.actions < 1 ||
-          !Number.isFinite(d.minutes) ||
-          d.minutes < 0)
-      )
-        a.push({
-          field: "rhythm",
-          text: "休息前操作次数须为正整数，休息时长不能留空或小于0。",
-        });
       return a;
     }
     function conditionIssues(d, a) {
@@ -2029,6 +2033,15 @@ export default Vue.defineComponent({
           field: "companies",
           text: "只标记指定公司需要公司名单。请填写“只看这些公司”，或改为略过岗位。",
         });
+      if (d.hr && d.hrRule)
+        try {
+          new RegExp(d.hrRule, "i");
+        } catch {
+          a.push({
+            field: "hrRule",
+            text: "招聘者身份规则格式错误，请检查括号或转义符。",
+          });
+        }
       for (const [key, pattern] of Object.entries(d.legacyPatterns || {}))
         try {
           new RegExp(pattern, "im");
@@ -2189,7 +2202,6 @@ export default Vue.defineComponent({
       route.value;
       modal.value;
       draft.value.salary;
-      draft.value.pause;
       follow.value.source;
       syncValidationAccessibility();
     });
@@ -2623,6 +2635,27 @@ export default Vue.defineComponent({
                 }),
                 "业务负责人自己发的岗位也可能被排除掉。",
               ),
+              obj.hr
+                ? validationArea("hrRule", [
+                    h("div", { class: "ux-hr-rule-editor" }, [
+                      input(obj, "hrRule", {
+                        type: "textarea",
+                        autosize: { minRows: 1, maxRows: 3 },
+                        placeholder: DEFAULT_POSTER_HR_TITLE_REG_EXP_STR,
+                        disabled: useField(key),
+                        "aria-label": "招聘者身份匹配规则",
+                      }),
+                      button(
+                        "恢复默认",
+                        () => {
+                          update(obj, "hrRule", "");
+                        },
+                        { link: true, type: "primary", size: "small" },
+                      ),
+                    ]),
+                    hint("招聘者头衔含任一关键词才算人事，不区分大小写；留空使用上面的默认规则。"),
+                  ])
+                : null,
             ]),
           );
           continue;
@@ -2821,6 +2854,18 @@ export default Vue.defineComponent({
         "info",
       ];
     }
+    // one-line summary of the source rotation settings; null when there is nothing to rotate
+    function rotationFact(d) {
+      if (potentialSourceCount(d) < 2) return null;
+      const succ = d.perSourceSuccessLimit ?? DEFAULT_PER_SOURCE_SUCCESS_LIMIT;
+      const streak = d.noMatchStreakLimit ?? DEFAULT_NO_MATCH_STREAK_LIMIT;
+      return (
+        [
+          succ > 0 ? `每个来源处理满 ${succ} 个换下一个` : "不按处理数量换源",
+          streak > 0 ? `连续 ${streak} 个不符换下一个` : "不按连续不符换源",
+        ].join("；") + "；全部来源轮完即结束"
+      );
+    }
     function checkFactRows() {
       if (checks.value === "follow") {
         const f = follow.value;
@@ -2833,16 +2878,17 @@ export default Vue.defineComponent({
       const d = effective();
       const facts = Object.fromEntries(templateFacts(d));
       const g = globalPace.value;
-      const pace =
-        d.useGlobalPace && g
-          ? "全局设置：" +
-            (g.pause ? `每 ${g.actions} 次操作休息 ${g.minutes} 分钟` : "不定时休息")
-          : facts["运行节奏"];
+      const pace = g
+        ? g.pause
+          ? `每 ${g.actions} 次操作休息 ${g.minutes} 分钟`
+          : "不定时休息"
+        : "读取中…";
       const keys = isCollectAll(d)
-        ? ["运行方式", "职位来源"]
+        ? ["运行方式", "职位来源", ...(potentialSourceCount(d) > 1 ? ["换源规则"] : [])]
         : [
             "运行方式",
             "职位来源",
+            ...(potentialSourceCount(d) > 1 ? ["换源规则"] : []),
             "目标岗位",
             "工作城市",
             "期望薪资",
@@ -2856,7 +2902,13 @@ export default Vue.defineComponent({
             ].filter((k) => !["不限", "无"].includes(facts[k])),
             ...(d.runMode === "collect" ? [] : ["默认处理方式"]),
           ];
-      return [...keys.map((k) => [k, facts[k]]), ["运行节奏", pace]];
+      return [
+        ...keys.map((k) => [k, facts[k]]),
+        ...(d.runMode === "chat"
+          ? [["发送内容", "BOSS账号设置的招呼语"]]
+          : []),
+        ["运行节奏", pace],
+      ];
     }
     function checkFacts() {
       const rows = checkFactRows();
@@ -3059,6 +3111,39 @@ export default Vue.defineComponent({
                 ]),
               ),
             ], "先查排在上面的来源，查完再换下一个。这只是查找顺序，不代表岗位更重要。")
+          : null,
+        potentialSourceCount(d) > 1
+          ? disclosure(
+              "换源规则",
+              sourceRotationOpen,
+              "source-rotation",
+              [
+                h("div", { class: "ux-rhythm-line" }, [
+                  "每个来源处理满",
+                  number(d, "perSourceSuccessLimit", {
+                    min: 0,
+                    max: 9999,
+                    placeholder: String(DEFAULT_PER_SOURCE_SUCCESS_LIMIT),
+                    "aria-label": "换源数量",
+                  }),
+                  "个岗位后，换下一个来源",
+                ]),
+                h("div", { class: "ux-rhythm-line" }, [
+                  "连续",
+                  number(d, "noMatchStreakLimit", {
+                    min: 0,
+                    max: 9999,
+                    placeholder: String(DEFAULT_NO_MATCH_STREAK_LIMIT),
+                    "aria-label": "止损数量",
+                  }),
+                  "个岗位不符合条件后，换下一个来源",
+                ]),
+                explain(
+                  "处理指收集岗位或打招呼。填 0 表示不按这条规则换源；留空用默认值。连续 5 批没有可处理的岗位也会换源。所有来源轮换一遍后，任务正常结束。",
+                ),
+              ],
+              "多个搜索关键词也算多个来源，会一起按顺序轮换。",
+            )
           : null,
       ];
     }
@@ -3713,8 +3798,35 @@ export default Vue.defineComponent({
     // ---- task details drawer: 运行概览 / 本次数据 / 任务配置, over whatever page is open ----
     const selectedTask = ref(null);
     const detailTab = ref("overview");
+    // 任务配置 tab: the snapshot saved when the run started, plus its diff against the current draft
+    const runSnapshot = ref(null);
+    const runSnapshotLoadedFor = ref(null);
+    const snapshotDiffOpen = ref(false);
+    async function loadRunSnapshot(t) {
+      const id = Number(t?.runRecordId);
+      if (!id) {
+        runSnapshot.value = null;
+        runSnapshotLoadedFor.value = null;
+        return;
+      }
+      runSnapshotLoadedFor.value = t;
+      try {
+        runSnapshot.value = await window.electron.ipcRenderer.invoke(
+          "get-run-config-snapshot",
+          { runRecordId: id },
+        );
+      } catch {
+        runSnapshot.value = null;
+      }
+    }
+    R.watch(detailTab, (v) => {
+      if (v === "config" && selectedTask.value) {
+        snapshotDiffOpen.value = false;
+        loadRunSnapshot(selectedTask.value);
+      }
+    });
     /** a running, queued or paused task */
-    function openTaskDetail(workerId) {
+    function openTaskDetail(workerId, tab = "overview") {
       const entry = [...taskStore.runningTasks, ...taskStore.taskQueue].find(
         (t) => t.workerId === workerId,
       );
@@ -3743,7 +3855,12 @@ export default Vue.defineComponent({
             current: true,
           };
       taskDetailId.value = workerId;
-      detailTab.value = "overview";
+      detailTab.value = tab;
+      // opened straight at the config tab: the watch only fires on tab changes
+      if (tab === "config") {
+        snapshotDiffOpen.value = false;
+        loadRunSnapshot(selectedTask.value);
+      }
     }
     /** a row of the 任务列表 table */
     function openRunDetail(row) {
@@ -3794,7 +3911,8 @@ export default Vue.defineComponent({
       shortResume.value = false;
       try {
         if (!(await ensureBossLogin(task))) return;
-        if (task === "auto" && draft.value.useGlobalPace) await loadGlobalPace();
+        // the run pace is a single global setting; load it so this run uses the latest value
+        if (task === "auto") await loadGlobalPace();
         if (!(await save(false, task))) return;
         if (
           task === "follow" &&
@@ -3909,6 +4027,21 @@ export default Vue.defineComponent({
         );
         requestedStop[task] = false;
         curtainDismissed.value = { ...curtainDismissed.value, [task]: null };
+        // the run's config snapshot (任务详情 → 任务配置); resuming keeps the run's original one
+        if (result.runRecordId && !resume) {
+          window.electron.ipcRenderer
+            .invoke("save-run-config-snapshot", {
+              runRecordId: result.runRecordId,
+              config: {
+                version: 1,
+                task,
+                savedAt: new Date().toISOString(),
+                draft: templateSnapshot(),
+                follow: clone(follow.value),
+              },
+            })
+            .catch(() => void 0);
+        }
         taskProgress.value[task] = {
           startedAt: Date.now(),
           viewed: 0,
@@ -3937,7 +4070,7 @@ export default Vue.defineComponent({
                 title: resume ? "任务已继续" : "任务已启动",
                 message: resume
                   ? "从上次停下的职位来源和筛选组合继续，已处理过的岗位不会重复处理。"
-                  : "运行中修改的条件用于下次开始，不改变本次任务使用的配置。",
+                  : "运行中修改的条件自下次运行生效，本次任务不受影响。",
               },
         );
         await taskStore.getRunningTasks();
@@ -4102,29 +4235,17 @@ export default Vue.defineComponent({
       const all = isCollectAll(d);
       return [
         { id: "job-run-mode", label: "运行方式" },
-        {
-          id: "job-preferences",
-          label: "求职条件",
-          skipped: all ? "收集全部岗位，无需配置" : "",
-        },
-        { id: "job-sources", label: "职位来源" },
+        { id: "job-preferences", label: "职位筛选与来源" },
         {
           id: "job-policy",
           label: "处理方式",
           skipped: all ? "收集全部岗位，无需配置" : "",
-        },
-        {
-          id: "job-pace",
-          label: "运行节奏",
-          skipped: d.useGlobalPace ? "使用全局运行节奏" : "",
         },
       ];
     }
     // the step a validation field belongs to; null for fields outside the 找岗位 form
     function stepOfField(field) {
       if (!field || field.startsWith("follow-") || field.startsWith("ai-")) return null;
-      if (["source", "source-selection"].includes(field)) return "job-sources";
-      if (field === "rhythm") return "job-pace";
       if (field === "template-name") return null;
       return "job-preferences";
     }
@@ -4178,12 +4299,14 @@ export default Vue.defineComponent({
               : "missing";
       });
       const elStatus = { current: "process", done: "success", missing: "error", skipped: "wait" };
-      const text = { current: "正在填", done: "填好了", missing: "还没填完", skipped: "不用填" };
+      // states read from the standard step icons (✓ / current number / ✕); only a skipped
+      // step spells out why it is skipped
       return E(
         "ElSteps",
         {
           class: "ux-el-steps",
           active: Math.max(0, steps.findIndex((s) => s.id === current)),
+          alignCenter: true,
           "aria-label": "配置步骤",
         },
         () =>
@@ -4194,7 +4317,6 @@ export default Vue.defineComponent({
               key: step.id,
               class: ["ux-el-step", "is-" + state],
               title: step.label,
-              description: text[state],
               status: elStatus[state],
               role: "button",
               tabindex: step.skipped ? -1 : 0,
@@ -4207,68 +4329,34 @@ export default Vue.defineComponent({
                   go();
                 }
               },
-            }, step.skipped ? { description: () => [text.skipped, tip(step.skipped, step.label)] } : undefined);
+            }, step.skipped ? { description: () => [step.skipped] } : undefined);
           }),
       );
     }
-    function paceStep() {
-      const d = draft.value;
-      const g = globalPace.value;
-      return card(
-        "运行节奏",
-        [
-          globalPaceCheck(),
-          d.useGlobalPace
-            ? h("div", { class: "ux-pace-summary" }, [
-                hint(
-                  g
-                    ? (g.pause
-                        ? `每操作 ${g.actions} 次休息 ${g.minutes} 分钟；`
-                        : "不定时休息；") +
-                        `加载下一批后等待 ${g.jobListLoadWaitSeconds} 秒，查看详情后等待 ${g.jobDetailViewWaitSeconds} 秒。`
-                    : "正在读取全局运行节奏…",
-                ),
-                button(
-                  "去设置中修改",
-                  () => {
-                    settingTab.value = "pace";
-                    loadGlobalPace();
-                    navigate("settings");
-                  },
-                  { link: true, type: "primary" },
-                ),
-              ])
-            : h("div", { class: "ux-preference-group" }, rhythmControls()),
-        ],
-        { id: "job-pace", tabIndex: -1 },
-      );
-    }
-    function globalPaceCheck() {
-      return h("div", { class: "ux-run-mode-option" }, [
-        withTip(
-          check(draft.value, "useGlobalPace", "使用全局运行节奏设置"),
-          "勾选后不用再填“运行节奏”这一步，直接按“设置 → 运行节奏”里的设置跑。好几个模板可以共用同一套节奏。",
-        ),
-      ]);
-    }
     function stepContent(id) {
       if (id === "job-run-mode") return runModeCard();
-      if (id === "job-preferences")
-        return card("我的求职条件", prefs(draft.value), {
-          id: "job-preferences",
-          tabIndex: -1,
-        });
-      if (id === "job-sources")
-        return card(sourceTitle(), sourceControls(), {
-          id: "job-sources",
-          tabIndex: -1,
-        });
-      if (id === "job-policy")
-        return card("遇到不符合条件的岗位", policyControls(), {
-          id: "job-policy",
-          tabIndex: -1,
-        });
-      return paceStep();
+      if (id === "job-preferences") {
+        // collecting every job needs no conditions: the hint leads the source card itself
+        if (isCollectAll(draft.value))
+          return card(sourceTitle(), [
+            hint("收集全部岗位，无需配置求职条件，选择下面的职位来源即可。"),
+            ...sourceControls(),
+          ], { id: "job-preferences", tabIndex: -1 });
+        return [
+          card("我的求职条件", prefs(draft.value), {
+            id: "job-preferences",
+            tabIndex: -1,
+          }),
+          card(sourceTitle(), sourceControls(), {
+            id: "job-sources",
+            tabIndex: -1,
+          }),
+        ];
+      }
+      return card("遇到不符合条件的岗位", policyControls(), {
+        id: "job-policy",
+        tabIndex: -1,
+      });
     }
     // 找岗位 page while its run is paused: the settings stay editable, the run waits for 恢复
     function pausedBanner() {
@@ -4391,6 +4479,12 @@ export default Vue.defineComponent({
                 ),
             inline([
               button("查看运行进度", () => openTaskDetail(id), { type: "primary" }),
+              // the run's snapshot is saved at start, so it can be checked while it runs
+              task === "auto"
+                ? button("查看当前配置", () => openTaskDetail(id, "config"), {
+                    plain: true,
+                  })
+                : null,
               ...(waiting
                 ? [button("取消排队", () => removeQueued(id), { type: "danger", plain: true })]
                 : taskControls(task, { running: true })),
@@ -4398,7 +4492,7 @@ export default Vue.defineComponent({
             button(
               "返回配置页",
               () => (curtainDismissed.value = { ...curtainDismissed.value, [task]: runId }),
-              { plain: true, title: "收起遮罩继续改配置，改动下次开始时生效" },
+              { plain: true, title: "收起遮罩继续改配置，改动自下次运行生效" },
             ),
           ]),
         ],
@@ -4433,24 +4527,31 @@ export default Vue.defineComponent({
         },
         {
           id: "job-preferences",
-          label: "求职条件",
-          skipped: collectAll,
-          checks: collectAll ? [] : [
-            ...(d.regexMode
-              ? [check("岗位规则格式", ["regexTitle", "regexType", "regexDesc"])]
-              : []),
-            ...(d.salary ? [check("期望薪资", ["salary"])] : []),
-            ...(needsCompanyList(d) ? [check("公司名单", ["companies"])] : []),
-            ...(d.regexMode && d.regexExclude
-              ? [check("排除公司规则", ["regexExclude"])]
-              : []),
-            ...Object.entries(legacyLabels)
-              .filter(([key]) =>
-                issues.some((i) => i.field === key && key !== "companies"),
-              )
-              .map(([key, label]) => check("确认原有条件：" + label, [key])),
-          ],
+          label: "职位筛选与来源",
+          checks: collectAll
+            ? [
+                check("职位来源", ["source-selection"]),
+                ...(search ? [check("搜索关键词", ["source"])] : []),
+              ]
+            : [
+                ...(d.regexMode
+                  ? [check("岗位规则格式", ["regexTitle", "regexType", "regexDesc"])]
+                  : []),
+                ...(d.salary ? [check("期望薪资", ["salary"])] : []),
+                ...(needsCompanyList(d) ? [check("公司名单", ["companies"])] : []),
+                ...(d.regexMode && d.regexExclude
+                  ? [check("排除公司规则", ["regexExclude"])]
+                  : []),
+                ...Object.entries(legacyLabels)
+                  .filter(([key]) =>
+                    issues.some((i) => i.field === key && key !== "companies"),
+                  )
+                  .map(([key, label]) => check("确认原有条件：" + label, [key])),
+                check("职位来源", ["source-selection"]),
+                ...(search ? [check("搜索关键词", ["source"])] : []),
+              ],
           extra: (() => {
+            if (collectAll) return "收集全部岗位，无需配置求职条件";
             const n = [
               d.cities.length,
               d.salary,
@@ -4462,21 +4563,11 @@ export default Vue.defineComponent({
               d.categories.length,
               d.description.length,
             ].filter(Boolean).length;
-            return collectAll
-              ? "收集全部岗位，无需配置"
-              : n
-                ? `已设置 ${n} 项条件`
-                : "其余条件不限";
+            const sourceCount = (d.sourceList || []).filter((s) => s.enabled).length;
+            return n
+              ? `已设置 ${n} 项条件，已启用 ${sourceCount} 个来源`
+              : `其余条件不限，已启用 ${sourceCount} 个来源`;
           })(),
-        },
-        {
-          id: "job-sources",
-          label: "职位来源",
-          checks: [
-            check("职位来源", ["source-selection"]),
-            ...(search ? [check("搜索关键词", ["source"])] : []),
-          ],
-          extra: `已启用 ${(d.sourceList || []).filter((s) => s.enabled).length} 个来源`,
         },
         {
           id: "job-policy",
@@ -4493,16 +4584,6 @@ export default Vue.defineComponent({
                 ? `单独处理 ${n} 种情况`
                 : "全部按默认方式处理";
           })(),
-        },
-        {
-          id: "job-pace",
-          label: "运行节奏",
-          checks: d.useGlobalPace || !d.pause ? [] : [check("定时休息", ["rhythm"])],
-          extra: d.useGlobalPace
-            ? "使用全局运行节奏"
-            : d.pause
-              ? `每 ${d.actions} 次操作休息 ${d.minutes} 分钟`
-              : "不定时休息",
         },
       ];
       const all = sections.flatMap((section) => section.checks);
@@ -4621,6 +4702,30 @@ export default Vue.defineComponent({
         ],
       );
     }
+    // chat mode really messages recruiters: confirm the switch once, then let it be
+    async function switchRunMode(d, v) {
+      if (
+        v === "chat" &&
+        d.runMode !== "chat" &&
+        !readFlag("ux-chat-mode-confirmed")
+      ) {
+        const ok = await confirmBox(
+          "自动打招呼会向符合条件的招聘者真实发送消息。确定要切换吗？",
+          "切换到自动打招呼",
+          "切换",
+        );
+        if (!ok) return;
+        writeFlag("ux-chat-mode-confirmed", true);
+      }
+      update(d, "runMode", v);
+      // collect-everything drops two steps from the flow; say so instead of letting them vanish
+      if (v === "collect" && isCollectAll(d))
+        R.message({
+          type: "info",
+          message: "收集全部岗位：求职条件与处理方式两步已跳过，只需选择职位来源。",
+          duration: 4000,
+        });
+    }
     function runModeCard() {
       const d = draft.value;
       const collect = d.runMode === "collect";
@@ -4637,7 +4742,7 @@ export default Vue.defineComponent({
               "ElRadioGroup",
               {
                 modelValue: collect ? "collect" : "chat",
-                "onUpdate:modelValue": (v) => update(d, "runMode", v),
+                "onUpdate:modelValue": (v) => switchRunMode(d, v),
                 "aria-label": "运行方式",
               },
               () => [
@@ -4648,6 +4753,12 @@ export default Vue.defineComponent({
             modeText,
             "运行方式",
           ),
+          // what a greeting actually contains, so nothing goes out unread
+          !collect
+            ? h("p", { class: "ux-hint ux-greet-source" }, [
+                "发送内容为你BOSS账号里设置的招呼语（软件不另外生成内容），可在BOSS直聘App的设置里修改。",
+              ])
+            : null,
           collect
             ? h("div", { class: "ux-run-mode-option" }, [
                 check(
@@ -4657,8 +4768,6 @@ export default Vue.defineComponent({
                 ),
               ])
             : null,
-
-          globalPaceCheck(),
         ],
         { id: "job-run-mode", class: "ux-card ux-run-mode" },
       );
@@ -4773,6 +4882,12 @@ export default Vue.defineComponent({
     R.watch(
       () => jumpStore.pending,
       (target) => {
+        // a page jump, e.g. an empty table's 去配置找岗位 button
+        if (target?.page) {
+          jumpStore.take(target.dataset)
+          navigate(target.page)
+          return
+        }
         const place = target && tabOfDataset[target.dataset];
         if (!place) return;
         if (place[0] === "library") libraryTab.value = place[1];
@@ -5118,6 +5233,12 @@ export default Vue.defineComponent({
         memoryKey: "taskRuns:" + phase,
         ignoreJumps: true,
         actionsWidth: current ? 200 : 170,
+        emptyText: current
+          ? "还没有运行中的任务，配置好条件就能开始"
+          : "运行过的任务会出现在这里",
+        ...(current
+          ? { emptyAction: { label: "去配置找岗位", page: "auto" } }
+          : {}),
         class: "ux-native-data",
       }, {
         "cell-mode": ({ row }) => modeTag(row),
@@ -5241,6 +5362,115 @@ export default Vue.defineComponent({
         },
       );
     }
+    // ---- 任务配置 tab: the snapshot saved when the run started ----
+    const followFactRows = (f = {}) => [
+      [
+        "会话范围",
+        (f.days === 0 ? "不限时间" : "最近" + f.days + "天") + "的已读未回复会话",
+      ],
+      ["消息来源", f.source === "ai" ? "AI生成" : "期待回复表情"],
+      [
+        "开场内容",
+        f.opening === "ai"
+          ? "AI生成"
+          : f.openingText
+            ? "固定话术"
+            : "平台默认招呼语",
+      ],
+      ["发送间隔", "每次间隔 " + (f.interval ?? "—") + " 分钟"],
+    ];
+    function snapshotDiffRows(snap) {
+      const then = Object.fromEntries(templateFacts(snap.draft || {}));
+      const now = Object.fromEntries(templateFacts(templateSnapshot()));
+      return Object.keys(then)
+        .filter((k) => then[k] !== now[k])
+        .map((k) => [k, then[k], now[k]]);
+    }
+    async function loadRunConfig(snap) {
+      if (
+        !(await confirmBox(
+          "会把这次运行用的条件填进配置页，覆盖当前未保存的修改。",
+          "载入该次运行的配置",
+          "载入",
+        ))
+      )
+        return;
+      if (!(await flushDraft())) return;
+      const next = keywordDraft(clone(snap.draft));
+      // snapshots from before a settings key existed keep the current value
+      for (const key of Object.keys(readRunSettings({})))
+        if (next[key] === undefined) next[key] = draft.value[key];
+      draft.value = next;
+      if (snap.follow) follow.value = { ...follow.value, ...snap.follow };
+      changed();
+      closeTaskDetail();
+      navigate("auto");
+      R.message({ type: "success", message: "已载入该次运行的配置，可修改后保存" });
+    }
+    function taskConfigBody(t) {
+      const snap = runSnapshot.value;
+      if (!Number(t.runRecordId))
+        return [hint("这次运行没有保存配置（缺少运行编号）。")];
+      if (!snap)
+        return [
+          h("div", { class: "ux-task-data-head" }, [
+            h("span", "没有保存这次运行时的配置"),
+            tip("配置页显示的是现在的设置，不一定是这次运行用的。"),
+          ]),
+          button(
+            "打开配置页",
+            () => {
+              const route =
+                t.workerId === workerIds.follow ? "follow" : "auto";
+              closeTaskDetail();
+              navigate(route);
+            },
+            { plain: true },
+          ),
+        ];
+      const rows =
+        t.workerId === workerIds.follow
+          ? followFactRows(snap.follow)
+          : templateFacts(snap.draft);
+      const diff = snapshotDiffOpen.value ? snapshotDiffRows(snap) : null;
+      return [
+        h("div", { class: "ux-task-data-head" }, [
+          h("span", "这次运行使用的配置"),
+          tip("开始运行那一刻的快照。之后改过的设置不会反映在这里。"),
+        ]),
+        h(
+          "dl",
+          { class: "ux-template-facts" },
+          rows.flatMap(([k, v]) => [h("dt", k), h("dd", v || "—")]),
+        ),
+        t.workerId === workerIds.follow
+          ? null
+          : inline([
+              button("载入此配置", () => loadRunConfig(snap), {
+                type: "primary",
+                plain: true,
+              }),
+              button(
+                snapshotDiffOpen.value ? "收起与当前的差异" : "与当前配置的差异",
+                () => (snapshotDiffOpen.value = !snapshotDiffOpen.value),
+                { plain: true },
+              ),
+            ]),
+        diff
+          ? diff.length
+            ? h("table", { class: "ux-snapshot-diff" }, [
+                h("thead", [
+                  h("tr", [h("th", "项目"), h("th", "那次运行"), h("th", "当前配置")]),
+                ]),
+                h(
+                  "tbody",
+                  diff.map(([k, a, b]) => h("tr", [h("td", k), h("td", a), h("td", b)])),
+                ),
+              ])
+            : hint("当前配置与那次运行时一致。")
+          : null,
+      ];
+    }
     function taskDrawer() {
       const t = selectedTask.value;
       if (!taskDetailId.value || !t) return null;
@@ -5293,24 +5523,7 @@ export default Vue.defineComponent({
               ]),
             ]
           : [hint("消息跟进没有单独的数据表，发送的内容在“运行概览”的执行日志里。")]; 
-      else
-        body = [
-          h("div", { class: "ux-task-data-head" }, [
-            h("span", "没有保存这次运行时的配置"),
-            tip("配置页显示的是现在的设置，不一定是这次运行用的。"),
-          ]),
-          button(
-            "打开配置页",
-            () => {
-              const route =
-                t.workerId === workerIds.follow ? "follow" : t.workerId === workerIds.auto ? "auto" : "library";
-              if (route === "library") libraryTab.value = "favorites";
-              closeTaskDetail();
-              navigate(route);
-            },
-            { plain: true },
-          ),
-        ];
+      else body = taskConfigBody(t);
       return E(
         "ElDrawer",
         {
@@ -5387,7 +5600,7 @@ export default Vue.defineComponent({
                 role: "status",
               },
               running.value[task]
-                ? "运行中，改动下次生效"
+                ? "运行中，改动自下次运行生效"
                 : queued.value[task]
                   ? "排队中，开始时用当时保存的条件"
                 : draftSaveError.value ||
@@ -5408,6 +5621,7 @@ export default Vue.defineComponent({
           () => begin(task),
           {
             type: "primary",
+            size: "large",
             // before the last step, starting is still possible but not the suggested action
             plain: task === "auto" && !onLastStep(),
             loading: preparing.value || starting.value,
@@ -5430,8 +5644,9 @@ export default Vue.defineComponent({
       return [
         at > 0 ? button("上一步", () => moveStep(-1), { plain: true }) : null,
         at < steps.length - 1
-          ? button("下一步：" + steps[at + 1].label, () => moveStep(1), {
+          ? button("下一步", () => moveStep(1), {
               type: "primary",
+              size: "large",
             })
           : null,
       ];
@@ -5981,10 +6196,10 @@ export default Vue.defineComponent({
         tab === "pace"
           ? card(
               [
-                "全局运行节奏",
+                "运行节奏",
                 tip(
-                  "在“找岗位 → 运行节奏”里勾了“使用全局运行节奏设置”的配置，都按这里的节奏跑。改完从下次开始任务起生效。",
-                  "全局运行节奏",
+                  "所有找岗位任务都按这里的节奏跑，改动自下次运行生效。",
+                  "运行节奏",
                 ),
               ],
               [
@@ -5992,7 +6207,7 @@ export default Vue.defineComponent({
                   ? rhythmControls(paceForm.value, "global-rhythm")
                   : [hint("正在读取…")]),
                 inline([
-                  button("保存全局运行节奏", saveGlobalPace, {
+                  button("保存运行节奏", saveGlobalPace, {
                     type: "primary",
                     loading: paceSaving.value,
                     disabled: !paceForm.value,
@@ -6033,7 +6248,7 @@ export default Vue.defineComponent({
                       disabled: dingtalkBusy.value,
                     })
                   : null,
-                tip("改完从下次开始任务起生效。"),
+                tip("改动自下次运行生效。"),
               ]),
             ])
           : null,
@@ -6260,15 +6475,8 @@ export default Vue.defineComponent({
         ["排除公司", list(sn.excluded) || (sn.legacyPatterns?.excluded ? "沿用原有规则" : "无")],
         ["招聘者活跃", sn.activity || "不限"],
         ["职位来源", sources.join("；") || "未选择"],
+        ...(rotationFact(sn) ? [["换源规则", rotationFact(sn)]] : []),
         ["默认处理方式", strategyLabel(sn.strategy)],
-        [
-          "运行节奏",
-          sn.useGlobalPace
-            ? "使用全局运行节奏"
-            : sn.pause
-              ? `每 ${sn.actions} 次操作休息 ${sn.minutes} 分钟`
-              : "不定时休息",
-        ],
       ];
     }
     const fileDate = () => new Date().toISOString().slice(0, 10);
@@ -6396,7 +6604,7 @@ export default Vue.defineComponent({
           [
             "配置模板",
             tip(
-              "模板存的是一整套找岗位配置：运行方式、求职条件、职位来源、处理方式和运行节奏。这里可以查看、删除，也可以导出成文件备份，或者在另一台电脑上导入。",
+              "模板存的是一整套找岗位配置：运行方式、职位筛选与来源、处理方式。这里可以查看、删除，也可以导出成文件备份，或者在另一台电脑上导入。",
               "配置模板",
             ),
           ],
@@ -6418,6 +6626,7 @@ export default Vue.defineComponent({
             h("div", { class: "ux-data-panel ux-template-panel" }, [
               h(RunDataTable, {
                 dataset: "configTemplates",
+                emptyText: "还没有配置模板，可在找岗位页顶部把当前条件存成模板",
                 columns: [
                   { key: "name", minWidth: 160 },
                   { key: "status", width: 190 },
@@ -6623,7 +6832,7 @@ export default Vue.defineComponent({
         if (!paceForm.value || route.value !== "settings" || settingTab.value !== "pace")
           paceForm.value = clone(pace);
       } catch (error) {
-        R.message({ type: "error", message: "读取全局运行节奏失败：" + error.message });
+        R.message({ type: "error", message: "读取运行节奏失败：" + error.message });
       }
     }
     async function saveGlobalPace() {
@@ -6642,7 +6851,7 @@ export default Vue.defineComponent({
       try {
         globalPace.value = await ipc("run-pace-save", clone(p));
         paceForm.value = clone(globalPace.value);
-        R.message({ type: "success", message: "全局运行节奏已保存，下次开始任务时生效。" });
+        R.message({ type: "success", message: "运行节奏已保存，改动自下次运行生效。" });
       } catch (error) {
         R.message({ type: "error", message: "保存失败：" + error.message });
       } finally {
@@ -7967,6 +8176,7 @@ export default Vue.defineComponent({
                 {
                   class: [
                     "ux-inner",
+                    route.value === "settings" ? "ux-inner--settings" : "",
                     route.value === "settings" && settingTab.value === "ai"
                       ? "ux-inner--ai"
                       : "",

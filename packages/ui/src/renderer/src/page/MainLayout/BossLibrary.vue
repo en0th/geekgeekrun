@@ -5,6 +5,8 @@
       :columns="columns"
       :stats-preset="runDataStatsPresets.bossLibrary"
       :actions-width="220"
+      empty-text="运行找岗位后，聊过的招聘者会收集在这里"
+      :empty-action="{ label: '去配置找岗位', page: 'auto' }"
       class="flex-1"
     >
       <template #cell-bossUrl="{ row }">

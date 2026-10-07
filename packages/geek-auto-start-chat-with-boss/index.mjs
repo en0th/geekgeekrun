@@ -247,6 +247,8 @@ const {
   runMode,
   collectOnlyMatchingJobs,
   skipUnparseableSalaryJob,
+  perSourceSuccessLimit,
+  noMatchStreakLimit,
   jobListLoadWaitSeconds,
   jobDetailViewWaitSeconds
 } = readRunSettings(readConfigFile('boss.json'))
@@ -340,6 +342,38 @@ const blockJobNotSuit = new ExpiringBlockSet()
 // security check, or continued by the user, picks up here instead of starting over
 let runPosition = { sourceIndex: 0, filterConditionIndex: 0, fingerprint: '' }
 let pendingResume = null
+// source rotation counters, reset whenever the run moves to the next source
+let sourceSuccessCount = 0
+let noMatchStreak = 0
+// a rotation trigger fired inside the job-finding promise: leave this source, use the next one
+const ROTATE_NEXT_SOURCE_ERROR = 'GGR_ROTATE_NEXT_SOURCE'
+function resetSourceRotationCounters () {
+  sourceSuccessCount = 0
+  noMatchStreak = 0
+}
+function sourceLabel (source) {
+  if (source?.type === 'search') return `搜索“${source.keyword}”`
+  if (source?.type === 'recommend') return '推荐职位'
+  if (source?.type === 'expect') return '求职期望推荐'
+  return '当前来源'
+}
+/**
+ * Count one collected / greeted job on the current source. Returns true when the per-source
+ * success limit is reached and the run must rotate to the next source.
+ */
+function countSourceSuccess () {
+  sourceSuccessCount++
+  noMatchStreak = 0
+  return perSourceSuccessLimit > 0 && sourceSuccessCount >= perSourceSuccessLimit
+}
+/**
+ * Count one checked job that did not match. Returns true when the no-match streak reaches
+ * the limit and the run must rotate to the next source.
+ */
+function countSourceNoMatch () {
+  noMatchStreak++
+  return noMatchStreakLimit > 0 && noMatchStreak >= noMatchStreakLimit
+}
 const blockEntries = (set) =>
   [...set].map((value) => [value, set.deadlines?.get(value) ?? null])
 /** what a later run needs to go on from here */
@@ -1007,6 +1041,8 @@ async function toRecommendPage (hooks) {
           return !document.querySelector('.job-recommend-result .job-rec-loading')
         })
         try {
+          // the greeting went out and the per-source success limit is reached: rotate below
+          let chatSourceRotationDone = false
           const { targetJobIndex, targetJobData, matchedJobId } = await new Promise(async (resolve, reject) => {
             try {
               const searchGuard = new NoMatchBatchGuard()
@@ -1147,7 +1183,7 @@ async function toRecommendPage (hooks) {
                 let tempTargetJobIndexToCheckDetail = getTempTargetJobIndexToCheckDetail()
                 while (tempTargetJobIndexToCheckDetail < 0 && !hasReachLastPage) {
                   searchGuard.beforeLoad()
-                  autoStartChatEventBus.emit('TASK_PROGRESS', { detail: `当前列表没有${isCollectMode ? '待收集' : '可沟通'}岗位，正在检查下一批；连续5批没有结果会停止`, state: 'searching' })
+                  autoStartChatEventBus.emit('TASK_PROGRESS', { detail: `当前列表没有${isCollectMode ? '待收集' : '可沟通'}岗位，正在检查下一批；连续5批没有可处理的会换下一个来源`, state: 'searching' })
                   const nextBatch = await loadNextJobBatch({ page, list: recommendJobListElProxy })
                   hasReachLastPage = !nextBatch.hasMore
                   searchGuard.loadedBatch()
@@ -1196,6 +1232,11 @@ async function toRecommendPage (hooks) {
                     blockJobNotSuit.add(targetJobData.jobInfo.encryptId)
                     autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'collected', detail: '已保存岗位信息' })
                     searchGuard.reset()
+                    if (countSourceSuccess()) {
+                      autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'collected', detail: `本来源已保存 ${sourceSuccessCount} 个岗位，达到换源数量（${perSourceSuccessLimit}），切换下一个来源` })
+                      reject(new Error(ROTATE_NEXT_SOURCE_ERROR))
+                      return
+                    }
                     continue continueFind
                   }
                   const parsedSalary = parseSalary(selectedJobData.salaryDesc || '')
@@ -1214,6 +1255,11 @@ async function toRecommendPage (hooks) {
                   if (missing.length) {
                     blockJobNotSuit.add(targetJobData.jobInfo.encryptId)
                     autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'skipped', detail: missing.join('；') + '，不发送、不标记' })
+                    if (countSourceNoMatch()) {
+                      autoStartChatEventBus.emit('TASK_PROGRESS', { detail: `连续 ${noMatchStreak} 个岗位不符合条件，达到止损数量（${noMatchStreakLimit}），切换下一个来源`, state: 'searching' })
+                      reject(new Error(ROTATE_NEXT_SOURCE_ERROR))
+                      return
+                    }
                     continue continueFind
                   }
 
@@ -1577,6 +1623,11 @@ async function toRecommendPage (hooks) {
                   // collect mode never marks: a job that doesn't match is just skipped
                   if (isCollectMode && Object.keys(notSuitReasonIdToStrategyMap).length) {
                     blockJobNotSuit.add(targetJobData.jobInfo.encryptId)
+                    if (countSourceNoMatch()) {
+                      autoStartChatEventBus.emit('TASK_PROGRESS', { detail: `连续 ${noMatchStreak} 个岗位不符合条件，达到止损数量（${noMatchStreakLimit}），切换下一个来源`, state: 'searching' })
+                      reject(new Error(ROTATE_NEXT_SOURCE_ERROR))
+                      return
+                    }
                     continue continueFind
                   }
                   // #region execute mark logic
@@ -1585,6 +1636,11 @@ async function toRecommendPage (hooks) {
                   if (markOnBossCondition) {
                     await notSuitConditionHandleMap[markOnBossCondition]()
                     blockJobNotSuit.setExpiry(targetJobData.jobInfo.encryptId, Date.now() + COOLDOWN_MS)
+                    if (countSourceNoMatch()) {
+                      autoStartChatEventBus.emit('TASK_PROGRESS', { detail: `连续 ${noMatchStreak} 个岗位不符合条件，达到止损数量（${noMatchStreakLimit}），切换下一个来源`, state: 'searching' })
+                      reject(new Error(ROTATE_NEXT_SOURCE_ERROR))
+                      return
+                    }
                     continue continueFind
                   }
                   // 2. if there is no condition to mark Boss, then find the one mark on local db
@@ -1593,6 +1649,11 @@ async function toRecommendPage (hooks) {
                     await notSuitConditionHandleMap[markOnLocalDbCondition]()
                     blockJobNotSuit.setExpiry(targetJobData.jobInfo.encryptId, Date.now() + COOLDOWN_MS)
                     if (markOnLocalDbCondition === 'active') blockBossNotActive.setExpiry(targetJobData.jobInfo.encryptUserId, Date.now() + COOLDOWN_MS)
+                    if (countSourceNoMatch()) {
+                      autoStartChatEventBus.emit('TASK_PROGRESS', { detail: `连续 ${noMatchStreak} 个岗位不符合条件，达到止损数量（${noMatchStreakLimit}），切换下一个来源`, state: 'searching' })
+                      reject(new Error(ROTATE_NEXT_SOURCE_ERROR))
+                      return
+                    }
                     continue continueFind
                   }
                   // 3.
@@ -1600,6 +1661,11 @@ async function toRecommendPage (hooks) {
                   if (noOpCondition) {
                     // Skipping must never fall through to a local mark.
                     blockJobNotSuit.add(targetJobData.jobInfo.encryptId)
+                    if (countSourceNoMatch()) {
+                      autoStartChatEventBus.emit('TASK_PROGRESS', { detail: `连续 ${noMatchStreak} 个岗位不符合条件，达到止损数量（${noMatchStreakLimit}），切换下一个来源`, state: 'searching' })
+                      reject(new Error(ROTATE_NEXT_SOURCE_ERROR))
+                      return
+                    }
                     continue continueFind
                   }
                   // #endregion
@@ -1617,18 +1683,33 @@ async function toRecommendPage (hooks) {
                     // just skip
                     blockJobNotSuit.add(targetJobData.jobInfo.encryptId)
                     autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'skipped', detail: '公司范围不符合或岗位已跳过' })
+                    if (countSourceNoMatch()) {
+                      autoStartChatEventBus.emit('TASK_PROGRESS', { detail: `连续 ${noMatchStreak} 个岗位不符合条件，达到止损数量（${noMatchStreakLimit}），切换下一个来源`, state: 'searching' })
+                      reject(new Error(ROTATE_NEXT_SOURCE_ERROR))
+                      return
+                    }
                     continue continueFind
                   }
                   if (isCollectMode) {
                     blockJobNotSuit.add(targetJobData.jobInfo.encryptId)
                     autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'collected', detail: '已保存符合条件的岗位' })
                     searchGuard.reset()
+                    if (countSourceSuccess()) {
+                      autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'collected', detail: `本来源已保存 ${sourceSuccessCount} 个岗位，达到换源数量（${perSourceSuccessLimit}），切换下一个来源` })
+                      reject(new Error(ROTATE_NEXT_SOURCE_ERROR))
+                      return
+                    }
                     continue continueFind
                   }
                   const startChatButtonInnerHTML = await page.evaluate('document.querySelector(".job-detail-box .op-btn.op-btn-chat")?.innerHTML.trim()')
                   if (startChatButtonInnerHTML !== '立即沟通') {
                     blockBossNotNewChat.add(targetJobData.jobInfo.encryptUserId)
                     autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'skipped', detail: '岗位不可立即沟通' })
+                    if (countSourceNoMatch()) {
+                      autoStartChatEventBus.emit('TASK_PROGRESS', { detail: `连续 ${noMatchStreak} 个岗位不符合条件，达到止损数量（${noMatchStreakLimit}），切换下一个来源`, state: 'searching' })
+                      reject(new Error(ROTATE_NEXT_SOURCE_ERROR))
+                      return
+                    }
                     continue continueFind
                   }
                   targetJobIndex = tempTargetJobIndexToCheckDetail
@@ -1713,8 +1794,12 @@ async function toRecommendPage (hooks) {
             )
             blockBossNotNewChat.add(targetJobData.jobInfo.encryptUserId)
             autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'sent', detail: 'BOSS已确认开聊成功' })
-
-            await storeStorage(page).catch(() => void 0)
+            if (countSourceSuccess()) {
+              autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'sent', detail: `本来源已开聊 ${sourceSuccessCount} 个岗位，达到换源数量（${perSourceSuccessLimit}），切换下一个来源` })
+              await storeStorage(page).catch(() => void 0)
+              chatSourceRotationDone = true
+              return
+            }
             await sleepWithRandomDelay(1500)
             if (hasGoToChatPage) {
               await page.goBack()
@@ -1794,12 +1879,25 @@ async function toRecommendPage (hooks) {
               throw err
             }
           }
+          if (chatSourceRotationDone) {
+            await sleepWithRandomDelay(3 * 1000)
+            break iterateFilterCondition
+          }
         } catch (err) {
           if (err instanceof Error) {
             switch (err.message) {
               case 'CANNOT_FIND_EXCEPT_JOB_IN_THIS_FILTER_CONDITION': {
                 await sleepWithRandomDelay(25 * 1000)
                 continue iterateFilterCondition;
+              }
+              case ROTATE_NEXT_SOURCE_ERROR: {
+                await sleepWithRandomDelay(3 * 1000)
+                break iterateFilterCondition
+              }
+              case 'AUTO_CHAT_NO_MATCH_BATCH_LIMIT': {
+                autoStartChatEventBus.emit('TASK_PROGRESS', { detail: '连续5批岗位没有可处理的，切换下一个来源', state: 'searching' })
+                await sleepWithRandomDelay(3 * 1000)
+                break iterateFilterCondition
               }
               case 'STARTUP_CHAT_ERROR_DUE_TO_TODAY_CHANCE_HAS_USED_OUT': {
                 let nextTrySeconds = 60 * 60
@@ -1830,18 +1928,16 @@ async function toRecommendPage (hooks) {
     if (
       currentSourceIndex + 1 >= computedSourceList.length
     ) {
+      // one-way rotation: every source has been worked once, the run ends successfully
       hooks.noPositionFoundForCurrentJob?.call()
-      hooks.noPositionFoundAfterTraverseAllJob?.call()
-      await sleep((20 + 30 * Math.random()) * 1000)
-      await Promise.all([
-        page.goto(`https://www.zhipin.com/web/geek/jobs`),
-        page.waitForNavigation()
-      ])
-      currentSourceIndex = 0
+      autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'done', detail: '所有职位来源都已轮换完成，任务结束', state: 'stopped' })
+      throw new Error('AUTO_CHAT_ALL_SOURCES_ROTATED')
     } else {
       hooks.noPositionFoundForCurrentJob?.call()
       await sleep((10 + 15 * Math.random()) * 1000)
       currentSourceIndex += 1
+      resetSourceRotationCounters()
+      autoStartChatEventBus.emit('TASK_PROGRESS', { detail: `切换到下一个来源：${sourceLabel(computedSourceList[currentSourceIndex])}`, state: 'searching' })
     }
   }
 }

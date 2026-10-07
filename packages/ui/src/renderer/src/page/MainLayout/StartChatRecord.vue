@@ -8,6 +8,8 @@
       :ignore-jumps="ignoreJumps"
       :stats-preset="runDataStatsPresets.chatStartupLog"
       :actions-width="180"
+      :empty-text="embedded ? undefined : '开始打招呼后，发出的招呼会记录在这里'"
+      :empty-action="embedded ? undefined : { label: '去配置找岗位', page: 'auto' }"
       class="flex-1"
     >
       <template #actions="{ row }">

@@ -52,6 +52,23 @@ const payloadHandler = {
     const result = await autoStartChatRunRecordRepository.save(autoStartChatRunRecord)
     return result
   },
+  // 任务详情 → 任务配置: the settings a run started with
+  async saveRunConfigSnapshot({ runRecordId, config }: { runRecordId: number; config: unknown }) {
+    const repository = dataSource!.getRepository(AutoStartChatRunRecord)
+    await repository.update(runRecordId, {
+      configSnapshot: typeof config === 'string' ? config : JSON.stringify(config)
+    })
+  },
+  async getRunConfigSnapshot({ runRecordId }: { runRecordId: number }) {
+    const repository = dataSource!.getRepository(AutoStartChatRunRecord)
+    const record = await repository.findOne({ where: { id: runRecordId } })
+    if (!record?.configSnapshot) return null
+    try {
+      return JSON.parse(record.configSnapshot)
+    } catch {
+      return null
+    }
+  },
   queryRunData: (payload) => runData.queryRunData(withTaskRuns(payload), payload),
   queryAllRunData: (payload) => runData.queryAllRunData(withTaskRuns(payload), payload),
   getRunDataDistinctValues: (payload) =>
