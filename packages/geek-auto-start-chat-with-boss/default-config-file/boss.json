@@ -23,6 +23,8 @@
   "skipUnparseableSalaryJob": true,
   "jobListLoadWaitSeconds": 5,
   "jobDetailViewWaitSeconds": 2,
+  "autoChatPerSourceSuccessLimit": 20,
+  "autoChatNoMatchStreakLimit": 30,
   "expectCityList": [],
   "expectCityNotMatchStrategy": 3,
   "strategyScopeOptionWhenMarkJobCityNotMatch": 2,

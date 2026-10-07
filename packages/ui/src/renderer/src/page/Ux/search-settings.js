@@ -15,6 +15,23 @@ export function searchOptionsForRun(draft, search) {
   }))
 }
 
+// How many sources the run will rotate through: every enabled search keyword is its
+// own source, plus one per other enabled source. Used to decide whether the rotation
+// settings (and their facts) are worth showing at all.
+export function potentialSourceCount(draft) {
+  let total = 0
+  for (const source of draft?.sourceList || []) {
+    if (!source?.enabled) continue
+    if (source.type === 'search') {
+      const words = (source.children || []).filter((row) => row.enabled && row.keyword?.trim()).length
+      total += Math.max(words, 1)
+    } else {
+      total += 1
+    }
+  }
+  return total
+}
+
 // Same combination rules as combineCalculator.mjs, without enumerating the
 // potentially large Cartesian product just to explain its size in the editor.
 export function countPlatformCombinations(filters = {}, skipEmpty = false) {

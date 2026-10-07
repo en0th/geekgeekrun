@@ -65,7 +65,12 @@ import {
   DEFAULT_JOB_LIST_LOAD_WAIT_SECONDS,
   DEFAULT_JOB_DETAIL_VIEW_WAIT_SECONDS,
   MAX_WAIT_SECONDS,
+  DEFAULT_PER_SOURCE_SUCCESS_LIMIT,
+  DEFAULT_NO_MATCH_STREAK_LIMIT,
 } from "@geekgeekrun/geek-auto-start-chat-with-boss/run-settings.mjs";
+import {
+  DEFAULT_POSTER_HR_TITLE_REG_EXP_STR,
+} from "@geekgeekrun/geek-auto-start-chat-with-boss/poster-title-filter.mjs";
 import {
   createNativeState,
   validModelList,
@@ -76,6 +81,7 @@ import {
   isSearchRotationEnabled,
   searchOptionsForRun,
   countPlatformCombinations,
+  potentialSourceCount,
 } from "./search-settings.js";
 
 export default Vue.defineComponent({
@@ -142,6 +148,8 @@ export default Vue.defineComponent({
       pause: true,
       actions: 100,
       minutes: 15,
+      perSourceSuccessLimit: null,
+      noMatchStreakLimit: null,
       strategy: 3,
       overrides: {},
       scopes: {},
@@ -186,6 +194,14 @@ export default Vue.defineComponent({
       pause: original.isSageTimeEnabled,
       actions: original.sageTimeOpTimes,
       minutes: original.sageTimePauseMinute,
+      perSourceSuccessLimit:
+        original.autoChatPerSourceSuccessLimit == null
+          ? null
+          : original.autoChatPerSourceSuccessLimit,
+      noMatchStreakLimit:
+        original.autoChatNoMatchStreakLimit == null
+          ? null
+          : original.autoChatNoMatchStreakLimit,
       companies: initial.config["target-company-list.json"] || [],
       hr: original.isPosterHrFilterEnabled,
       hrRule: original.posterHrTitleRegExpStr,
@@ -417,6 +433,7 @@ export default Vue.defineComponent({
       settingTab = ref("account");
     const platformOpen = ref(false),
       searchRotationOpen = ref(false),
+      sourceRotationOpen = ref(false),
       platformFiltersOpen = ref(false),
       policyExceptionsOpen = ref(false),
       activeAutoSection = ref("job-run-mode");
@@ -1625,7 +1642,7 @@ export default Vue.defineComponent({
                   "aria-label": "模板包含哪些设置",
                 }),
               default: () => [
-                h("p", "模板保存运行方式、求职条件、职位来源与处理方式。"),
+                h("p", "模板保存运行方式、职位筛选与来源、处理方式。"),
                 hint("选择模板不会切换消息跟进、消息内容或AI配置。"),
               ],
             },
@@ -1758,6 +1775,9 @@ export default Vue.defineComponent({
         autoChatRunMode: d.runMode === "collect" ? "collect" : "chat",
         collectOnlyMatchingJobs: d.collectOnlyMatchingJobs !== false,
         skipUnparseableSalaryJob: d.skipUnparseableSalaryJob !== false,
+        // null keeps the runtime defaults; 0 disables that rotation trigger
+        autoChatPerSourceSuccessLimit: d.perSourceSuccessLimit ?? null,
+        autoChatNoMatchStreakLimit: d.noMatchStreakLimit ?? null,
         isSageTimeEnabled: pace.pause,
         ...(pace.pause
           ? { sageTimeOpTimes: pace.actions, sageTimePauseMinute: pace.minutes }
@@ -2013,6 +2033,15 @@ export default Vue.defineComponent({
           field: "companies",
           text: "只标记指定公司需要公司名单。请填写“只看这些公司”，或改为略过岗位。",
         });
+      if (d.hr && d.hrRule)
+        try {
+          new RegExp(d.hrRule, "i");
+        } catch {
+          a.push({
+            field: "hrRule",
+            text: "招聘者身份规则格式错误，请检查括号或转义符。",
+          });
+        }
       for (const [key, pattern] of Object.entries(d.legacyPatterns || {}))
         try {
           new RegExp(pattern, "im");
@@ -2606,6 +2635,27 @@ export default Vue.defineComponent({
                 }),
                 "业务负责人自己发的岗位也可能被排除掉。",
               ),
+              obj.hr
+                ? validationArea("hrRule", [
+                    h("div", { class: "ux-hr-rule-editor" }, [
+                      input(obj, "hrRule", {
+                        type: "textarea",
+                        autosize: { minRows: 1, maxRows: 3 },
+                        placeholder: DEFAULT_POSTER_HR_TITLE_REG_EXP_STR,
+                        disabled: useField(key),
+                        "aria-label": "招聘者身份匹配规则",
+                      }),
+                      button(
+                        "恢复默认",
+                        () => {
+                          update(obj, "hrRule", "");
+                        },
+                        { link: true, type: "primary", size: "small" },
+                      ),
+                    ]),
+                    hint("招聘者头衔含任一关键词才算人事，不区分大小写；留空使用上面的默认规则。"),
+                  ])
+                : null,
             ]),
           );
           continue;
@@ -2804,6 +2854,18 @@ export default Vue.defineComponent({
         "info",
       ];
     }
+    // one-line summary of the source rotation settings; null when there is nothing to rotate
+    function rotationFact(d) {
+      if (potentialSourceCount(d) < 2) return null;
+      const succ = d.perSourceSuccessLimit ?? DEFAULT_PER_SOURCE_SUCCESS_LIMIT;
+      const streak = d.noMatchStreakLimit ?? DEFAULT_NO_MATCH_STREAK_LIMIT;
+      return (
+        [
+          succ > 0 ? `每个来源处理满 ${succ} 个换下一个` : "不按处理数量换源",
+          streak > 0 ? `连续 ${streak} 个不符换下一个` : "不按连续不符换源",
+        ].join("；") + "；全部来源轮完即结束"
+      );
+    }
     function checkFactRows() {
       if (checks.value === "follow") {
         const f = follow.value;
@@ -2822,10 +2884,11 @@ export default Vue.defineComponent({
           : "不定时休息"
         : "读取中…";
       const keys = isCollectAll(d)
-        ? ["运行方式", "职位来源"]
+        ? ["运行方式", "职位来源", ...(potentialSourceCount(d) > 1 ? ["换源规则"] : [])]
         : [
             "运行方式",
             "职位来源",
+            ...(potentialSourceCount(d) > 1 ? ["换源规则"] : []),
             "目标岗位",
             "工作城市",
             "期望薪资",
@@ -3048,6 +3111,39 @@ export default Vue.defineComponent({
                 ]),
               ),
             ], "先查排在上面的来源，查完再换下一个。这只是查找顺序，不代表岗位更重要。")
+          : null,
+        potentialSourceCount(d) > 1
+          ? disclosure(
+              "换源规则",
+              sourceRotationOpen,
+              "source-rotation",
+              [
+                h("div", { class: "ux-rhythm-line" }, [
+                  "每个来源处理满",
+                  number(d, "perSourceSuccessLimit", {
+                    min: 0,
+                    max: 9999,
+                    placeholder: String(DEFAULT_PER_SOURCE_SUCCESS_LIMIT),
+                    "aria-label": "换源数量",
+                  }),
+                  "个岗位后，换下一个来源",
+                ]),
+                h("div", { class: "ux-rhythm-line" }, [
+                  "连续",
+                  number(d, "noMatchStreakLimit", {
+                    min: 0,
+                    max: 9999,
+                    placeholder: String(DEFAULT_NO_MATCH_STREAK_LIMIT),
+                    "aria-label": "止损数量",
+                  }),
+                  "个岗位不符合条件后，换下一个来源",
+                ]),
+                explain(
+                  "处理指收集岗位或打招呼。填 0 表示不按这条规则换源；留空用默认值。连续 5 批没有可处理的岗位也会换源。所有来源轮换一遍后，任务正常结束。",
+                ),
+              ],
+              "多个搜索关键词也算多个来源，会一起按顺序轮换。",
+            )
           : null,
       ];
     }
@@ -4139,7 +4235,7 @@ export default Vue.defineComponent({
       const all = isCollectAll(d);
       return [
         { id: "job-run-mode", label: "运行方式" },
-        { id: "job-preferences", label: "求职条件与职位来源" },
+        { id: "job-preferences", label: "职位筛选与来源" },
         {
           id: "job-policy",
           label: "处理方式",
@@ -4431,7 +4527,7 @@ export default Vue.defineComponent({
         },
         {
           id: "job-preferences",
-          label: "求职条件与职位来源",
+          label: "职位筛选与来源",
           checks: collectAll
             ? [
                 check("职位来源", ["source-selection"]),
@@ -5525,6 +5621,7 @@ export default Vue.defineComponent({
           () => begin(task),
           {
             type: "primary",
+            size: "large",
             // before the last step, starting is still possible but not the suggested action
             plain: task === "auto" && !onLastStep(),
             loading: preparing.value || starting.value,
@@ -5549,6 +5646,7 @@ export default Vue.defineComponent({
         at < steps.length - 1
           ? button("下一步", () => moveStep(1), {
               type: "primary",
+              size: "large",
             })
           : null,
       ];
@@ -6377,6 +6475,7 @@ export default Vue.defineComponent({
         ["排除公司", list(sn.excluded) || (sn.legacyPatterns?.excluded ? "沿用原有规则" : "无")],
         ["招聘者活跃", sn.activity || "不限"],
         ["职位来源", sources.join("；") || "未选择"],
+        ...(rotationFact(sn) ? [["换源规则", rotationFact(sn)]] : []),
         ["默认处理方式", strategyLabel(sn.strategy)],
       ];
     }
@@ -6505,7 +6604,7 @@ export default Vue.defineComponent({
           [
             "配置模板",
             tip(
-              "模板存的是一整套找岗位配置：运行方式、求职条件、职位来源和处理方式。这里可以查看、删除，也可以导出成文件备份，或者在另一台电脑上导入。",
+              "模板存的是一整套找岗位配置：运行方式、职位筛选与来源、处理方式。这里可以查看、删除，也可以导出成文件备份，或者在另一台电脑上导入。",
               "配置模板",
             ),
           ],

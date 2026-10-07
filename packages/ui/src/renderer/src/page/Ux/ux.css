@@ -303,8 +303,21 @@ html:not(.replica-child) body {
 .ux-company-examples .ux-inline {
   margin-top: 10px;
 }
+.ux-hr-rule .ux-validation-area {
+  margin-top: 8px;
+}
+.ux-hr-rule-editor {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ux-hr-rule-editor .el-textarea {
+  flex: 1;
+  min-width: 220px;
+}
 .ux-hr-rule .ux-hint {
-  margin: 0;
+  margin: 4px 0 0;
 }
 #follow-message-content .ux-hint {
   color: var(--el-text-color-regular);
