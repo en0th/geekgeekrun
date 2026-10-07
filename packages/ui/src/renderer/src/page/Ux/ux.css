@@ -278,7 +278,7 @@ html:not(.replica-child) body {
 .ux-company-count {
   margin: 0;
   font-size: 14px;
-  line-height: 1.7;
+  line-height: 1.5;
 }
 .ux-company-names {
   margin: 2px 0 0;
@@ -351,6 +351,7 @@ html:not(.replica-child) body {
 }
 .ux-required {
   display: inline-flex;
+  align-items: center;
   margin-left: 8px;
   padding: 0 6px;
   border-radius: 4px;
@@ -358,8 +359,11 @@ html:not(.replica-child) body {
   color: var(--el-color-danger-dark-2, #b42318);
   font-size: 12px;
   font-weight: 500;
-  line-height: 22px;
+  line-height: 20px;
+  height: 20px;
   vertical-align: middle;
+  /* optically centers the badge next to a checkbox or label text */
+  transform: translateY(-1px);
 }
 .ux-validation-area {
   min-width: 0;
@@ -634,11 +638,11 @@ html:not(.replica-child) body {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   margin: 8px 0;
 }
 .ux-rhythm-line .el-input-number {
-  width: 108px;
+  width: 96px;
 }
 .ux-inline > .ux-field {
   align-self: flex-start;
@@ -1031,6 +1035,10 @@ html:not(.replica-child) body {
 .ux-inner--config .ux-card h3::before {
   height: 16px;
 }
+/* settings cards sit further apart than the rows inside them, so the sections read as groups */
+.ux-inner--settings .ux-card {
+  margin-top: 20px;
+}
 .ux-inner--config .ux-hint,
 .ux-inner--config #job-preferences .ux-hint,
 .ux-inner--config #job-policy .ux-hint,
@@ -1341,6 +1349,7 @@ html:not(.replica-child) body {
   display: flex;
   flex-shrink: 0;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
 }
 .ux-company-actions .el-button + .el-button {
@@ -1405,11 +1414,12 @@ html:not(.replica-child) body {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 12px;
   flex-wrap: wrap;
 }
 .ux-footer--ai .ux-footer-actions > .ux-hint {
   margin: 0 auto 0 0;
+  line-height: 24px;
 }
 .ux-footer--ai .el-button + .el-button {
   margin-left: 0;
@@ -1517,6 +1527,16 @@ html:not(.replica-child) body {
 .ux-rail-count {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+/* the bar and the extra line line up with the label text, right of the status dot */
+.ux-rail-item > .el-progress {
+  margin: 2px 0 0 14px;
+}
+.ux-rail-extra {
+  margin-left: 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
 }
 .ux-rail-dot {
   width: 8px;
@@ -2693,14 +2713,15 @@ html:not(.replica-child) body {
   width: 16px;
   height: 16px;
   margin-left: 6px;
-  vertical-align: -2px;
+  /* keeps the glyph on the text's middle line across font sizes */
+  vertical-align: -0.15em;
   color: var(--el-text-color-placeholder);
   cursor: help;
   border-radius: 50%;
 }
 .ux-tip svg {
-  width: 15px;
-  height: 15px;
+  width: 14px;
+  height: 14px;
 }
 .ux-tip:hover,
 .ux-tip:focus-visible {
@@ -2805,7 +2826,7 @@ html:not(.replica-child) body {
 /* 找岗位 step bar (Element Plus steps); clicking a step opens it */
 .ux-el-steps {
   margin: 18px 0 14px;
-  padding: 14px 16px 10px;
+  padding: 14px 16px;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
   background: var(--el-bg-color);

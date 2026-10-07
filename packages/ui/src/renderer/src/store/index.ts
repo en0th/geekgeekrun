@@ -65,6 +65,8 @@ export interface RunDataJump {
   // FilterRow shapes of the RunDataTable filter builder (dates as local Date objects)
   rows: { field: string; op: string; value?: unknown }[]
   label: string
+  /** open a page instead of a dataset, e.g. the empty-state CTA "去配置找岗位" */
+  page?: string
 }
 
 export const useRunDataJumpStore = defineStore('runDataJump', () => {

@@ -58,7 +58,7 @@ export function readJobStatusPollSettings(saved) {
   }
 }
 
-// Run pace shared by every configuration that ticks "使用全局运行节奏" (config/run-pace.json).
+// The single run pace every 找岗位 run uses (config/run-pace.json, edited in 设置 → 运行节奏).
 // Same keys as the settings page draft: a timed rest every `actions` operations for `minutes`,
 // and the waits after loading a list batch / opening a job detail.
 export const RUN_PACE_FILE = 'run-pace.json'
