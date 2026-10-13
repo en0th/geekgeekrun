@@ -1,4 +1,4 @@
-/* Layout only: colours, font and controls inherit the original Element Plus theme. */
+/* Layout only: controls and overlays share the app-wide Element Plus theme. */
 :root {
   --replica-scale: 1;
 }
@@ -35,7 +35,7 @@
   background-image: linear-gradient(45deg, #eaf4f1, #dcf6f2);
 }
 .ux-nav .group-title {
-  color: #849492;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
   padding: 0.25em 0;
 }
@@ -48,7 +48,7 @@
 }
 .ux-nav .link-list a.router-link-active {
   background: white;
-  color: #2faa9e;
+  color: var(--ggr-brand-text);
   font-weight: 700;
   border-radius: 9999px 0 0 9999px;
   box-shadow: 0 0 10px #32726c30;
@@ -278,7 +278,7 @@ html:not(.replica-child) body {
 .ux-company-count {
   margin: 0;
   font-size: 14px;
-  line-height: 1.7;
+  line-height: 1.5;
 }
 .ux-company-names {
   margin: 2px 0 0;
@@ -303,8 +303,21 @@ html:not(.replica-child) body {
 .ux-company-examples .ux-inline {
   margin-top: 10px;
 }
+.ux-hr-rule .ux-validation-area {
+  margin-top: 8px;
+}
+.ux-hr-rule-editor {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ux-hr-rule-editor .el-textarea {
+  flex: 1;
+  min-width: 220px;
+}
 .ux-hr-rule .ux-hint {
-  margin: 0;
+  margin: 4px 0 0;
 }
 #follow-message-content .ux-hint {
   color: var(--el-text-color-regular);
@@ -351,6 +364,7 @@ html:not(.replica-child) body {
 }
 .ux-required {
   display: inline-flex;
+  align-items: center;
   margin-left: 8px;
   padding: 0 6px;
   border-radius: 4px;
@@ -358,8 +372,11 @@ html:not(.replica-child) body {
   color: var(--el-color-danger-dark-2, #b42318);
   font-size: 12px;
   font-weight: 500;
-  line-height: 22px;
+  line-height: 20px;
+  height: 20px;
   vertical-align: middle;
+  /* optically centers the badge next to a checkbox or label text */
+  transform: translateY(-1px);
 }
 .ux-validation-area {
   min-width: 0;
@@ -488,6 +505,110 @@ html:not(.replica-child) body {
 }
 .ux-footer .ux-hint {
   margin-right: auto;
+}
+/* Task forms: one primary action, aligned to the form rather than the progress rail.
+   Keep the established Element Plus components and the shell's sidebar offset. */
+.ux-footer.ux-workflow-footer {
+  display: block;
+  padding: 12px 20px;
+  border-top-color: var(--el-border-color);
+  box-shadow: 0 -4px 16px rgba(25, 45, 65, 0.06);
+}
+.ux-workflow-footer--with-rail {
+  padding-right: 248px !important;
+}
+.ux-workflow-footer--rail-collapsed {
+  padding-right: 48px !important;
+}
+.ux-workflow-footer-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-width: 0;
+}
+.ux-workflow-footer-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+.ux-workflow-footer-step {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 22px;
+  color: var(--el-text-color-primary);
+}
+.ux-workflow-footer .ux-hint {
+  margin: 0;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+.ux-workflow-footer .ux-validation-link {
+  max-width: none;
+  height: auto;
+  padding: 0;
+  margin: 0;
+  color: var(--el-color-warning);
+  font-size: 12px;
+  line-height: 18px;
+}
+.ux-workflow-footer-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 12px;
+}
+.ux-workflow-footer-actions .el-button {
+  min-height: 44px;
+  min-width: 96px;
+  margin: 0;
+  font-size: 15px;
+}
+.ux-workflow-footer-actions .ux-workflow-primary {
+  min-width: 160px;
+  font-weight: 600;
+}
+.ux-workflow-next-icon {
+  width: 16px;
+  height: 16px;
+  margin-left: 8px;
+}
+.ux-workflow-footer .el-button:focus-visible,
+.ux-task-curtain-card .el-button:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 3px;
+}
+.ux-inner.ux-inner--config:has(.ux-workflow-footer) {
+  padding-bottom: calc(var(--ux-workflow-footer-height, 84px) + 28px);
+}
+@media (max-width: 960px) {
+  .ux-workflow-footer--with-rail {
+    padding-right: 20px !important;
+  }
+}
+@media (max-width: 720px) {
+  .ux-footer.ux-workflow-footer {
+    padding: 12px 14px;
+  }
+  .ux-workflow-footer--with-rail {
+    padding-right: 14px !important;
+  }
+  .ux-workflow-footer--rail-collapsed {
+    padding-right: 40px !important;
+  }
+  .ux-workflow-footer-inner {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .ux-workflow-footer-info {
+    flex: 1 1 100%;
+  }
+  .ux-workflow-footer-actions {
+    margin-left: auto;
+  }
 }
 .ux-error {
   color: var(--el-color-danger);
@@ -634,11 +755,11 @@ html:not(.replica-child) body {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   margin: 8px 0;
 }
 .ux-rhythm-line .el-input-number {
-  width: 108px;
+  width: 96px;
 }
 .ux-inline > .ux-field {
   align-self: flex-start;
@@ -1031,6 +1152,10 @@ html:not(.replica-child) body {
 .ux-inner--config .ux-card h3::before {
   height: 16px;
 }
+/* settings cards sit further apart than the rows inside them, so the sections read as groups */
+.ux-inner--settings .ux-card {
+  margin-top: 20px;
+}
 .ux-inner--config .ux-hint,
 .ux-inner--config #job-preferences .ux-hint,
 .ux-inner--config #job-policy .ux-hint,
@@ -1223,15 +1348,15 @@ html:not(.replica-child) body {
   line-height: 1.5;
 }
 .ux-inner--config .el-button:focus-visible {
-  outline: 2px solid #278f84;
+  outline: 2px solid var(--el-color-primary);
   outline-offset: 3px;
 }
 .ux-inner--config input,
 .ux-inner--config textarea {
-  caret-color: #278f84;
+  caret-color: var(--el-color-primary);
 }
 .ux-inner--config ::selection {
-  background: #d9eeea;
+  background: var(--el-color-primary-light-8);
 }
 .ux-main:has(.ux-inner--config) {
   scrollbar-color: #a7bdb8 #f6faf9;
@@ -1341,6 +1466,7 @@ html:not(.replica-child) body {
   display: flex;
   flex-shrink: 0;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
 }
 .ux-company-actions .el-button + .el-button {
@@ -1405,11 +1531,12 @@ html:not(.replica-child) body {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 12px;
   flex-wrap: wrap;
 }
 .ux-footer--ai .ux-footer-actions > .ux-hint {
   margin: 0 auto 0 0;
+  line-height: 24px;
 }
 .ux-footer--ai .el-button + .el-button {
   margin-left: 0;
@@ -1517,6 +1644,16 @@ html:not(.replica-child) body {
 .ux-rail-count {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+/* the bar and the extra line line up with the label text, right of the status dot */
+.ux-rail-item > .el-progress {
+  margin: 2px 0 0 14px;
+}
+.ux-rail-extra {
+  margin-left: 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
 }
 .ux-rail-dot {
   width: 8px;
@@ -2094,7 +2231,7 @@ html:not(.replica-child) body {
   }
 }
 
-/* macOS liquid-glass navigation — rendered as a pipeline, back to front:
+/* Cross-platform glass navigation — rendered as a pipeline, back to front:
    1 background   .ux-glass-wallpaper (soft colour fields, semi-transparent so the window's native
                   sidebar vibrancy, i.e. the blurred desktop, mixes in) + slight pointer parallax
    2 refraction   ::before backdrop-filter → #ux-glass-filter: blur, bezel displacement (glass.js),
@@ -2108,15 +2245,15 @@ html:not(.replica-child) body {
   inherits: true;
   initial-value: 0;
 }
-.ux-shell.is-vibrant {
+.ux-shell.is-glass {
   --glass-inset: 8px;
   --glass-radius: 22px;
   --glass-shade: 32 78 74;
 }
-.ux-shell.is-vibrant.is-nav-collapsed {
+.ux-shell.is-glass.is-nav-collapsed {
   --ux-nav-width: 64px;
 }
-.ux-shell.is-vibrant .ux-nav {
+.ux-shell.is-glass .ux-nav {
   position: relative;
   isolation: isolate;
   padding: 24px 18px 22px 20px;
@@ -2126,8 +2263,8 @@ html:not(.replica-child) body {
     padding 0.2s ease,
     --glass-glow 0.35s ease;
 }
-.ux-shell.is-vibrant .ux-nav::before,
-.ux-shell.is-vibrant .ux-nav::after {
+.ux-shell.is-glass .ux-nav::before,
+.ux-shell.is-glass .ux-nav::after {
   content: "";
   position: absolute;
   inset: var(--glass-inset);
@@ -2136,8 +2273,9 @@ html:not(.replica-child) body {
   corner-shape: squircle;
   pointer-events: none;
 }
-.ux-shell.is-vibrant .ux-nav::before {
-  backdrop-filter: url(#ux-glass-filter);
+.ux-shell.is-glass .ux-nav::before {
+  -webkit-backdrop-filter: blur(12px) saturate(125%);
+  backdrop-filter: blur(12px) saturate(125%);
   background:
     /* pointer-following reflection */
     radial-gradient(
@@ -2162,7 +2300,7 @@ html:not(.replica-child) body {
     0 1px 3px rgb(var(--glass-shade) / 0.12),
     0 12px 32px rgb(var(--glass-shade) / 0.16);
 }
-.ux-shell.is-vibrant .ux-nav::after {
+.ux-shell.is-glass .ux-nav::after {
   padding: 1px;
   background: linear-gradient(
     150deg,
@@ -2201,8 +2339,16 @@ html:not(.replica-child) body {
   );
   transition: transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.ux-shell:not(.is-vibrant) .ux-glass-backdrop {
-  display: none;
+.ux-shell.is-glass-refracted .ux-nav::before {
+  backdrop-filter: url(#ux-glass-filter);
+}
+.ux-shell.is-glass-static .ux-nav::before {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: #edf7f5;
+}
+.ux-shell.is-glass-static .ux-glass-backdrop {
+  visibility: hidden;
 }
 .ux-glass-defs {
   position: absolute;
@@ -2210,13 +2356,13 @@ html:not(.replica-child) body {
   height: 0;
   overflow: hidden;
 }
-.ux-shell.is-vibrant .ux-main {
+.ux-shell.is-glass .ux-main {
   box-shadow: -0.5px 0 0 rgb(var(--glass-shade) / 0.1);
 }
-.ux-shell.is-vibrant .ux-nav-head {
+.ux-shell.is-glass .ux-nav-head {
   padding-right: 0;
 }
-.ux-shell.is-vibrant .ux-nav .link-list a {
+.ux-shell.is-glass .ux-nav .link-list a {
   padding: 0 10px 0 12px;
   border-radius: 11px;
   corner-shape: squircle;
@@ -2224,10 +2370,10 @@ html:not(.replica-child) body {
     background-color 0.15s ease,
     box-shadow 0.15s ease;
 }
-.ux-shell.is-vibrant .ux-nav .link-list a:hover {
+.ux-shell.is-glass .ux-nav .link-list a:hover {
   background-color: rgb(255 255 255 / 0.38);
 }
-.ux-shell.is-vibrant .ux-nav .link-list a.router-link-active {
+.ux-shell.is-glass .ux-nav .link-list a.router-link-active {
   border-radius: 11px;
   background: linear-gradient(180deg, rgb(255 255 255 / 0.95), rgb(255 255 255 / 0.72));
   box-shadow:
@@ -2237,40 +2383,58 @@ html:not(.replica-child) body {
     0 1px 2px rgb(var(--glass-shade) / 0.1),
     0 4px 12px rgb(var(--glass-shade) / 0.1);
 }
-.ux-shell.is-vibrant .ux-nav-badge {
+.ux-shell.is-glass .ux-nav-badge {
   margin-right: 0;
 }
-.ux-shell.is-vibrant .ux-nav-toggle:hover {
+.ux-shell.is-glass .ux-nav-toggle:hover {
   background: rgb(255 255 255 / 0.5);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.9);
 }
-.ux-shell.is-vibrant .ux-nav-bottom {
+.ux-shell.is-glass .ux-nav-bottom {
   padding-right: 0;
   border-top-color: rgb(var(--glass-shade) / 0.12);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.55);
 }
-.ux-shell.is-vibrant.is-nav-collapsed .ux-nav {
+.ux-shell.is-glass.is-nav-collapsed .ux-nav {
   padding-left: 14px;
   padding-right: 14px;
 }
-.ux-shell.is-vibrant.is-nav-collapsed .ux-nav-head {
+.ux-shell.is-glass.is-nav-collapsed .ux-nav-head {
   padding-right: 0;
 }
-.ux-shell.is-vibrant.is-nav-collapsed .ux-nav .link-list a {
+.ux-shell.is-glass.is-nav-collapsed .ux-nav .link-list a {
   padding: 0;
 }
-.ux-shell.is-vibrant.is-nav-collapsed .ux-nav-badge {
+.ux-shell.is-glass.is-nav-collapsed .ux-nav-badge {
   right: -4px;
 }
-.ux-shell.is-vibrant.is-nav-collapsed .ux-nav-groups .group-item + .group-item {
+.ux-shell.is-glass.is-nav-collapsed .ux-nav-groups .group-item + .group-item {
   border-top-color: rgb(var(--glass-shade) / 0.12);
 }
 @media (prefers-reduced-motion: reduce) {
-  .ux-shell.is-vibrant .ux-nav {
+  .ux-shell.is-glass .ux-nav {
     --glass-glow: 0 !important;
   }
   .ux-glass-wallpaper {
     transform: none;
+  }
+}
+@media (forced-colors: active) {
+  .ux-shell.is-glass .ux-glass-backdrop,
+  .ux-shell.is-glass .ux-nav::after {
+    display: none;
+  }
+  .ux-shell.is-glass .ux-nav::before {
+    background: Canvas;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+    border: 1px solid CanvasText;
+  }
+  .ux-shell.is-glass .ux-nav .link-list a.router-link-active {
+    background: Highlight;
+    color: HighlightText;
+    box-shadow: none;
   }
 }
 
@@ -2386,7 +2550,7 @@ html:not(.replica-child) body {
   position: sticky;
   top: 72px;
   width: min(480px, 100%);
-  padding: 22px 24px 16px;
+  padding: 22px 24px 18px;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 14px;
   background: var(--el-bg-color);
@@ -2400,6 +2564,65 @@ html:not(.replica-child) body {
 .ux-task-curtain-head h2 {
   margin: 0;
   font-size: 18px;
+  flex: 1;
+  min-width: 0;
+}
+.ux-task-curtain-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.ux-task-curtain-head-actions .el-button {
+  margin: 0;
+  min-height: 32px;
+}
+.ux-task-curtain-config {
+  padding: 6px 8px;
+  color: var(--el-text-color-regular);
+}
+.ux-task-curtain-close {
+  width: 32px;
+  padding: 6px;
+}
+.ux-task-curtain-close svg {
+  width: 16px;
+  height: 16px;
+}
+.ux-task-curtain-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.ux-task-curtain-actions .el-button {
+  min-height: 40px;
+  margin: 0;
+}
+.ux-task-curtain-actions .ux-task-curtain-end {
+  margin-left: auto;
+  --el-button-text-color: var(--el-color-danger);
+  --el-button-hover-text-color: var(--el-color-danger-dark-2);
+  --el-button-hover-bg-color: var(--el-color-danger-light-9);
+}
+.ux-task-curtain-note {
+  margin: 14px 0 0;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+@media (max-width: 720px) {
+  .ux-task-curtain-card {
+    padding: 18px 16px;
+  }
+  .ux-task-curtain-head {
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .ux-task-curtain-head h2 {
+    font-size: 16px;
+  }
 }
 .ux-task-curtain-detail {
   margin: 10px 0 14px;
@@ -2693,14 +2916,15 @@ html:not(.replica-child) body {
   width: 16px;
   height: 16px;
   margin-left: 6px;
-  vertical-align: -2px;
+  /* keeps the glyph on the text's middle line across font sizes */
+  vertical-align: -0.15em;
   color: var(--el-text-color-placeholder);
   cursor: help;
   border-radius: 50%;
 }
 .ux-tip svg {
-  width: 15px;
-  height: 15px;
+  width: 14px;
+  height: 14px;
 }
 .ux-tip:hover,
 .ux-tip:focus-visible {
@@ -2805,7 +3029,7 @@ html:not(.replica-child) body {
 /* 找岗位 step bar (Element Plus steps); clicking a step opens it */
 .ux-el-steps {
   margin: 18px 0 14px;
-  padding: 14px 16px 10px;
+  padding: 14px 16px;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
   background: var(--el-bg-color);

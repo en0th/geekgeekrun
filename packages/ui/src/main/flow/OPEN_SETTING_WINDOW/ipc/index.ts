@@ -63,7 +63,9 @@ import {
   createFavoriteFolder,
   renameFavoriteFolder,
   deleteFavoriteFolder,
-  addFavoriteJobs
+  addFavoriteJobs,
+  saveRunConfigSnapshot,
+  getRunConfigSnapshot
 } from '../utils/db/index'
 import { pipeWriteRegardlessError } from '../../utils/pipe'
 import fs, { WriteStream } from 'node:fs'
@@ -336,6 +338,16 @@ export default function initIpc() {
     }
   )
 
+  // 任务详情 → 任务配置: the settings a run started with, saved by the renderer when the run begins
+  ipcMain.handle(
+    'save-run-config-snapshot',
+    (_ev, payload: { runRecordId: number; config: unknown }) =>
+      saveRunConfigSnapshot(payload)
+  )
+  ipcMain.handle('get-run-config-snapshot', (_ev, payload: { runRecordId: number }) =>
+    getRunConfigSnapshot(payload)
+  )
+
   ipcMain.handle('run-read-no-reply-auto-reminder', async () => {
     const mode = 'readNoReplyAutoReminderMain'
     const result = await runCommon({ mode })
@@ -489,7 +501,7 @@ export default function initIpc() {
   ipcMain.handle('data-location-info', () => getDataLocationInfo())
   ipcMain.handle('data-location-change', (_, payload) => changeDataLocation(payload))
   ipcMain.handle('app-relaunch', () => relaunchApp())
-  // ---- global run pace (used by configurations that tick "使用全局运行节奏") ----
+  // ---- 运行节奏 (设置 → 运行节奏), the single pace every 找岗位 run uses ----
   ipcMain.handle('run-pace-info', () => {
     const saved = readConfigFile(RUN_PACE_FILE)
     // until it is saved once, start from the pace boss.json already uses

@@ -160,6 +160,20 @@
           @selection-change="(rows) => (selection = rows)"
           @header-dragend="handleHeaderDragend"
         >
+          <template #empty>
+            <div class="run-data-table__empty">
+              <p>{{ emptyText || '暂无数据' }}</p>
+              <ElButton
+                v-if="emptyAction"
+                size="small"
+                type="primary"
+                plain
+                @click="jumpStore.jump({ dataset: '__page__', rows: [], label: emptyAction.label, page: emptyAction.page })"
+              >
+                {{ emptyAction.label }}
+              </ElButton>
+            </div>
+          </template>
           <ElTableColumn type="selection" width="36" fixed="left" reserve-selection />
           <ElTableColumn
             v-for="col in displayedColumns"
@@ -347,6 +361,10 @@ const props = defineProps<{
   ignoreJumps?: boolean
   // sent with every query; a clientRows dataset takes its rows from context.rows
   context?: unknown
+  // empty state: a line of guidance instead of the bare 暂无数据
+  emptyText?: string
+  // plus a button that jumps to another page (e.g. 去配置找岗位)
+  emptyAction?: { label: string; page: string }
 }>()
 
 const emit = defineEmits<{
@@ -825,7 +843,7 @@ async function deleteSelected() {
             ? `确定将选中的 ${count} 个职位移出收藏夹吗？`
             : `确定从数据库中永久删除选中的 ${count} 条${datasetDef.value.label}吗？此操作不可撤销。`
         ),
-        h('p', { class: 'm-0 mt6px color-#e6a23c' }, deleteWarning[props.dataset])
+        h('p', { class: 'm-0 mt6px', style: { color: 'var(--el-color-warning)' } }, deleteWarning[props.dataset])
       ]),
       props.dataset === 'favoriteJobs' ? '移出收藏夹' : '删除记录',
       {
@@ -1009,6 +1027,11 @@ onBeforeUnmount(() => {
     .el-button + .el-button {
       margin-left: 0;
     }
+    // a divider separates the view tools from the filter group on wide windows
+    @media (min-width: 900px) {
+      padding-left: 16px;
+      border-left: 1px solid var(--el-border-color-lighter);
+    }
   }
   &__conditions {
     display: flex;
@@ -1049,6 +1072,25 @@ onBeforeUnmount(() => {
 </style>
 
 <style lang="scss">
+/* empty tables read as one centered, compact block */
+.run-data-table .el-table__empty-block {
+  padding: 32px 0;
+}
+.run-data-table .el-table__empty-text {
+  line-height: 1.6;
+  color: var(--el-text-color-secondary);
+}
+.run-data-table__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  p {
+    margin: 0;
+    line-height: 1.6;
+    color: var(--el-text-color-secondary);
+  }
+}
 .run-data-cell-menu {
   position: fixed;
   z-index: 3000;

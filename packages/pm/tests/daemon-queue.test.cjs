@@ -17,7 +17,7 @@ async function startDaemon(sliceMs = 60000, extraEnv = {}) {
     env: { ...process.env, GEEKGEEKRUND_PIPE_NAME: pipeName, GEEKGEEKRUND_TIME_SLICE_MS: String(sliceMs), ...extraEnv }
   })
   await new Promise((resolve) => child.stdio[3].once('data', resolve)) // DAEMON_READY
-  const socket = net.connect(path.join(tmpdir(), `${pipeName}.sock`))
+  const socket = net.connect(process.platform === 'win32' ? `\\\\.\\pipe\\${pipeName}` : path.join(tmpdir(), `${pipeName}.sock`))
   const pending = new Map()
   const events = []
   let buffer = ''

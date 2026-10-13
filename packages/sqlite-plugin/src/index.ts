@@ -40,6 +40,8 @@ import { Init1000000000000 } from "./migrations/1000000000000-Init";
 import { AddJobSourceColumnForChatStartupLogAndMarkAsNotSuitLog1752380078526 } from "./migrations/1752380078526-AddJobSourceColumnForChatStartupLogAndMarkAsNotSuitLog";
 import { AddJobHireStatusTable1766466476822 } from "./migrations/1766466476822-AddJobHireStatusTable";
 import { AddFavoriteAndJobHireStatusLog1791100000000 } from "./migrations/1791100000000-AddFavoriteAndJobHireStatusLog";
+import { AddConfigSnapshotForRunRecord1791440000000 } from "./migrations/1791440000000-AddConfigSnapshotForRunRecord";
+import { AddJobCompanyBrandName1791740000000 } from "./migrations/1791740000000-AddJobCompanyBrandName";
 import { FavoriteFolder } from "./entity/FavoriteFolder";
 import { FavoriteJob } from "./entity/FavoriteJob";
 import { JobHireStatusLog } from "./entity/JobHireStatusLog";
@@ -85,7 +87,9 @@ export function initDb(dbFilePath) {
       AddColumnForMarkAsNotSuitLog1746092370665,
       AddJobSourceColumnForChatStartupLogAndMarkAsNotSuitLog1752380078526,
       AddJobHireStatusTable1766466476822,
-      AddFavoriteAndJobHireStatusLog1791100000000
+      AddFavoriteAndJobHireStatusLog1791100000000,
+      AddConfigSnapshotForRunRecord1791440000000,
+      AddJobCompanyBrandName1791740000000
     ],
     migrationsRun: true
   });

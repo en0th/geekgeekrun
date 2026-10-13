@@ -9,6 +9,8 @@ import {
   waitSeconds,
   DEFAULT_JOB_LIST_LOAD_WAIT_SECONDS,
   DEFAULT_JOB_DETAIL_VIEW_WAIT_SECONDS,
+  DEFAULT_PER_SOURCE_SUCCESS_LIMIT,
+  DEFAULT_NO_MATCH_STREAK_LIMIT,
   MAX_WAIT_SECONDS
 } from '../run-settings.mjs'
 
@@ -17,6 +19,8 @@ test('configs without the settings get the defaults', () => {
     runMode: 'chat',
     collectOnlyMatchingJobs: true,
     skipUnparseableSalaryJob: true,
+    perSourceSuccessLimit: DEFAULT_PER_SOURCE_SUCCESS_LIMIT,
+    noMatchStreakLimit: DEFAULT_NO_MATCH_STREAK_LIMIT,
     jobListLoadWaitSeconds: DEFAULT_JOB_LIST_LOAD_WAIT_SECONDS,
     jobDetailViewWaitSeconds: DEFAULT_JOB_DETAIL_VIEW_WAIT_SECONDS
   })
@@ -28,6 +32,8 @@ test('saved settings are used as they are', () => {
       autoChatRunMode: 'collect',
       collectOnlyMatchingJobs: false,
       skipUnparseableSalaryJob: false,
+      autoChatPerSourceSuccessLimit: 7,
+      autoChatNoMatchStreakLimit: 0,
       jobListLoadWaitSeconds: 0,
       jobDetailViewWaitSeconds: 3.5
     }),
@@ -35,6 +41,8 @@ test('saved settings are used as they are', () => {
       runMode: 'collect',
       collectOnlyMatchingJobs: false,
       skipUnparseableSalaryJob: false,
+      perSourceSuccessLimit: 7,
+      noMatchStreakLimit: 0,
       jobListLoadWaitSeconds: 0,
       jobDetailViewWaitSeconds: 3.5
     }
@@ -44,6 +52,17 @@ test('saved settings are used as they are', () => {
 test('an unknown run mode falls back to chatting', () => {
   assert.equal(readRunSettings({ autoChatRunMode: 'spam' }).runMode, 'chat')
   assert.equal(readRunSettings({ collectOnlyMatchingJobs: 'no' }).collectOnlyMatchingJobs, true)
+})
+
+test('rotation limits fall back for invalid values and 0 stays 0', () => {
+  for (const value of [null, undefined, '', -1, 'abc', NaN]) {
+    assert.equal(readRunSettings({ autoChatPerSourceSuccessLimit: value }).perSourceSuccessLimit, DEFAULT_PER_SOURCE_SUCCESS_LIMIT, String(value))
+    assert.equal(readRunSettings({ autoChatNoMatchStreakLimit: value }).noMatchStreakLimit, DEFAULT_NO_MATCH_STREAK_LIMIT, String(value))
+  }
+  assert.equal(readRunSettings({ autoChatPerSourceSuccessLimit: '12' }).perSourceSuccessLimit, 12)
+  assert.equal(readRunSettings({ autoChatPerSourceSuccessLimit: 1.5 }).perSourceSuccessLimit, 1)
+  assert.equal(readRunSettings({ autoChatNoMatchStreakLimit: 0 }).noMatchStreakLimit, 0)
+  assert.equal(readRunSettings({ autoChatPerSourceSuccessLimit: 99999 }).perSourceSuccessLimit, 9999)
 })
 
 test('job status poll settings keep only allowed values', () => {

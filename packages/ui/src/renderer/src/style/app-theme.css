@@ -1,0 +1,103 @@
+/* One light-theme palette for every renderer window and body-teleported overlay.
+   Import after Element Plus; local layouts must not replace semantic button colours. */
+:root {
+  --el-color-primary: #1668dc;
+  --el-color-primary-light-3: #5c95e7;
+  --el-color-primary-light-5: #8bb4ee;
+  --el-color-primary-light-7: #b9d2f5;
+  --el-color-primary-light-8: #d0e1f8;
+  --el-color-primary-light-9: #e8f0fc;
+  --el-color-primary-dark-2: #154eaf;
+  --ggr-primary-hover: #175cd3;
+  --el-color-success: #287a1d;
+  --el-color-success-light-3: #69a261;
+  --el-color-success-light-5: #94bd8e;
+  --el-color-success-light-7: #bfd7bb;
+  --el-color-success-light-8: #d4e4d2;
+  --el-color-success-light-9: #eaf2e8;
+  --el-color-success-dark-2: #216518;
+  --el-color-warning: #96620a;
+  --el-color-warning-light-3: #b69154;
+  --el-color-warning-light-5: #cbb185;
+  --el-color-warning-light-7: #e0d0b6;
+  --el-color-warning-light-8: #eae0ce;
+  --el-color-warning-light-9: #f5efe7;
+  --el-color-warning-dark-2: #805307;
+  --el-color-danger: #b42318;
+  --el-color-danger-light-3: #cb655d;
+  --el-color-danger-light-5: #da918c;
+  --el-color-danger-light-7: #e9bdba;
+  --el-color-danger-light-8: #f0d3d1;
+  --el-color-danger-light-9: #f8e9e8;
+  --el-color-danger-dark-2: #912018;
+  --el-color-error: var(--el-color-danger);
+  --el-color-error-light-3: var(--el-color-danger-light-3);
+  --el-color-error-light-5: var(--el-color-danger-light-5);
+  --el-color-error-light-7: var(--el-color-danger-light-7);
+  --el-color-error-light-8: var(--el-color-danger-light-8);
+  --el-color-error-light-9: var(--el-color-danger-light-9);
+  --el-color-error-dark-2: var(--el-color-danger-dark-2);
+  --el-color-info: #667085;
+  --el-color-info-light-3: #949baa;
+  --el-color-info-light-5: #b3b8c2;
+  --el-color-info-light-7: #d1d4da;
+  --el-color-info-light-8: #e0e2e7;
+  --el-color-info-light-9: #f0f1f3;
+  --el-color-info-dark-2: #566075;
+  --el-text-color-primary: #26373b;
+  --el-text-color-regular: #475467;
+  --el-text-color-secondary: #667085;
+  --el-text-color-placeholder: #6b7280;
+  --el-text-color-disabled: #98a2b3;
+  --ggr-brand-text: #17665f;
+}
+.ggr-text-muted { color: var(--el-text-color-secondary); }
+
+/* Filled-button hover/press states stay dark enough for white labels. Element's
+   plain/text/link and disabled modifiers retain their own lighter surfaces. */
+.el-button--primary {
+  --el-button-hover-bg-color: var(--ggr-primary-hover);
+  --el-button-hover-border-color: var(--ggr-primary-hover);
+  --el-button-active-bg-color: var(--el-color-primary-dark-2);
+  --el-button-active-border-color: var(--el-color-primary-dark-2);
+}
+.el-button--success {
+  --el-button-hover-bg-color: var(--el-color-success-dark-2);
+  --el-button-hover-border-color: var(--el-color-success-dark-2);
+}
+.el-button--warning {
+  --el-button-hover-bg-color: var(--el-color-warning-dark-2);
+  --el-button-hover-border-color: var(--el-color-warning-dark-2);
+}
+.el-button--danger {
+  --el-button-hover-bg-color: var(--el-color-danger-dark-2);
+  --el-button-hover-border-color: var(--el-color-danger-dark-2);
+}
+.el-button--info {
+  --el-button-hover-bg-color: var(--el-color-info-dark-2);
+  --el-button-hover-border-color: var(--el-color-info-dark-2);
+}
+.el-button:focus-visible,
+.ggr-toast__action:focus-visible,
+.ggr-toast__close:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 3px;
+}
+.el-button.is-disabled:focus-visible {
+  outline-color: var(--el-text-color-disabled);
+}
+.ggr-danger-confirm {
+  --el-button-text-color: #fff;
+  --el-button-bg-color: var(--el-color-danger);
+  --el-button-border-color: var(--el-color-danger);
+  --el-button-hover-text-color: #fff;
+  --el-button-hover-bg-color: var(--el-color-danger-dark-2);
+  --el-button-hover-border-color: var(--el-color-danger-dark-2);
+  --el-button-active-text-color: #fff;
+  --el-button-active-bg-color: var(--el-color-danger-dark-2);
+  --el-button-active-border-color: var(--el-color-danger-dark-2);
+}
+
+@media (forced-colors: active) {
+  .el-button:focus-visible { outline-color: Highlight; }
+}

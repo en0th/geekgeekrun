@@ -7,7 +7,7 @@
     @update:model-value="emit('update:visible', $event)"
     @open="draft = cloneRows(modelValue)"
   >
-    <div class="text-12px color-#909399 mb10px">所有条件同时满足（且）的记录会被显示。</div>
+    <div class="text-12px ggr-text-muted mb10px">所有条件同时满足（且）的记录会被显示。</div>
     <div v-for="(row, index) in draft" :key="index" class="flex items-center gap-8px mb8px">
       <ElSelect
         v-model="row.field"

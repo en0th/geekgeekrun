@@ -4,6 +4,8 @@
       dataset="companyLibrary"
       :columns="columns"
       :stats-preset="runDataStatsPresets.companyLibrary"
+      empty-text="运行找岗位后，遇到过的公司会收集在这里"
+      :empty-action="{ label: '去配置找岗位', page: 'auto' }"
       class="flex-1"
     />
   </div>

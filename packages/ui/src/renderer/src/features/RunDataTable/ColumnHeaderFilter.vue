@@ -22,7 +22,7 @@
       <div class="column-header-filter__panel">
         <ElInput v-model="search" size="small" placeholder="搜索选项" clearable />
         <div class="flex items-center justify-between mt6px mb4px">
-          <span class="text-12px color-#909399">
+          <span class="text-12px ggr-text-muted">
             共 {{ options.length }} 项{{
               options.length >= OPTION_LIMIT ? '（仅显示最多的前 ' + OPTION_LIMIT + ' 项）' : ''
             }}
@@ -47,7 +47,7 @@
           </ElCheckboxGroup>
           <div
             v-if="loading || !visibleOptions.length"
-            class="text-center text-12px color-#909399 py12px"
+            class="text-center text-12px ggr-text-muted py12px"
           >
             {{ loading ? '加载中…' : '无匹配选项' }}
           </div>

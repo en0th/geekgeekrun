@@ -19,6 +19,19 @@ export const RUN_MODES = ['chat', 'collect']
 export const DEFAULT_RUN_MODE = 'chat'
 export const DEFAULT_COLLECT_ONLY_MATCHING_JOBS = true
 
+// source rotation: after this many collected / greeted jobs on one source, move to the next one
+export const DEFAULT_PER_SOURCE_SUCCESS_LIMIT = 20
+// source rotation: after this many consecutive checked jobs without a match, move to the next one
+export const DEFAULT_NO_MATCH_STREAK_LIMIT = 30
+const MAX_ROTATION_LIMIT = 9999
+
+function rotationLimit(value, fallback) {
+  if (value === null || value === undefined || value === '') return fallback
+  const n = Number(value)
+  // 0 disables the trigger; anything above the cap behaves as "practically unlimited"
+  return Number.isFinite(n) && n >= 0 ? Math.min(Math.floor(n), MAX_ROTATION_LIMIT) : fallback
+}
+
 export function readRunSettings(bossConfig = {}) {
   return {
     runMode: RUN_MODES.includes(bossConfig.autoChatRunMode) ? bossConfig.autoChatRunMode : DEFAULT_RUN_MODE,
@@ -30,6 +43,14 @@ export function readRunSettings(bossConfig = {}) {
       typeof bossConfig.skipUnparseableSalaryJob === 'boolean'
         ? bossConfig.skipUnparseableSalaryJob
         : DEFAULT_SKIP_UNPARSEABLE_SALARY_JOB,
+    perSourceSuccessLimit: rotationLimit(
+      bossConfig.autoChatPerSourceSuccessLimit,
+      DEFAULT_PER_SOURCE_SUCCESS_LIMIT
+    ),
+    noMatchStreakLimit: rotationLimit(
+      bossConfig.autoChatNoMatchStreakLimit,
+      DEFAULT_NO_MATCH_STREAK_LIMIT
+    ),
     jobListLoadWaitSeconds: waitSeconds(
       bossConfig.jobListLoadWaitSeconds,
       DEFAULT_JOB_LIST_LOAD_WAIT_SECONDS
@@ -58,7 +79,7 @@ export function readJobStatusPollSettings(saved) {
   }
 }
 
-// Run pace shared by every configuration that ticks "使用全局运行节奏" (config/run-pace.json).
+// The single run pace every 找岗位 run uses (config/run-pace.json, edited in 设置 → 运行节奏).
 // Same keys as the settings page draft: a timed rest every `actions` operations for `minutes`,
 // and the waits after loading a list batch / opening a job detail.
 export const RUN_PACE_FILE = 'run-pace.json'

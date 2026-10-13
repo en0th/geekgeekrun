@@ -1,4 +1,5 @@
 import { ipcMain, BrowserWindow, safeStorage } from 'electron'
+import { mergeJobFilterConfig, companySelections } from '@geekgeekrun/geek-auto-start-chat-with-boss/job-filter-config.mjs'
 import fs from 'node:fs/promises'
 import fsSync from 'node:fs'
 import path from 'node:path'
@@ -253,7 +254,7 @@ export function initUxIpc() {
       const entries: Array<[string, unknown]> = []
       let nextSignature = signature()
       if (patch) {
-        const boss = readConfigFile('boss.json')
+        let boss = readConfigFile('boss.json')
         if (patch.autoReminder) {
           const a = patch.autoReminder
           const errors = followErrors({
@@ -285,18 +286,18 @@ export function initUxIpc() {
           throw Error('薪资上限不能低于下限')
         if (patch.autoReminder)
           patch.autoReminder = keepAutoReminderSecrets(patch.autoReminder, boss.autoReminder)
-        Object.assign(boss, patch)
+        boss = mergeJobFilterConfig(boss, patch)
         delete boss.expectCompanies
         entries.push([path.join(configFolderPath, 'boss.json'), boss])
         if (Object.hasOwn(patch, 'expectCompanies'))
           entries.push([
             path.join(configFolderPath, 'target-company-list.json'),
-            String(patch.expectCompanies).split(',').filter(Boolean)
+            companySelections(patch.expectCompanies)
           ])
         nextSignature = signature(
           boss,
           Object.hasOwn(patch, 'expectCompanies')
-            ? String(patch.expectCompanies).split(',').filter(Boolean)
+            ? companySelections(patch.expectCompanies)
             : readConfigFile('target-company-list.json')
         )
       }

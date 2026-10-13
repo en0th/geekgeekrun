@@ -72,6 +72,15 @@ export const saveAndGetCurrentRunRecord = async () => {
   return res
 }
 
+export const saveRunConfigSnapshot = async (payload: { runRecordId: number; config: unknown }) => {
+  await runDataWorkerCall('saveRunConfigSnapshot', payload)
+}
+
+export const getRunConfigSnapshot = async (payload: { runRecordId: number }) => {
+  const res = await runDataWorkerCall('getRunConfigSnapshot', payload)
+  return res.data ?? null
+}
+
 // run-data handlers reject when the worker reports an error, so ipcRenderer.invoke rejects too
 const runDataWorkerCall = async (type: string, payload: object) => {
   const res = (await createWorkerPromise({ ...payload, type })) as {

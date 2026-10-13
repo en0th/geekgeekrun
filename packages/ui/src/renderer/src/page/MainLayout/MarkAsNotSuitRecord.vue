@@ -5,6 +5,8 @@
       :columns="columns"
       :stats-preset="runDataStatsPresets.markAsNotSuitLog"
       :actions-width="180"
+      empty-text="按处理方式跳过或标记的岗位会出现在这里"
+      :empty-action="{ label: '去配置找岗位', page: 'auto' }"
       class="flex-1"
     >
       <template #cell-markReason="{ row }">
