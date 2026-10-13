@@ -158,7 +158,7 @@
           @cell-click="handleCellClick"
           @sort-change="handleSortChange"
           @selection-change="(rows) => (selection = rows)"
-          @header-dragend="handleTableHeaderDragend"
+          @header-dragend="handleHeaderDragend"
         >
           <template #empty>
             <div class="run-data-table__empty">

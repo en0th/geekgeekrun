@@ -3792,22 +3792,28 @@ export default Vue.defineComponent({
     // 任务配置 tab: the snapshot saved when the run started, plus its diff against the current draft
     const runSnapshot = ref(null);
     const runSnapshotLoadedFor = ref(null);
+    const runSnapshotLoading = ref(false);
+    let runSnapshotRequest = 0;
     const snapshotDiffOpen = ref(false);
     async function loadRunSnapshot(t) {
+      const request = ++runSnapshotRequest;
       const id = Number(t?.runRecordId);
+      runSnapshot.value = null;
+      runSnapshotLoadedFor.value = id || null;
+      runSnapshotLoading.value = Boolean(id);
       if (!id) {
-        runSnapshot.value = null;
-        runSnapshotLoadedFor.value = null;
         return;
       }
-      runSnapshotLoadedFor.value = t;
       try {
-        runSnapshot.value = await window.electron.ipcRenderer.invoke(
+        const snapshot = await window.electron.ipcRenderer.invoke(
           "get-run-config-snapshot",
           { runRecordId: id },
         );
+        if (request === runSnapshotRequest) runSnapshot.value = snapshot;
       } catch {
-        runSnapshot.value = null;
+        if (request === runSnapshotRequest) runSnapshot.value = null;
+      } finally {
+        if (request === runSnapshotRequest) runSnapshotLoading.value = false;
       }
     }
     R.watch(detailTab, (v) => {
@@ -5404,9 +5410,11 @@ export default Vue.defineComponent({
       R.message({ type: "success", message: "已载入该次运行的配置，可修改后保存" });
     }
     function taskConfigBody(t) {
-      const snap = runSnapshot.value;
+      const snap = runSnapshotLoadedFor.value === Number(t.runRecordId) ? runSnapshot.value : null;
       if (!Number(t.runRecordId))
         return [hint("这次运行没有保存配置（缺少运行编号）。")];
+      if (runSnapshotLoading.value)
+        return [hint("正在读取这次运行的配置…")];
       if (!snap)
         return [
           h("div", { class: "ux-task-data-head" }, [

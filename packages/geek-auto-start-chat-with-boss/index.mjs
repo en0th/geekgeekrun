@@ -342,6 +342,10 @@ function resetSourceRotationCounters () {
   sourceSuccessCount = 0
   noMatchStreak = 0
 }
+function hasReachedSourceRotationLimit () {
+  return (perSourceSuccessLimit > 0 && sourceSuccessCount >= perSourceSuccessLimit) ||
+    (noMatchStreakLimit > 0 && noMatchStreak >= noMatchStreakLimit)
+}
 function sourceLabel (source) {
   if (source?.type === 'search') return `搜索“${source.keyword}”`
   if (source?.type === 'recommend') return '推荐职位'
@@ -370,7 +374,7 @@ const blockEntries = (set) =>
 /** what a later run needs to go on from here */
 export function exportRunState () {
   return {
-    position: { ...runPosition },
+    position: { ...runPosition, sourceSuccessCount, noMatchStreak },
     blockedJobs: blockEntries(blockJobNotSuit),
     blockedBossesNotActive: blockEntries(blockBossNotActive),
     blockedBossesNotNewChat: [...blockBossNotNewChat]
@@ -400,7 +404,7 @@ export function importRunState (state, { skipCurrentFilter = false } = {}) {
 }
 /** the next mainLoop in this process goes on where this one was */
 export function resumeFromCurrentPosition () {
-  pendingResume = { ...runPosition }
+  pendingResume = { ...runPosition, sourceSuccessCount, noMatchStreak }
 }
 
 async function markJobAsNotSuitInRecommendPage (reasonCode) {
@@ -888,8 +892,13 @@ async function toRecommendPage (hooks) {
     staticCombineRecommendJobFilterConditions,
     anyCombineRecommendJobFilter
   ])
-  const resumeFrom = pendingResume?.fingerprint === positionFingerprint ? pendingResume : null
+  const resumeFrom = pendingResume?.fingerprint === positionFingerprint &&
+    Number.isInteger(pendingResume.sourceIndex) && pendingResume.sourceIndex >= 0 &&
+    pendingResume.sourceIndex < computedSourceList.length ? pendingResume : null
   pendingResume = null
+  const savedCount = value => Number.isSafeInteger(value) && value >= 0 ? value : 0
+  sourceSuccessCount = savedCount(resumeFrom?.sourceSuccessCount)
+  noMatchStreak = savedCount(resumeFrom?.noMatchStreak)
   let currentSourceIndex =
     resumeFrom && resumeFrom.sourceIndex < computedSourceList.length ? resumeFrom.sourceIndex : 0
   // filter combinations of the first source to pass over; past the last one, the next source
@@ -928,6 +937,8 @@ async function toRecommendPage (hooks) {
     iterateFilterCondition: for (
       const filterCondition of filterConditions
     ) {
+      // A pause/yield can happen after the threshold was reached, before the source changed.
+      if (hasReachedSourceRotationLimit()) break iterateFilterCondition
       filterConditionIndex++
       if (filterConditionIndex < skipFilterConditions) {
         continue iterateFilterCondition
@@ -1172,7 +1183,7 @@ async function toRecommendPage (hooks) {
                     autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'collected', detail: '已保存岗位信息' })
                     searchGuard.reset()
                     if (countSourceSuccess()) {
-                      autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'collected', detail: `本来源已保存 ${sourceSuccessCount} 个岗位，达到换源数量（${perSourceSuccessLimit}），切换下一个来源` })
+                      autoStartChatEventBus.emit('TASK_PROGRESS', { detail: `本来源已保存 ${sourceSuccessCount} 个岗位，达到换源数量（${perSourceSuccessLimit}），切换下一个来源`, state: 'searching' })
                       reject(new Error(ROTATE_NEXT_SOURCE_ERROR))
                       return
                     }
@@ -1634,7 +1645,7 @@ async function toRecommendPage (hooks) {
                     autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'collected', detail: '已保存符合条件的岗位' })
                     searchGuard.reset()
                     if (countSourceSuccess()) {
-                      autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'collected', detail: `本来源已保存 ${sourceSuccessCount} 个岗位，达到换源数量（${perSourceSuccessLimit}），切换下一个来源` })
+                      autoStartChatEventBus.emit('TASK_PROGRESS', { detail: `本来源已保存 ${sourceSuccessCount} 个岗位，达到换源数量（${perSourceSuccessLimit}），切换下一个来源`, state: 'searching' })
                       reject(new Error(ROTATE_NEXT_SOURCE_ERROR))
                       return
                     }
@@ -1732,10 +1743,11 @@ async function toRecommendPage (hooks) {
               }
             )
             blockBossNotNewChat.add(targetJobData.jobInfo.encryptUserId)
+            const rotateSource = countSourceSuccess()
             autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'sent', detail: 'BOSS已确认开聊成功' })
-            if (countSourceSuccess()) {
-              autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'sent', detail: `本来源已开聊 ${sourceSuccessCount} 个岗位，达到换源数量（${perSourceSuccessLimit}），切换下一个来源` })
-              await storeStorage(page).catch(() => void 0)
+            await storeStorage(page).catch(() => void 0)
+            if (rotateSource) {
+              autoStartChatEventBus.emit('TASK_PROGRESS', { detail: `本来源已开聊 ${sourceSuccessCount} 个岗位，达到换源数量（${perSourceSuccessLimit}），切换下一个来源`, state: 'searching' })
               chatSourceRotationDone = true
               return
             }
@@ -1869,13 +1881,15 @@ async function toRecommendPage (hooks) {
     ) {
       // one-way rotation: every source has been worked once, the run ends successfully
       hooks.noPositionFoundForCurrentJob?.call()
-      autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'done', detail: '所有职位来源都已轮换完成，任务结束', state: 'stopped' })
+      autoStartChatEventBus.emit('TASK_PROGRESS', { detail: '所有职位来源都已轮换完成，任务结束', state: 'stopped' })
       throw new Error('AUTO_CHAT_ALL_SOURCES_ROTATED')
     } else {
       hooks.noPositionFoundForCurrentJob?.call()
-      await sleep((10 + 15 * Math.random()) * 1000)
       currentSourceIndex += 1
       resetSourceRotationCounters()
+      runPosition = { sourceIndex: currentSourceIndex, filterConditionIndex: 0, fingerprint: positionFingerprint }
+      autoStartChatEventBus.emit('RUN_POSITION', { ...runPosition })
+      await sleep((10 + 15 * Math.random()) * 1000)
       autoStartChatEventBus.emit('TASK_PROGRESS', { detail: `切换到下一个来源：${sourceLabel(computedSourceList[currentSourceIndex])}`, state: 'searching' })
     }
   }

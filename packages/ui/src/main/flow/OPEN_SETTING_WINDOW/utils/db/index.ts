@@ -73,11 +73,11 @@ export const saveAndGetCurrentRunRecord = async () => {
 }
 
 export const saveRunConfigSnapshot = async (payload: { runRecordId: number; config: unknown }) => {
-  await createWorkerPromise({ type: 'saveRunConfigSnapshot', ...payload })
+  await runDataWorkerCall('saveRunConfigSnapshot', payload)
 }
 
 export const getRunConfigSnapshot = async (payload: { runRecordId: number }) => {
-  const res = await createWorkerPromise({ type: 'getRunConfigSnapshot', ...payload })
+  const res = await runDataWorkerCall('getRunConfigSnapshot', payload)
   return res.data ?? null
 }
 
