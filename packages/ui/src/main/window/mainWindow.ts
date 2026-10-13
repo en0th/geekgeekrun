@@ -1,6 +1,7 @@
-import { BrowserWindow, shell } from 'electron'
+import { BrowserWindow, shell, type BrowserWindowConstructorOptions } from 'electron'
 import path from 'path'
 import os from 'os'
+import { nativeWindowMaterial } from '../../common/window-material.mjs'
 import { openDevTools } from '../commands'
 import { daemonEE } from '../flow/OPEN_SETTING_WINDOW/connect-to-daemon'
 export let mainWindow: BrowserWindow | null = null
@@ -8,18 +9,9 @@ export let mainWindow: BrowserWindow | null = null
 // tells the renderer that the window has a native glass material behind transparent areas
 const NATIVE_GLASS_ARG = '--ggr-native-glass'
 
-// backgroundMaterial needs Windows 11 22H2 (build 22621) or later
-function isWindowsBackgroundMaterialSupported() {
-  if (process.platform !== 'win32') return false
-  const build = Number(os.release().split('.')[2])
-  return build >= 22621
-}
-
-function hasNativeGlass() {
-  return process.platform === 'darwin' || isWindowsBackgroundMaterialSupported()
-}
-
 export function createMainWindow(): BrowserWindow {
+  const material = nativeWindowMaterial(process.platform, os.release()) as BrowserWindowConstructorOptions
+  const nativeGlass = material.backgroundColor === '#00000000'
   // Create the browser window.
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -33,25 +25,12 @@ export function createMainWindow(): BrowserWindow {
           /* icon */
         }
       : {}),
-    // macOS: native sidebar glass shows through wherever the page is transparent (the left nav)
-    ...(process.platform === 'darwin'
-      ? {
-          vibrancy: 'sidebar' as const,
-          visualEffectState: 'active' as const,
-          backgroundColor: '#00000000'
-        }
-      : {}),
-    // Windows 11 22H2+: acrylic is the closest match to the macOS sidebar vibrancy
-    ...(isWindowsBackgroundMaterialSupported()
-      ? {
-          backgroundMaterial: 'acrylic' as const,
-          backgroundColor: '#00000000'
-        }
-      : {}),
+    // Unsupported native materials (including Win10) use in-app renderer glass.
+    ...material,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       sandbox: false,
-      additionalArguments: hasNativeGlass() ? [NATIVE_GLASS_ARG] : []
+      additionalArguments: nativeGlass ? [NATIVE_GLASS_ARG] : []
     }
   })
 

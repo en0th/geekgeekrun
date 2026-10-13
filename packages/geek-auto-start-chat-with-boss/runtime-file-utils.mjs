@@ -4,6 +4,7 @@ import path from 'node:path'
 import os from 'node:os'
 
 import { resolveStorageFolder } from './data-location.mjs'
+import { readTaskConfigSnapshot } from './task-config-snapshot.mjs'
 import defaultDingtalkConf from './default-config-file/dingtalk.json' assert {type: 'json'}
 import defaultBossConf from './default-config-file/boss.json' assert {type: 'json'}
 import defaultTargetCompanyListConf from './default-config-file/target-company-list.json' assert {type: 'json'}
@@ -23,6 +24,9 @@ const defaultConfigFileContentMap = {
   'common-job-condition-config.json': JSON.stringify(defaultCommonJobConditionConfig)
 }
 export const runtimeFolderPath = process.env.GEEKGEEKRUN_RUNTIME_DIR || path.join(os.homedir(), '.geekgeekrun')
+const taskConfigSnapshot = process.env.GEEKGEEKRUN_TASK_CONFIG_FILE
+  ? readTaskConfigSnapshot(process.env.GEEKGEEKRUN_TASK_CONFIG_FILE)
+  : null
 export const configFolderPath = path.join(
   runtimeFolderPath,
   'config'
@@ -148,6 +152,8 @@ export const ensureConfigFileExist = () => {
 }
 
 export const readConfigFile = (fileName) => {
+  if (taskConfigSnapshot && Object.hasOwn(taskConfigSnapshot, fileName))
+    return JSON.parse(JSON.stringify(taskConfigSnapshot[fileName]))
   const joinedPath = path.join(configFolderPath, fileName)
   if (!fs.existsSync(
     joinedPath

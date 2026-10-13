@@ -5,7 +5,7 @@ const net = require('net')
 const path = require('path')
 const { tmpdir } = require('os')
 const { randomUUID } = require('crypto')
-const sockPath = path.join(tmpdir(), `${process.env.GEEKGEEKRUND_PIPE_NAME}.sock`)
+const sockPath = process.platform === 'win32' ? `\\\\.\\pipe\\${process.env.GEEKGEEKRUND_PIPE_NAME}` : path.join(tmpdir(), `${process.env.GEEKGEEKRUND_PIPE_NAME}.sock`)
 const socket = net.connect(sockPath)
 const pending = new Map()
 let buffer = ''

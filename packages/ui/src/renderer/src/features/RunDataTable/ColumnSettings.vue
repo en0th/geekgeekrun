@@ -4,7 +4,7 @@
       <ElButton size="small" :icon="Setting">列设置</ElButton>
     </template>
     <div class="flex items-center justify-between mb6px">
-      <span class="text-12px color-#909399">勾选显示，拖动排序</span>
+      <span class="text-12px ggr-text-muted">勾选显示，拖动排序</span>
       <ElButton link size="small" type="primary" @click="emit('reset')">恢复默认</ElButton>
     </div>
     <ElScrollbar max-height="360px">
@@ -35,7 +35,7 @@
         </template>
       </Draggable>
     </ElScrollbar>
-    <div class="text-12px color-#909399 mt6px">拖动表头边框可调整列宽</div>
+    <div class="text-12px ggr-text-muted mt6px">拖动表头边框可调整列宽</div>
   </ElPopover>
 </template>
 

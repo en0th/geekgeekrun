@@ -37,13 +37,13 @@ export async function greetJobManually(job: GreetableJob): Promise<boolean> {
         job.chattedAt
           ? h(
               'p',
-              { class: 'm-0 mt6px color-#e6a23c' },
+              { class: 'm-0 mt6px', style: { color: 'var(--el-color-warning)' } },
               `已于 ${formatDbDate(job.chattedAt)} 开聊过；BOSS显示“继续沟通”时不会重复发送。`
             )
           : null,
         h(
           'p',
-          { class: 'm-0 mt6px text-12px color-#909399' },
+          { class: 'm-0 mt6px text-12px', style: { color: 'var(--el-text-color-secondary)' } },
           '打招呼语使用你在BOSS中设置的招呼语；页面会保持打开，方便继续沟通。'
         )
       ]),

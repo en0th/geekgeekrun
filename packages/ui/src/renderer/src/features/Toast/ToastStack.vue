@@ -79,9 +79,9 @@ function timeText(createdAt: number) {
   pointer-events: none;
 }
 .ggr-toast {
-  --toast-bg: rgba(246, 246, 248, 0.82);
-  --toast-text: #1c1c1e;
-  --toast-muted: rgba(60, 60, 67, 0.6);
+  --toast-bg: rgba(246, 246, 248, 0.96);
+  --toast-text: var(--el-text-color-primary);
+  --toast-muted: var(--el-text-color-secondary);
   position: relative;
   box-sizing: border-box;
   padding: 10px 14px 12px;
@@ -157,18 +157,18 @@ function timeText(createdAt: number) {
   text-align: center;
 }
 .ggr-toast.is-success .ggr-toast__glyph {
-  background: #34c759;
+  background: var(--el-color-success);
 }
 .ggr-toast.is-info .ggr-toast__glyph {
-  background: #0a84ff;
+  background: var(--el-color-primary);
   font-family: Georgia, serif;
   font-style: italic;
 }
 .ggr-toast.is-warning .ggr-toast__glyph {
-  background: #ff9f0a;
+  background: var(--el-color-warning);
 }
 .ggr-toast.is-error .ggr-toast__glyph {
-  background: #ff3b30;
+  background: var(--el-color-danger);
 }
 .ggr-toast__text {
   min-width: 0;
@@ -179,7 +179,7 @@ function timeText(createdAt: number) {
   border: 0;
   border-radius: 999px;
   background: rgba(120, 120, 128, 0.2);
-  color: #0a84ff;
+  color: var(--el-color-primary);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;

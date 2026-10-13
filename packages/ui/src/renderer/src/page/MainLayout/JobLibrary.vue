@@ -9,6 +9,8 @@
       :ignore-jumps="ignoreJumps"
       :stats-preset="runDataStatsPresets.jobLibrary"
       :actions-width="300"
+      :empty-text="embedded ? undefined : '运行找岗位后，查看过的岗位会收集在这里'"
+      :empty-action="embedded ? undefined : { label: '去配置找岗位', page: 'auto' }"
       class="flex-1"
     >
       <template #actions="{ row }">

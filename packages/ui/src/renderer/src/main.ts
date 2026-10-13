@@ -7,6 +7,7 @@ import { createPinia } from 'pinia'
 import 'normalize.css'
 import './style/public.scss'
 import 'element-plus/dist/index.css'
+import './style/app-theme.css'
 import 'virtual:uno.css'
 import 'animate.css'
 

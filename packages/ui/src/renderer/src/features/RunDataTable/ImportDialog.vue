@@ -41,7 +41,7 @@
       >
         <ElIcon :size="32"><UploadFilled /></ElIcon>
         <div class="mt8px">点击选择文件，或将文件拖到此处</div>
-        <div class="text-12px color-#909399 mt4px">.xlsx / .xls / .csv / .json</div>
+        <div class="text-12px ggr-text-muted mt4px">.xlsx / .xls / .csv / .json</div>
       </div>
       <input
         ref="fileInputEl"
@@ -50,7 +50,7 @@
         class="hidden"
         @change="handleFileChange"
       />
-      <div v-if="parsing" class="text-center mt12px text-12px color-#909399">正在解析文件…</div>
+      <div v-if="parsing" class="text-center mt12px text-12px ggr-text-muted">正在解析文件…</div>
     </template>
 
     <template v-else-if="!result">
@@ -67,7 +67,7 @@
           >{{ f.label }}</ElTag
         >
       </div>
-      <div v-if="parsed.unknownHeaders.length" class="text-12px mb8px color-#e6a23c">
+      <div v-if="parsed.unknownHeaders.length" class="text-12px mb8px" style="color: var(--el-color-warning)">
         将被忽略的列：{{ parsed.unknownHeaders.join('、') }}
       </div>
       <ElAlert
@@ -77,7 +77,7 @@
         class="mb8px"
         :title="`缺少必需的列：${missingRequired.join('、')}，无法导入`"
       />
-      <div v-else-if="incompleteRowCount" class="text-12px mb8px color-#e6a23c">
+      <div v-else-if="incompleteRowCount" class="text-12px mb8px" style="color: var(--el-color-warning)">
         有 {{ incompleteRowCount }} 行缺少{{ requiredLabels }}，这些行将被跳过
       </div>
       <ElTable :data="parsed.rows.slice(0, 5)" size="small" border max-height="220">
@@ -91,7 +91,7 @@
           <template #default="{ row }">{{ previewValue(f, row[f.key]) }}</template>
         </ElTableColumn>
       </ElTable>
-      <div class="text-12px color-#909399 mt4px">仅预览前 5 行</div>
+      <div class="text-12px ggr-text-muted mt4px">仅预览前 5 行</div>
       <ElProgress v-if="importing" :percentage="progress" class="mt12px" />
     </template>
 

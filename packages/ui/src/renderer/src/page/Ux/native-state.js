@@ -37,9 +37,9 @@ export async function createNativeState() {
           if (patch) {
             Object.assign(current.config['boss.json'], patch)
             if (Object.hasOwn(patch, 'expectCompanies'))
-              current.config['target-company-list.json'] = patch.expectCompanies
-                .split(',')
-                .filter(Boolean)
+              current.config['target-company-list.json'] = Array.isArray(patch.expectCompanies)
+                ? clone(patch.expectCompanies)
+                : patch.expectCompanies.split(',').filter(Boolean)
           }
           return true
         })

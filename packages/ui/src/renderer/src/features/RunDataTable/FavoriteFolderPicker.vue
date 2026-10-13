@@ -17,7 +17,7 @@
           {{ f.name }}<span class="favorite-picker__count">（{{ f.jobCount }}）</span>
         </ElRadio>
       </ElRadioGroup>
-      <p v-if="!loading && !folders.length" class="m-0 color-#909399">
+      <p v-if="!loading && !folders.length" class="m-0 ggr-text-muted">
         还没有收藏夹，请先新建一个。
       </p>
     </div>

@@ -11,6 +11,8 @@ export enum AUTO_CHAT_ERROR_EXIT_CODE {
   JOB_PAGE_NOT_READY = 89,
   // the BOSS verification window was closed before the check was passed
   SECURITY_CHECK_NOT_PASSED = 91,
+  // every job source was rotated through once: the run finished successfully
+  ALL_SOURCES_ROTATED = 92,
 }
 
 // a long-running task left its turn to a queued one; packages/pm/daemon.js requeues it

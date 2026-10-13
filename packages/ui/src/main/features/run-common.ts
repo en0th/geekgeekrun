@@ -2,7 +2,9 @@ import { AUTO_CHAT_ERROR_EXIT_CODE } from '../../common/enums/auto-start-chat'
 import { daemonEE, sendToDaemon } from '../flow/OPEN_SETTING_WINDOW/connect-to-daemon'
 import { saveAndGetCurrentRunRecord } from '../flow/OPEN_SETTING_WINDOW/utils/db'
 import minimist from 'minimist'
-import { readConfigFile } from '@geekgeekrun/geek-auto-start-chat-with-boss/runtime-file-utils.mjs'
+import { readConfigFile, runtimeFolderPath } from '@geekgeekrun/geek-auto-start-chat-with-boss/runtime-file-utils.mjs'
+import { writeTaskConfigSnapshot } from '@geekgeekrun/geek-auto-start-chat-with-boss/task-config-snapshot.mjs'
+import path from 'node:path'
 import { readRunSettings } from '@geekgeekrun/geek-auto-start-chat-with-boss/run-settings.mjs'
 import { app } from 'electron'
 
@@ -60,7 +62,7 @@ export async function runCommon({
     : withRunRecord
       ? (await saveAndGetCurrentRunRecord())?.data
       : null
-  const subProcessEnv = {
+  const subProcessEnv: NodeJS.ProcessEnv = {
     ...process.env,
     GEEKGEEKRUND_NO_AUTO_RESTART_EXIT_CODE: [
       AUTO_CHAT_ERROR_EXIT_CODE.PUPPETEER_IS_NOT_EXECUTABLE,
@@ -70,8 +72,16 @@ export async function runCommon({
       AUTO_CHAT_ERROR_EXIT_CODE.NO_MATCHING_JOBS,
       AUTO_CHAT_ERROR_EXIT_CODE.JOB_PAGE_NOT_READY,
       AUTO_CHAT_ERROR_EXIT_CODE.SECURITY_CHECK_NOT_PASSED,
+      AUTO_CHAT_ERROR_EXIT_CODE.ALL_SOURCES_ROTATED,
       ...extraNoAutoRestartExitCodes
     ].join(',')
+  }
+  if (mode === 'geekAutoStartWithBossMain') {
+    const config = Object.fromEntries(['boss.json', 'common-job-condition-config.json', 'target-company-list.json'].map(name => [name, readConfigFile(name)]))
+    subProcessEnv.GEEKGEEKRUN_TASK_CONFIG_FILE = writeTaskConfigSnapshot(
+      path.join(runtimeFolderPath, 'task-configs'), currentRunRecord?.id, config,
+      { resuming: Boolean(resumeRunRecordId) }
+    )
   }
   const taskArgs = [`--mode=${mode}`, `--run-record-id=${currentRunRecord?.id || 0}`]
   // recorded in the task history so a finished run links to the right data (chats or jobs)

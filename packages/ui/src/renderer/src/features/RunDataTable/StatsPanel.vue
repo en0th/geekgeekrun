@@ -9,7 +9,7 @@
     @opened="loadStats"
   >
     <div v-loading="loading" class="stats-panel">
-      <div class="text-12px color-#909399 mb12px">
+      <div class="text-12px ggr-text-muted mb12px">
         统计范围为当前搜索与过滤条件下的全部记录（不受分页影响）。点击柱子或扇区，可按该项筛选表格。
       </div>
       <div class="stats-panel__cards">

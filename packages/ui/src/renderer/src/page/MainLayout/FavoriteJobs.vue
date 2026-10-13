@@ -109,6 +109,7 @@
       :stats-preset="runDataStatsPresets.favoriteJobs"
       :base-filters="baseFilters"
       :actions-width="100"
+      empty-text="在职位或记录列表里选中岗位，点“收藏到…”就能收藏到这里"
       class="favorite-jobs__table"
       @changed="loadFolders"
     >

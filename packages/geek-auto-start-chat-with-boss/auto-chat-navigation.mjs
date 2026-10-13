@@ -1,4 +1,5 @@
 // Navigation guards do not relax job/company filters or authorize message sending.
+import { matchesExperience } from './job-filter-config.mjs'
 export const MAX_BATCHES_WITHOUT_CHAT = 5
 export class NoMatchBatchGuard {
   constructor(max = MAX_BATCHES_WITHOUT_CHAT) { this.max = max; this.loaded = 0 }
@@ -54,7 +55,7 @@ export async function openJobCardForReview({ page, list, index, jobId, timeoutMs
 // Apply each NO_OP prefilter only to its own enabled criterion.
 export function listSkipReason(row, { cities = [], cityStrategy, experiences = [], experienceStrategy, salaryEnabled, salaryStrategy, salaryMatches = true, invalidSalary = false }) {
   if (cities.length && cityStrategy === 3 && !cities.includes(row.cityName)) return '城市不符合'
-  if (experiences.length && experienceStrategy === 3 && !experiences.includes(row.jobExperience)) return '经验不符合'
+  if (experiences.length && experienceStrategy === 3 && !matchesExperience(experiences, row.jobExperience)) return '经验不符合'
   if (salaryEnabled && (invalidSalary || (salaryStrategy === 3 && !salaryMatches))) return '薪资不符合或信息不足'
   return ''
 }

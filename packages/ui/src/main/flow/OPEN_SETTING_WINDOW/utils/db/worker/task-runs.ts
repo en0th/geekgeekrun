@@ -164,19 +164,21 @@ export function taskRunRows(context: TaskRunsContext, now = Date.now()) {
     else run.firstStartedAt = Math.min(run.firstStartedAt, t.startedAt)
   }
   for (const [key, t] of ended) {
-    // 找岗位 runs reach the history only by being terminated (a stop is a pause)
+    // 找岗位 runs reach the history only by being terminated (a stop is a pause); a run that
+    // rotated through every source finished successfully
     const auto = t.workerId === AUTO_CHAT_WORKER_ID
+    const rotatedAll = auto && t.code === 92
     row({
       key,
       phase: 'history',
       workerId: t.workerId,
       runRecordId: t.runRecordId,
       runMode: t.runMode,
-      status: auto ? '已终止' : OUTCOME_LABELS[t.outcome] ?? t.outcome,
+      status: rotatedAll ? '已完成' : auto ? '已终止' : OUTCOME_LABELS[t.outcome] ?? t.outcome,
       startedAt: t.firstStartedAt,
       endedAt: t.endedAt,
       note: t.code
-        ? (auto ? '停下原因：' : '') + firstPart(EXIT_CODE_LABELS[t.code] ?? `退出码 ${t.code}`)
+        ? (auto && !rotatedAll ? '停下原因：' : '') + firstPart(EXIT_CODE_LABELS[t.code] ?? `退出码 ${t.code}`)
         : '',
       code: t.code
     })

@@ -5,7 +5,8 @@ const { ViewEntity, ViewColumn } = typeorm;
     job_info.*,
     boss_info.name AS bossName,
     boss_info.title AS bossTitle,
-    company_info.name AS companyName
+    company_info.name AS companyName,
+    company_info.brandName AS companyBrandName
   FROM
     job_info
     LEFT JOIN boss_info ON boss_info.encryptBossId = job_info.encryptBossId
@@ -13,6 +14,9 @@ const { ViewEntity, ViewColumn } = typeorm;
     `,
 })
 export class VJobLibrary {
+  @ViewColumn()
+  companyBrandName: string;
+
   @ViewColumn()
   encryptJobId: number;
 

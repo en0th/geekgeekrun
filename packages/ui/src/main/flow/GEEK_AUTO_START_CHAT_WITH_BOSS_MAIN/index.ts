@@ -18,7 +18,7 @@ import { checkShouldExit } from '../../utils/worker'
 import { CookieInvalidHandlePlugin } from '../../features/cookie-invalid-handle-plugin'
 import initPublicIpc from '../../utils/initPublicIpc'
 import { createTaskProgress } from '../../features/task-progress'
-import { readAutoChatResume, writeAutoChatResume } from '../../features/task-resume'
+import { readAutoChatResume, writeAutoChatResume, discardAutoChatResume } from '../../features/task-resume'
 import { yieldIfRequested } from '../../features/task-queue'
 import { getLastUsedAndAvailableBrowser } from '../DOWNLOAD_DEPENDENCIES/utils/browser-history'
 import { configWithBrowserAssistant } from '../../features/config-with-browser-assistant'
@@ -106,8 +106,14 @@ const runAutoChat = async () => {
   const taskProgress = createTaskProgress(resumed ? saved!.progress : null)
   const runMode = readRunSettings(readConfigFile('boss.json')).runMode
   let skipCurrentFilterNextTime = false
+  // the run rotated through every source and finished: nothing left to resume
+  let runCompleted = false
   const saveResume = () => {
     if (!runRecordId) return
+    if (runCompleted) {
+      discardAutoChatResume()
+      return
+    }
     const { log, ...rest } = taskProgress.progress
     writeAutoChatResume({
       runRecordId: Number(runRecordId),
@@ -270,6 +276,15 @@ const runAutoChat = async () => {
         return
       }
       if (err instanceof Error) {
+        if (err.message.includes('AUTO_CHAT_ALL_SOURCES_ROTATED')) {
+          // source rotation walked every source once: a successful finish, not a failure
+          runCompleted = true
+          taskProgress.update(undefined, '所有职位来源已轮换完成，任务结束', 'stopped')
+          discardAutoChatResume()
+          await closeBrowserWindow?.()
+          process.exit(AUTO_CHAT_ERROR_EXIT_CODE.ALL_SOURCES_ROTATED)
+          return
+        }
         if (
           /AUTO_CHAT_(NO_MATCH_BATCH_LIMIT|LIST_STALLED|DETAIL_NOT_READY|NO_USABLE_SOURCE|COLLECT_MODE_CHAT_BLOCKED|UNMATCHED_JOB_CHAT_BLOCKED)/.test(
             err.message
