@@ -319,6 +319,7 @@ const mainLoop = async () => {
       bossCookies = readStorageFile('boss-cookies.json')
       cookieCheckResult = checkCookieListFormat(bossCookies)
     } catch (err) {
+      if (isJsonStorageError(err)) throw err
       sendToDaemon({
         type: 'worker-to-gui-message',
         workerId: process.env.GEEKGEEKRUND_WORKER_ID,
@@ -378,6 +379,7 @@ const mainLoop = async () => {
         await app.dock?.hide()
       }
     } catch (err) {
+      if (isJsonStorageError(err)) throw err
       sendToDaemon({
         type: 'worker-to-gui-message',
         workerId: process.env.GEEKGEEKRUND_WORKER_ID,
