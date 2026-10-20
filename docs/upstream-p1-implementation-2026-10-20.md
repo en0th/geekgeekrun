@@ -1,6 +1,6 @@
 # 上游修复与性能优化交付（单账号主线）
 
-基于 `429102c`，分支 `codex/upstream-p1-fixes`。当前执行范围是单账号主线。首批完成登录身份校验、投递硬条件、登录异常分类及日薪/时薪支持，并修复重复入库、集合查找与换源响应监听问题；后续补充组合预算、按需生成和全国城市语义。版本号保持 `0.22.1`，未发布发行包。
+基于 `429102c`，分支 `codex/upstream-p1-fixes`。当前执行范围是单账号主线。首批完成登录身份校验、投递硬条件、登录异常分类及日薪/时薪支持，并修复重复入库、集合查找与换源响应监听问题；后续补充组合预算、按需生成和全国城市语义。首批验收版本为 `0.22.1`，当前工作区同期更新为 `0.22.2`，本轮未发布发行包。
 
 2026-10-20 已完成真实 BOSS 只收集验收：全国、组合预算、重复暂停恢复及应用重启恢复均通过，全程 0 发送、0 标记。实测另外修复登录子进程参数、正常结束误报和恢复指纹丢失，详见[真实验收记录](upstream-single-account-live-acceptance-2026-10-20.md)。
 
@@ -9,6 +9,8 @@
 随后回到上游审计，补充岗位/JD 字面屏蔽词、目标卡片句柄释放和历史日期范围索引，三组真实只收集验收通过；局部性能测量及剩余优先项见[续修记录](upstream-single-account-round2-2026-10-20.md)。
 
 后续 UI 主进程及渲染层全量类型检查均已清零。新增默认后台最小化运行，解决临时存储标签页抢焦点及最小化点击、等待停滞；最终三组真实验收通过，五次详情保持最小化，应用焦点验收为 0 次失焦，详见[后台运行验收](upstream-single-account-background-acceptance-2026-10-20.md)。
+
+继续补齐 macOS 退出资源回收、停止与重启竞态、恢复统计显示和入队前起始检查点，并完成真实收集中退出、重启续跑及启动后立即退出。薪资、经验、学历、行业和规模新增联合回读，选择和清空均与真实请求一致，详见[生命周期与页面筛选验收](upstream-single-account-lifecycle-filters-2026-10-20.md)。该轮验收构建为同期工作区的 `0.22.2`，未发布版本。
 
 沿用现有的一套登录态与任务队列。测试中的 A/B 是顺序更换登录时的虚拟身份，用来验证旧历史和恢复快照不会误用；不代表主线有两个同时登录的账号。多账号管理、账号池和账号调度继续留在原分支，本次没有合并该分支。
 
@@ -49,14 +51,15 @@
 
 ## 验证
 
-首批为 173 项测试，组合/城市及后续真实验收继续补充回归。当前工作区连同同期其它改动共 323 个不同测试全部通过：普通 Node 运行 306 项通过，17 项原生测试跳过；使用项目 Electron 执行 21 项相关原生测试，覆盖全部 17 项跳过项，全部通过。生产构建和 SQLite 类型检查通过。
+首批为 173 项测试，组合/城市及后续真实验收继续补充回归。当前工作区连同同期其它改动共 359 个不同测试全部验证通过：标准全量 Node 运行 342 项通过，17 项原生测试跳过；使用项目 Electron 执行 21 项相关原生测试，覆盖全部 17 项跳过项，全部通过。生产构建和 SQLite 类型检查通过。
 
 使用仓库声明的 pnpm 8.15.9 完成生产构建。普通测试使用本机 Node 26.11.1，原生数据库测试使用项目 Electron 39.2.7，覆盖真实 TypeORM 迁移、账号隔离、网络与业务回调并发保存，以及生产数据导入查询引擎。
 
 ```sh
 pnpm --filter @geekgeekrun/sqlite-plugin build
-node --test --test-isolation=none packages/geek-auto-start-chat-with-boss/tests/*.test.mjs packages/ui/tests/*.test.mjs packages/utils/tests/*.test.mjs packages/launch-bosszhipin-login-page-with-preload-extension/tests/*.test.mjs packages/pm/tests/*.test.cjs packages/sqlite-plugin/tests/*.test.cjs
-ELECTRON_RUN_AS_NODE=1 ./node_modules/electron/dist/Electron.app/Contents/MacOS/Electron --test packages/sqlite-plugin/tests/account-and-salary.test.cjs packages/sqlite-plugin/tests/job-discovery.test.cjs packages/ui/tests/favorites.test.mjs
+node scripts/ci/run-tests.mjs
+node scripts/ci/run-tests.mjs --electron
+pnpm --filter geekgeekrun-ui typecheck
 node ./node_modules/typescript/bin/tsc --noEmit -p packages/sqlite-plugin/tsconfig.json
 pnpm --filter geekgeekrun-ui build
 ```

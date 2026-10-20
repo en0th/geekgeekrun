@@ -73,6 +73,8 @@ export function watchJobResponses(page, { bodyTimeoutMs = 15000, onBlocked = () 
             }
             onListResponse({ path: url.pathname,
               query: parameters.query ?? null, city: parameters.city ?? null,
+              filters: Object.fromEntries(['salary', 'experience', 'degree', 'industry', 'scale', 'jobType', 'position']
+                .filter(key => parameters[key] !== undefined).map(key => [key, parameters[key]])),
               count: body.zpData.jobList.length,
               fields: Object.keys(body.zpData),
               flags: Object.fromEntries(Object.entries(body.zpData).filter(([, value]) => ['number', 'boolean'].includes(typeof value))) })

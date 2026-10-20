@@ -81,6 +81,7 @@ test('newly queued workers freeze budgets and declare both budget exits non-rest
   assert.ok(codes.includes(96) && codes.includes(97))
   assert.ok(codes.includes(98))
   assert.ok(codes.includes(99), 'unconfirmed background windows must not trigger browser restart loops')
+  assert.ok(codes.includes(100), 'unconfirmed filters must stop instead of restarting')
   assert.equal(initializations.length, 1)
   assert.equal(checkpoints.length, 1)
   assert.deepEqual(JSON.parse(JSON.stringify(initializations[0].state.usage)), { requests: 0, detailRequests: 0, activeMs: 0 })

@@ -29,7 +29,7 @@ test('the actual renderer labels source exhaustion as completed and retains coll
 })
 
 test('verification and budget failures keep their reason and allow resume', () => {
-  for (const code of [93, 95, 96, 97, 99]) {
+  for (const code of [93, 95, 96, 97, 99, 100]) {
     const result = exit(code)
     assert.equal(result.progress.state, 'blocked')
     assert.equal(result.progress.detail, '已保存岗位信息')

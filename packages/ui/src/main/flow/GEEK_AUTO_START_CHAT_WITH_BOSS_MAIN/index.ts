@@ -304,6 +304,13 @@ const runAutoChat = async () => {
         return
       }
       if (err instanceof Error) {
+        if (err.message.includes('AUTO_CHAT_PAGE_FILTER_NOT_APPLIED')) {
+          taskProgress.update(undefined, (err as Error & { detail?: string }).detail || '页面筛选未能确认，任务已暂停', 'blocked')
+          saveResume()
+          await closeBrowserWindow?.()
+          process.exit(AUTO_CHAT_ERROR_EXIT_CODE.PAGE_FILTER_NOT_APPLIED)
+          return
+        }
         if (err.message.includes('AUTO_CHAT_BACKGROUND_WINDOW_UNAVAILABLE')) {
           taskProgress.update(undefined, (err as Error & { detail?: string }).detail || '浏览器后台窗口无法确认，任务已暂停', 'blocked')
           saveResume()

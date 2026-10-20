@@ -75,6 +75,12 @@ const main = async () => {
     } catch (err) {
       if (shutdown.isStopping()) return
       if (err instanceof Error) {
+        if (err.message.includes('AUTO_CHAT_PAGE_FILTER_NOT_APPLIED')) {
+          console.error(err.detail || err.message)
+          await closeBrowserWindow?.()
+          process.exit(AUTO_CHAT_ERROR_EXIT_CODE.PAGE_FILTER_NOT_APPLIED)
+          return
+        }
         if (err.message.includes('AUTO_CHAT_BACKGROUND_WINDOW_UNAVAILABLE')) {
           console.error(err.detail || err.message)
           await closeBrowserWindow?.()

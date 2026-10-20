@@ -63,6 +63,7 @@ import { applyCityFilter, normalizeCitySelection } from './city-filter.mjs'
 import { launchTaskBrowser, showTaskBrowser } from './task-browser.mjs'
 import { clickTaskElement } from './task-page-input.mjs'
 import { closeOwnedBrowser } from './browser-cleanup.mjs'
+import { applyPageFilters } from './page-filters.mjs'
 const flattedCityList = []
 ;(cityGroupData?.zpData?.cityGroup ?? []).forEach(it => {
   const firstChar = it.firstChar
@@ -598,7 +599,6 @@ async function setFilterCondition (selectedFilters) {
   } = selectedFilters
 
   const placeholderTexts = ['城市', '薪资待遇', '工作经验', '学历要求', '公司行业', '公司规模']
-  const optionKaPrefixes = ['switch_city_dialog_open', 'sel-job-rec-salary-', 'sel-job-rec-exp-', 'sel-job-rec-degree-', 'sel-industry-', 'sel-job-rec-scale-']
   const conditionArr = [cityList, salaryList, experienceList, degreeList, industryList, scaleList]
 
   console.log('current filter condition----')
@@ -614,120 +614,13 @@ async function setFilterCondition (selectedFilters) {
     }).join('，'))
   }
   console.log('----------------------------')
-  for(let i = 0; i < placeholderTexts.length; i++) {
-    const placeholderText = placeholderTexts[i]
-    if (placeholderText === '城市') {
-      await applyCityFilter(page, cityList, { cityCatalog: flattedCityList })
-      continue
-    }
-    const filterDropdownProxy = await (async () => {
-      const jsHandle = (await page.evaluateHandle((placeholderText) => {
-        const filterBar = document.querySelector('.page-jobs-main .filter-condition-inner')
-        const dropdownEntry = filterBar.__vue__.$children.find(it => it.placeholder === placeholderText)
-        return dropdownEntry?.$el
-      }, placeholderText))?.asElement();
-      return jsHandle
-    })()
-    if (!filterDropdownProxy) {
-      continue
-    }
-
-    const currentFilterConditions = conditionArr[i];
-    const filterDropdownCssList = await filterDropdownProxy.evaluate(el => Array.from(el.classList));
-    {
-      if (!filterDropdownCssList.includes('is-select') && !currentFilterConditions.length) {
-        continue
-      } else {
-        await filterDropdownProxy.scrollIntoView()
-        const filterDropdownElBBox = await filterDropdownProxy.boundingBox()
-        await page.mouse.move(
-          filterDropdownElBBox.x + filterDropdownElBBox.width / 2,
-          filterDropdownElBBox.y + filterDropdownElBBox.height / 2,
-        )
-        await sleepWithRandomDelay(500)
-
-        const optionKaPrefix = optionKaPrefixes[i]
-        if (!currentFilterConditions.length) {
-          if (placeholderText === '公司行业') {
-            const activeOptionElAtCurrentFilterProxyList = await page.$$(`.page-jobs-main .filter-condition-inner .active[ka^="${optionKaPrefix}"]`)
-            for (const it of activeOptionElAtCurrentFilterProxyList) {
-              await clickTaskElement(page, it)
-            }
-          } else {
-            // select 不限 immediately
-            const buxianOptionElProxy = await page.$(`.page-jobs-main .filter-condition-inner [ka="${optionKaPrefix}${0}"]`)
-            await clickTaskElement(page, buxianOptionElProxy)
-          }
-        } else {
-          //#region uncheck options perviously checked but not existed in current filter.
-          const activeOptionElAtCurrentFilterProxyList = await page.$$(`.page-jobs-main .filter-condition-inner .active[ka^="${optionKaPrefix}"]`)
-          const activeOptionValues = (await Promise.all(
-            activeOptionElAtCurrentFilterProxyList.map(elProxy => {
-              return elProxy.evaluate((el) => {
-                return el.getAttribute('ka')
-              })
-            })
-          )).map(it => it.replace(optionKaPrefix, '')).map(Number)
-          if (placeholderText !== '薪资待遇') {
-            for(let i = 0; i < activeOptionValues.length; i++) {
-              let activeValue
-              if (placeholderText === '公司行业') {
-                activeValue = industryFilterConditionsMapByIndex[activeOptionValues[i]]?.code
-              } else {
-                activeValue = activeOptionValues[i]
-              }
-              const activeOptionElProxy = activeOptionElAtCurrentFilterProxyList[i]
-              if (!currentFilterConditions.includes(activeValue)) {
-                await clickTaskElement(page, activeOptionElProxy)
-              }
-            }
-          }
-          //#endregion
-          //#region only click the one which we need check, don't change already checked.
-          const conditionToCheck = currentFilterConditions.filter(it => {
-            if (placeholderText === '公司行业') {
-              return !activeOptionValues.map(value => industryFilterConditionsMapByIndex[value].code).includes(it);
-            } else {
-              return !activeOptionValues.includes(it)
-            }
-          })
-          for(let j = 0; j < conditionToCheck.length; j++) {
-            let optionValue
-            if (placeholderText === '公司行业') {
-              optionValue = industryFilterConditionCodeToIndexMap[conditionToCheck[j]]
-            } else {
-              optionValue = conditionToCheck[j]
-            }
-            await sleepWithRandomDelay(500)
-            await filterDropdownProxy.scrollIntoView()
-            const filterDropdownElBBox = await filterDropdownProxy.boundingBox()
-            await page.mouse.move(
-              filterDropdownElBBox.x + filterDropdownElBBox.width / 2,
-              filterDropdownElBBox.y + filterDropdownElBBox.height / 2,
-            )
-            await sleepWithRandomDelay(500)
-            const optionElProxy = await page.$(`.page-jobs-main .filter-condition-inner [ka="${optionKaPrefix}${optionValue}"]`)
-            if (!optionElProxy) {
-              continue;
-            }
-            await clickTaskElement(page, optionElProxy)
-          }
-          //#endregion
-          //#region move out dropdown entry to make dropdown hidden
-          const navBarLogoElProxy = await page.$(`[ka="header-home-logo"]`)
-          if (navBarLogoElProxy) {
-            const navBarLogoElBBox = await navBarLogoElProxy.boundingBox()
-            await page.mouse.move(
-              navBarLogoElBBox.x + navBarLogoElBBox.width / 2,
-              navBarLogoElBBox.y + navBarLogoElBBox.height / 2,
-            )
-          }
-          //#endregion
-        }
-        await sleepWithRandomDelay(500)
-      }
-    }
-  }
+  await applyCityFilter(page, cityList, { cityCatalog: flattedCityList })
+  await applyPageFilters(page, selectedFilters, {
+    catalogs: { ...jobFilterConditions, industryList: Object.values(industryFilterConditionsMapByCode) },
+    checkResponses: checkJobResponses,
+    onApplied: filters => autoStartChatEventBus.emit('PAGE_FILTERS_APPLIED', { filters }),
+    onFailure: data => autoStartChatEventBus.emit('PAGE_FILTER_NOT_APPLIED', data),
+  })
   if (!isCollectAll && !await applyJobNatureFilter(page, requiredJobConditions.jobNatures))
     autoStartChatEventBus.emit('TASK_PROGRESS', { detail: '网页求职类型筛选未能确认，将按岗位明确给出的类型逐条核验' })
 
@@ -1936,7 +1829,10 @@ async function runBrowserLoop (hooks) {
     jobResponseMonitor?.dispose()
     jobResponseMonitor = watchJobResponses(page, {
       onBlocked: error => autoStartChatEventBus.emit('TASK_PROGRESS', { detail: error.detail, state: 'blocked' }),
-      onListResponse: summary => console.debug('BOSS_LIST_RESPONSE', JSON.stringify(summary))
+      onListResponse: summary => {
+        console.debug('BOSS_LIST_RESPONSE', JSON.stringify(summary))
+        autoStartChatEventBus.emit('BOSS_LIST_RESPONSE', summary)
+      }
     })
     hooks.pageGotten?.call(page)
     const ownPage = page
