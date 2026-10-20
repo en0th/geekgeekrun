@@ -1,24 +1,23 @@
 import { ipcMain } from 'electron'
-import {
-  createBrowserDownloadProgressWindow,
-  browserDownloadProgressWindow
-} from '../window/browserDownloadProgressWindow'
+import { createBrowserDownloadProgressWindow } from '../window/browserDownloadProgressWindow'
 
-export async function openBrowserDownloadWindow({ windowOption } = {}) {
+export async function openBrowserDownloadWindow({ windowOption }: {
+  windowOption?: Electron.BrowserWindowConstructorOptions
+} = {}): Promise<string> {
   return new Promise((resolve, reject) => {
-    createBrowserDownloadProgressWindow({ ...windowOption })
+    const window = createBrowserDownloadProgressWindow({ ...windowOption })
 
     let processDone = false
-    let pathOfDownloadedBrowser = null
-    function handler(_, executablePath) {
+    let pathOfDownloadedBrowser: string | null = null
+    function handler(_: Electron.IpcMainEvent, executablePath: string) {
       pathOfDownloadedBrowser = executablePath
       processDone = true
-      browserDownloadProgressWindow.close()
+      window.close()
     }
     ipcMain.once('browser-download-done', handler)
-    browserDownloadProgressWindow.once('closed', () => {
+    window.once('closed', () => {
       ipcMain.off('browser-download-done', handler)
-      if (processDone) {
+      if (processDone && pathOfDownloadedBrowser) {
         resolve(pathOfDownloadedBrowser)
       } else {
         reject(new Error('USER_CANCELLED_CONFIG_BROWSER'))

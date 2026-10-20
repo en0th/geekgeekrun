@@ -1,4 +1,6 @@
-export const getAutoStartChatSteps = () => [
+import type { PrerequisiteStep } from './types/task'
+
+export const getAutoStartChatSteps = (): PrerequisiteStep[] => [
   {
     id: 'worker-launch',
     describe: '启动子进程'

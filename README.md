@@ -67,6 +67,10 @@
 
 
 
+## 开发检查
+
+类型检查、回归测试入口和 CI 质量门禁见[开发与 CI 验证说明](docs/ci-quality-gates-2026-10-20.md)。检查环境使用 Node.js 24 和 pnpm 8.15.9。
+
 ## 许可证
 
 本项目采用 **GNU Affero General Public License v3.0（AGPL-3.0）** 许可证，© 2024–2026 geekgeekrun。

@@ -1,6 +1,9 @@
 /* Task-oriented UI migrated from the accepted prototype. All execution uses native IPC. */
 import { toast } from "../../features/Toast";
-import { experienceSelectionLabels, experienceSelectionCodes, matchesExperience, escapeKeyword, keywordPattern, allKeywordPattern } from "@geekgeekrun/geek-auto-start-chat-with-boss/job-filter-config.mjs";
+import { isSuccessfulTaskExit, isResumableTaskExit } from "@geekgeekrun/pm/task-exit.cjs";
+import { experienceSelectionLabels, experienceSelectionCodes, matchesExperience, escapeKeyword, keywordPattern, allKeywordPattern, normalizeRequiredJobConditions, requiredJobConditionReasons, JOB_NATURE_OPTIONS, DEGREE_OPTIONS } from "@geekgeekrun/geek-auto-start-chat-with-boss/job-filter-config.mjs";
+import { parseSalaryDetails, matchesSalaryDetails } from "@geekgeekrun/utils/job-values.cjs";
+import { normalizeCitySelection, matchesCitySelection } from "@geekgeekrun/geek-auto-start-chat-with-boss/city-filter.mjs";
 import { exportTemplates, parseTemplateFile, uniqueName } from "./template-io.js";
 import { parseMarkdown } from "./markdown.js";
 import {
@@ -19,11 +22,12 @@ import {
   AI_MAX_RETRIES_RANGE,
 } from "../../../../common/model-config.mjs";
 import { followIssues } from "../../../../common/ux-validation.mjs";
-import { ElMessageBox, ElImageViewer } from "element-plus";
+import { ElMessageBox, ElImageViewer, ElCascader } from "element-plus";
+import { positionOptions, normalizePositionCodes, hasSearchCriteria, describeSearchSource } from "@geekgeekrun/geek-auto-start-chat-with-boss/search-source.mjs";
 import JobLibrary from "../MainLayout/JobLibrary.vue";
 import RunDataTable from "../../features/RunDataTable/index.vue";
 import { runDataStatsPresets } from "../../features/RunDataTable/stats-presets";
-import { toDbDate } from "../../features/RunDataTable/format";
+import { toDbDate, formatSalary } from "../../features/RunDataTable/format";
 import { EXIT_CODE_LABELS } from "../../../../common/task-labels";
 import BossLibrary from "../MainLayout/BossLibrary.vue";
 import CompanyLibrary from "../MainLayout/CompanyLibrary.vue";
@@ -71,6 +75,12 @@ import {
   MAX_WAIT_SECONDS,
   DEFAULT_PER_SOURCE_SUCCESS_LIMIT,
   DEFAULT_NO_MATCH_STREAK_LIMIT,
+  DEFAULT_FILTER_COMBINATION_LIMIT,
+  MAX_FILTER_COMBINATION_LIMIT,
+  filterCombinationLimit,
+  DEFAULT_RUN_BUDGET,
+  MAX_RUN_BUDGET,
+  normalizeRunBudget,
 } from "@geekgeekrun/geek-auto-start-chat-with-boss/run-settings.mjs";
 import {
   DEFAULT_POSTER_HR_TITLE_REG_EXP_STR,
@@ -86,6 +96,8 @@ import {
   searchOptionsForRun,
   countPlatformCombinations,
   potentialSourceCount,
+  positionCascaderProps,
+  emptyPositionCodes,
 } from "./search-settings.js";
 
 export default Vue.defineComponent({
@@ -141,6 +153,7 @@ export default Vue.defineComponent({
       companies: [],
       excluded: [],
       experience: [],
+      requiredConditions: normalizeRequiredJobConditions(),
       categories: [],
       description: [],
       hr: false,
@@ -154,6 +167,8 @@ export default Vue.defineComponent({
       minutes: 15,
       perSourceSuccessLimit: null,
       noMatchStreakLimit: null,
+      runBudget: { ...DEFAULT_RUN_BUDGET },
+      runInBackground: true,
       strategy: 3,
       overrides: {},
       scopes: {},
@@ -182,22 +197,25 @@ export default Vue.defineComponent({
       ...defaults,
       titles: [],
       cities: original.expectCityList || [],
+      requiredConditions: clone(original.requiredJobConditions || defaults.requiredConditions),
       salary:
         original.expectSalaryLow != null || original.expectSalaryHigh != null,
       low:
         original.expectSalaryLow == null
           ? null
           : original.expectSalaryLow *
-            (original.expectSalaryCalculateWay === 2 ? 1 : 1000),
+            (Number(original.expectSalaryCalculateWay ?? 1) === 1 ? 1000 : 1),
       high:
         original.expectSalaryHigh == null
           ? null
           : original.expectSalaryHigh *
-            (original.expectSalaryCalculateWay === 2 ? 1 : 1000),
-      unit: original.expectSalaryCalculateWay === 2 ? "year" : "month",
+            (Number(original.expectSalaryCalculateWay ?? 1) === 1 ? 1000 : 1),
+      unit: ({ 1: "month", 2: "year", 3: "day", 4: "hour" })[original.expectSalaryCalculateWay || 1],
       pause: original.isSageTimeEnabled,
       actions: original.sageTimeOpTimes,
       minutes: original.sageTimePauseMinute,
+      runBudget: readRunSettings(original).runBudget,
+      runInBackground: readRunSettings(original).runInBackground,
       perSourceSuccessLimit:
         original.autoChatPerSourceSuccessLimit == null
           ? null
@@ -247,6 +265,7 @@ export default Vue.defineComponent({
     if (!cached?.draft) {
       const flags = original.fieldsForUseCommonConfig || {};
       if (flags.city) adopted.cities = clone(common.expectCityList || []);
+      if (flags.requiredConditions) adopted.requiredConditions = clone(common.requiredJobConditions || defaults.requiredConditions);
       if (flags.expectCompanies)
         adopted.companies = clone(common.expectCompanies || []);
       if (flags.salary) {
@@ -254,13 +273,13 @@ export default Vue.defineComponent({
           common.expectSalaryLow == null
             ? null
             : common.expectSalaryLow *
-              (common.expectSalaryCalculateWay === 2 ? 1 : 1000);
+              (Number(common.expectSalaryCalculateWay ?? 1) === 1 ? 1000 : 1);
         adopted.high =
           common.expectSalaryHigh == null
             ? null
             : common.expectSalaryHigh *
-              (common.expectSalaryCalculateWay === 2 ? 1 : 1000);
-        adopted.unit = common.expectSalaryCalculateWay === 2 ? "year" : "month";
+              (Number(common.expectSalaryCalculateWay ?? 1) === 1 ? 1000 : 1);
+        adopted.unit = ({ 1: "month", 2: "year", 3: "day", 4: "hour" })[common.expectSalaryCalculateWay || 1];
         adopted.salary = adopted.low != null || adopted.high != null;
       }
       if (flags.jobDetail) {
@@ -287,6 +306,7 @@ export default Vue.defineComponent({
       ...clone(defaults),
       cities: common.expectCityList || [],
       companies: common.expectCompanies || [],
+      requiredConditions: clone(common.requiredJobConditions || defaults.requiredConditions),
       regexMode: Boolean(
         common.expectJobNameRegExpStr ||
           common.expectJobTypeRegExpStr ||
@@ -304,17 +324,19 @@ export default Vue.defineComponent({
         common.expectSalaryLow == null
           ? null
           : common.expectSalaryLow *
-            (common.expectSalaryCalculateWay === 2 ? 1 : 1000),
+            (Number(common.expectSalaryCalculateWay ?? 1) === 1 ? 1000 : 1),
       high:
         common.expectSalaryHigh == null
           ? null
           : common.expectSalaryHigh *
-            (common.expectSalaryCalculateWay === 2 ? 1 : 1000),
+            (Number(common.expectSalaryCalculateWay ?? 1) === 1 ? 1000 : 1),
       salary: common.expectSalaryLow != null || common.expectSalaryHigh != null,
-      unit: common.expectSalaryCalculateWay === 2 ? "year" : "month",
+      unit: ({ 1: "month", 2: "year", 3: "day", 4: "hour" })[common.expectSalaryCalculateWay || 1],
     };
     const draft = ref(cached?.draft || adopted),
       shared = ref(cached?.shared || commonDraft);
+    draft.value.requiredConditions ??= clone(adopted.requiredConditions);
+    shared.value.requiredConditions ??= clone(commonDraft.requiredConditions);
     // Run settings were added after drafts could be cached; fill them from the saved config.
     {
       const runSettings = readRunSettings(original);
@@ -413,10 +435,12 @@ export default Vue.defineComponent({
       draftSaveError = ref("");
     let draftSaveTimer;
     const preview = ref(null),
+      previewBusy = ref(false),
       imagePreview = ref(null),
       modal = ref(""),
       modalTitle = ref(""),
       modalRoute = ref("");
+    let previewRequest = 0;
     const tasksTab = ref("current"),
       jumpStore = useRunDataJumpStore();
     const recordTab = ref("chat"),
@@ -425,6 +449,7 @@ export default Vue.defineComponent({
     const platformOpen = ref(false),
       searchRotationOpen = ref(false),
       sourceRotationOpen = ref(false),
+      runBudgetOpen = ref(false),
       platformFiltersOpen = ref(false),
       policyExceptionsOpen = ref(false),
       activeAutoSection = ref("job-run-mode");
@@ -610,6 +635,7 @@ export default Vue.defineComponent({
       "hr",
     ];
     const cityOptions = [
+      "全国",
       "北京",
       "上海",
       "深圳",
@@ -1763,11 +1789,14 @@ export default Vue.defineComponent({
       const pace = globalPace.value || d;
       return {
         autoChatRunMode: d.runMode === "collect" ? "collect" : "chat",
+        autoChatRunInBackground: d.runInBackground !== false,
         collectOnlyMatchingJobs: d.collectOnlyMatchingJobs !== false,
         skipUnparseableSalaryJob: d.skipUnparseableSalaryJob !== false,
         // null keeps the runtime defaults; 0 disables that rotation trigger
         autoChatPerSourceSuccessLimit: d.perSourceSuccessLimit ?? null,
         autoChatNoMatchStreakLimit: d.noMatchStreakLimit ?? null,
+        autoChatFilterCombinationLimit: filterCombinationLimit(d.filterCombinationLimit),
+        autoChatRunBudget: normalizeRunBudget(d.runBudget),
         isSageTimeEnabled: pace.pause,
         ...(pace.pause
           ? { sageTimeOpTimes: pace.actions, sageTimePauseMinute: pace.minutes }
@@ -1789,11 +1818,12 @@ export default Vue.defineComponent({
       if (d.legacyNeedsReview?.length)
         throw new Error("请重新填写或确认旧筛选条件，避免扩大筛选范围。");
       const hasSalary = d.low != null || d.high != null;
-      if (hasSalary && !["month", "year"].includes(d.unit))
+      if (hasSalary && !["month", "year", "day", "hour"].includes(d.unit))
         throw new Error("填写薪资金额后，请选择薪资单位。");
       return {
-        expectCityList: d.cities,
-        expectSalaryCalculateWay: d.unit === "year" ? 2 : 1,
+        expectCityList: normalizeCitySelection(d.cities),
+        expectSalaryCalculateWay: ({ month: 1, year: 2, day: 3, hour: 4 })[d.unit] || 1,
+        requiredJobConditions: clone(d.requiredConditions || {}),
         expectSalaryLow:
           hasSalary && d.low != null
             ? d.low / (d.unit === "month" ? 1000 : 1)
@@ -1841,6 +1871,7 @@ export default Vue.defineComponent({
           expectCompanies: false,
           blockCompanyNameRegExpStr: false,
           jobDetail: false,
+          requiredConditions: false,
         },
         strategyScopeOptionWhenMarkJobCityNotMatch: d.scopes.city || 2,
         strategyScopeOptionWhenMarkSalaryNotMatch: d.scopes.salary || 2,
@@ -1927,7 +1958,7 @@ export default Vue.defineComponent({
       return ["city", "salary", "experience"].some(
         (key) =>
           (key === "city"
-            ? d.cities.length
+            ? normalizeCitySelection(d.cities).length
             : key === "salary"
               ? d.salary
               : d.experience.length) &&
@@ -1975,11 +2006,15 @@ export default Vue.defineComponent({
       d.runMode === "collect" && d.collectOnlyMatchingJobs === false;
     function validation(d) {
       const a = [];
+      try { normalizeRunBudget(d.runBudget); }
+      catch (error) { a.push({ field: "run-budget", text: error.message }); }
       if (!isCollectAll(d)) conditionIssues(d, a);
       sourceIssues(d, a);
       return a;
     }
     function conditionIssues(d, a) {
+      try { normalizeRequiredJobConditions(d.requiredConditions); }
+      catch (error) { a.push({ field: "requiredConditions", text: error.message }); }
       for (const field of d.legacyNeedsReview || [])
         a.push({
           field,
@@ -2030,7 +2065,7 @@ export default Vue.defineComponent({
           field: "salary",
           text: "薪资上限不能低于下限，请修改上限或下限。",
         });
-      if (d.salary && !["month", "year"].includes(d.unit))
+      if (d.salary && !["month", "year", "day", "hour"].includes(d.unit))
         a.push({ field: "salary", text: "填写薪资金额后，请选择薪资单位。" });
     }
     function sourceIssues(d, a) {
@@ -2044,16 +2079,20 @@ export default Vue.defineComponent({
           (s) => s.type === "search" && s.enabled,
         );
         const searchRows = searchOptionsForRun(d, search);
-        if (search && !searchRows.some((c) => c.enabled && c.keyword))
+        if (search && !searchRows.some((c) => c.enabled && hasSearchCriteria(c)))
           a.push({
             field: "source",
-            text: "请输入搜索内容，或取消搜索结果来源。",
+            text: "请输入搜索内容或选择平台职位类目，或取消搜索结果来源。",
           });
         if (
           search &&
           searchRows.some((c) => c.enabled && c.keyword.length > 50)
         )
           a.push({ field: "source", text: "每个搜索词最多50个字符。" });
+        for (const row of searchRows.filter((row) => row.enabled)) {
+          try { normalizePositionCodes(row.positionCodes); }
+          catch (error) { a.push({ field: "source", text: error.message }); }
+        }
       } else {
         if (
           d.source === "search" &&
@@ -2071,6 +2110,7 @@ export default Vue.defineComponent({
       }
     }
     function focusError(e) {
+      if (e.field === "run-budget") runBudgetOpen.value = true;
       if (e.action === "model") {
         navigate("settings");
         settingTab.value = "ai";
@@ -2447,6 +2487,9 @@ export default Vue.defineComponent({
             )
           : null;
       }
+      const requiredHost = v("requiredConditions");
+      requiredHost.requiredConditions ??= normalizeRequiredJobConditions();
+      const required = requiredHost.requiredConditions;
       const target = v("titles"),
         city = v("cities"),
         sal = v("salary");
@@ -2504,6 +2547,8 @@ export default Vue.defineComponent({
             [
               ["month", "元 / 月"],
               ["year", "万元 / 年"],
+              ["day", "元 / 天"],
+              ["hour", "元 / 小时"],
             ],
             {
               disabled: useField("salary"),
@@ -2562,7 +2607,7 @@ export default Vue.defineComponent({
               override("cities"),
             ]),
             city.cities.length
-              ? "接受以上任一城市。" + sourceHint("cities")
+              ? (city.cities.includes("全国") ? "全国范围，不限制岗位城市。" : "接受以上任一城市。") + sourceHint("cities")
               : "未选择表示不限城市，可输入列表外的城市。",
             false,
             "cities",
@@ -2584,9 +2629,9 @@ export default Vue.defineComponent({
                 check(
                   draft.value,
                   "skipUnparseableSalaryJob",
-                  "跳过兼职、日结、实习等无法识别薪资的岗位",
+                  "跳过面议或无法识别薪资的岗位",
                 ),
-                "不勾选的话，也会给这类岗位打招呼。但如果你填了期望薪资，这类岗位没法比较薪资，还是会跳过。",
+                "日薪、时薪可以识别；它们不会换算为月薪。关闭后允许面议等岗位继续检查；设置了期望薪资时仍需能够比较。",
               ),
             ]),
       ];
@@ -2799,6 +2844,19 @@ export default Vue.defineComponent({
         ]);
       return [
         group("岗位关键词", [titleField, ...keywordFilters, keywordLogic]),
+        group("投递前必需条件", [
+          field("求职类型", tags(required, "jobNatures", JOB_NATURE_OPTIONS, { allowCreate: false, "aria-label": "求职类型" }),
+            "留空不限；选定后，类型不符合或无法确认的岗位会略过。", false, "requiredConditions"),
+          field("公司人数", inline([
+            number(required, "companyScaleMin", { min: 0, precision: 0, controls: false, placeholder: "至少人数", "aria-label": "公司最少人数" }),
+            h("span", "—"),
+            number(required, "companyScaleMax", { min: 0, precision: 0, controls: false, placeholder: "至多人数", "aria-label": "公司最多人数" }),
+          ]), "留空不限；岗位给出的人数范围须完全符合。"),
+          field("接受的学历要求", tags(required, "degrees", DEGREE_OPTIONS, { allowCreate: false, "aria-label": "接受的学历要求" }), "留空不限，选择你接受的岗位学历要求。"),
+          field("公司行业", tags(required, "industries", [], { "aria-label": "必需公司行业", placeholder: "输入行业关键词，回车添加" }), "包含任一关键词即可。"),
+          field("融资阶段", tags(required, "financingStages", ["未融资", "不需要融资", "天使轮", "A轮", "B轮", "C轮", "D轮及以上", "已上市"], { "aria-label": "必需融资阶段" }), "按岗位给出的阶段匹配。"),
+          field("岗位/JD屏蔽词", tags(required, "excludedWords", [], { "aria-label": "岗位和描述屏蔽词", placeholder: "输入不接受的词，回车添加" }), "岗位名称或描述包含任一词就略过；按字面匹配，忽略大小写。不受上方“满足其中一项”影响。"),
+        ], "这些条件会在投递或按条件收集前逐条核对；不符合或信息缺失时只略过，不在BOSS标记。"),
         group("工作地点与待遇", [
           ...otherFields,
           ...basicFilters,
@@ -2841,6 +2899,12 @@ export default Vue.defineComponent({
         ].join("；") + "；全部来源轮完即结束"
       );
     }
+    function budgetFact(d) {
+      try {
+        const b = normalizeRunBudget(d.runBudget);
+        return `岗位接口 ${b.requests || "不限"} 次；详情 ${b.detailRequests || "不限"} 次；累计运行 ${b.activeMinutes || "不限"} 分钟`;
+      } catch { return "运行预算配置无效，请重新设置"; }
+    }
     function checkFactRows() {
       if (checks.value === "follow") {
         const f = follow.value;
@@ -2859,10 +2923,13 @@ export default Vue.defineComponent({
           : "不定时休息"
         : "读取中…";
       const keys = isCollectAll(d)
-        ? ["运行方式", "职位来源", ...(potentialSourceCount(d) > 1 ? ["换源规则"] : [])]
+        ? ["运行方式", "浏览器窗口", "职位来源", "组合预算", "运行预算", ...(potentialSourceCount(d) > 1 ? ["换源规则"] : [])]
         : [
             "运行方式",
+            "浏览器窗口",
             "职位来源",
+            "组合预算",
+            "运行预算",
             ...(potentialSourceCount(d) > 1 ? ["换源规则"] : []),
             "目标岗位",
             "工作城市",
@@ -2871,6 +2938,12 @@ export default Vue.defineComponent({
               "职位分类",
               "岗位描述包含",
               "工作经验",
+              "求职类型",
+              "公司人数",
+              "学历要求",
+              "必需行业",
+              "融资阶段",
+              "岗位/JD屏蔽词",
               "只看公司",
               "排除公司",
               "招聘者活跃",
@@ -2938,17 +3011,30 @@ export default Vue.defineComponent({
         searchRows = searchOptionsForRun(d, search),
         activeSearchCount = new Set(
           searchRows
-            .filter((row) => row.enabled && row.keyword)
-            .map((row) => row.keyword),
+            .filter((row) => row.enabled && hasSearchCriteria(row))
+            .map((row) => describeSearchSource(row)),
         ).size;
       const searchRow = (c, index) =>
         h("div", { class: "ux-search-row" }, [
           check(c, "enabled", "使用", {
-            "aria-label": "使用搜索词 " + (index + 1),
+            "aria-label": "使用搜索条件 " + (index + 1),
           }),
           input(c, "keyword", {
             "aria-label": "搜索内容 " + (index + 1),
-            placeholder: "输入一条BOSS搜索内容，如会计",
+            placeholder: "搜索内容，如会计；选择类目后可留空",
+          }),
+          h(ElCascader, {
+            modelValue: c.positionCodes || emptyPositionCodes,
+            options: positionOptions,
+            props: positionCascaderProps,
+            clearable: true,
+            filterable: true,
+            collapseTags: true,
+            collapseTagsTooltip: true,
+            placeholder: "平台职位类目（可选）",
+            "aria-label": "平台职位类目 " + (index + 1),
+            style: { width: "280px", maxWidth: "100%" },
+            "onUpdate:modelValue": (value) => update(c, "positionCodes", normalizePositionCodes(value)),
           }),
           index > 0
             ? orderButtons(search.children, index, "搜索词 " + (index + 1))
@@ -2994,14 +3080,14 @@ export default Vue.defineComponent({
         ),
         search.enabled
           ? field(
-              ["BOSS搜索内容", tip("这里的词会填进BOSS顶部的搜索框，搜出来的岗位再按你的求职条件筛。", "BOSS搜索内容")],
+              ["BOSS搜索条件", tip("搜索词和平台职位类目一起限制BOSS搜索范围；选择类目后搜索词可以留空。搜出来的岗位仍会按求职条件筛选。", "BOSS搜索条件")],
               h("div", [
                 searchRow(search.children[0], 0),
                 rotate
                   ? explain([
                       "已开启轮换：",
                       metric(activeSearchCount),
-                      " 个搜索内容。",
+                      " 组搜索条件。",
                     ])
                   : null,
               ]),
@@ -3029,7 +3115,7 @@ export default Vue.defineComponent({
                 check(d, "searchRotation", "启用自动轮换搜索", {
                   modelValue: rotate,
                 }),
-                "一个搜索词的结果看完、没有能聊的岗位了，就换下一个词。不开的话只用第一个词，其余的词留着不删。",
+                "一组搜索词和职位类目的结果处理完后，换下一组。不开时只使用第一组，其余配置会保留。",
               ),
               ...(rotate
                 ? search.children
@@ -3044,6 +3130,7 @@ export default Vue.defineComponent({
                         type: "search-kw",
                         enabled: true,
                         keyword: "",
+                        positionCodes: [],
                       });
                       changed();
                     },
@@ -3122,6 +3209,31 @@ export default Vue.defineComponent({
           : null,
       ];
     }
+    function budgetControls() {
+      const d = draft.value;
+      const b = d.runBudget;
+      if (!b || typeof b !== "object" || Array.isArray(b))
+        return group("本次运行预算", [
+          hint("运行预算配置无效，请重新设置后开始。"),
+          button("重置运行预算", () => { d.runBudget = { ...DEFAULT_RUN_BUDGET }; changed(); }, { plain: true }),
+        ]);
+      return disclosure("本次运行预算", runBudgetOpen, "run-budget", [
+        ...[
+          ["requests", "岗位接口请求上限", "次（含详情）"],
+          ["detailRequests", "其中详情请求上限", "次"],
+          ["activeMinutes", "累计运行时间上限", "分钟"],
+        ].map(([key, label, unit]) => field(label, inline([
+          h("input", { type: "number", class: "ux-budget-input", min: 0, max: MAX_RUN_BUDGET[key], step: 1,
+            value: b[key] ?? "", placeholder: String(DEFAULT_RUN_BUDGET[key]), "aria-label": label,
+            onInput: event => update(d, "runBudget", { ...d.runBudget,
+              [key]: event.target.validity.badInput ? "invalid" : event.target.value === "" ? null : Number(event.target.value),
+            }),
+          }), unit,
+        ]))),
+        explain("失败、重试和重复请求也计入。0 表示不限制，留空使用默认值；达到任一上限即暂停，调整上限后可恢复，累计用量不会归零。"),
+        explain("运行时间包含等待和定时休息，不含手动暂停、排队、安全验证及浏览器重启间隔。"),
+      ], budgetFact(d));
+    }
     function platformControls() {
       const d = draft.value,
         dict = window.__ggrFilterData,
@@ -3182,7 +3294,7 @@ export default Vue.defineComponent({
             { "aria-label": "平台条件组合方式" },
           ),
           d.platformMode === 2
-            ? "按组合的顺序一个个查，全部查完再换下一个来源。"
+            ? "按保存顺序查看组合；达到处理数量或连续不符的换源条件时，也会提前换源。"
             : "会自动轮换各种筛选组合，包括“不限”。想固定筛选范围的话，改选“逐条设置固定组合”。",
         ),
         d.platformMode === 1
@@ -3242,10 +3354,23 @@ export default Vue.defineComponent({
           : null,
         d.platformMode === 1 && combinationStats.hasConditions
           ? explain([
-              "每个来源预计查看 ",
+              "共有 ",
               metric(combinationStats.total.toLocaleString("zh-CN")),
-              " 种组合，组合越多，查找越久。",
+              " 种组合，每个来源最多查看 ",
+              metric(String(filterCombinationLimit(d.filterCombinationLimit))),
+              " 种，优先使用已选条件。达到预算后换源；固定组合不受此预算限制。",
             ])
+          : null,
+        d.platformMode === 1
+          ? field(
+              "每个来源的组合上限",
+              number(d, "filterCombinationLimit", {
+                min: 1, max: MAX_FILTER_COMBINATION_LIMIT, precision: 0,
+                placeholder: String(DEFAULT_FILTER_COMBINATION_LIMIT),
+                "aria-label": "每来源组合上限",
+              }),
+              `留空使用 ${DEFAULT_FILTER_COMBINATION_LIMIT} 种；只限制页面筛选切换次数，不改变投递条件。`,
+            )
           : null,
       ];
     }
@@ -3388,6 +3513,7 @@ export default Vue.defineComponent({
       ];
     }
     function evaluate(originalRow, d) {
+      const collect = d.runMode === "collect";
       const row = {
         ...originalRow,
         companyName: originalRow.companyBrandName ?? originalRow.companyName,
@@ -3397,8 +3523,33 @@ export default Vue.defineComponent({
           originalRow.cityName ||
           cityOptions.find((c) => (originalRow.address || "").startsWith(c)),
       };
+      if (collect && d.collectOnlyMatchingJobs === false) return {
+        ...row, result: "匹配", reason: "只收集全部岗位，不应用求职条件",
+        actionLabels: ["可收集"], action: "开始任务后仅保存岗位，不发送、不标记",
+      };
+      const parsedPay = row.salaryDesc ? parseSalaryDetails(row.salaryDesc) : {
+        low: row.salaryLow == null ? null : row.salaryLow * 1000,
+        high: row.salaryHigh == null ? null : row.salaryHigh * 1000,
+        unit: "month", month: row.salaryMonth,
+        status: row.salaryLow == null || row.salaryHigh == null ? "unknown" : "parsed",
+      };
+      const hardReasons = requiredJobConditionReasons({
+        jobInfo: { degreeName: row.degreeName, jobNatureName: row.jobNatureName,
+          jobName: row.jobName, postDescription: row.jobDescription },
+        brandComInfo: {
+          scaleName: row.companyScaleLow != null && row.companyScaleHigh != null
+            ? `${row.companyScaleLow}-${row.companyScaleHigh}人`
+            : row.companyScaleLow != null ? `${row.companyScaleLow}人以上` : "",
+          industryName: row.companyIndustryName, stageName: row.companyStageName,
+        },
+      }, d.requiredConditions);
+      if (hardReasons.length) return {
+        ...row, result: hardReasons.some(reason => reason.includes("信息不足")) ? "信息不足" : "不匹配",
+        reason: hardReasons.join("；"), actionLabels: ["跳过"],
+        action: "必需条件未满足，本次跳过；不发送、不标记",
+      };
       const reasons = [],
-        unknown = missingJobFields(row, {
+        unknown = missingJobFields({ ...row, salaryLow: parsedPay.low, salaryHigh: parsedPay.high }, {
           title: d.regexMode
             ? d.regexTitle
             : d.titles.length || d.legacyPatterns?.titles,
@@ -3408,7 +3559,7 @@ export default Vue.defineComponent({
           description: d.regexMode
             ? d.regexDesc
             : d.description.length || d.legacyPatterns?.description,
-          city: d.cities.length,
+          city: normalizeCitySelection(d.cities).length,
           company:
             d.companies.length ||
             d.excluded.length ||
@@ -3488,7 +3639,7 @@ export default Vue.defineComponent({
               .join("；"),
           );
       }
-      if (d.cities.length && !d.cities.includes(row.cityName))
+      if (!matchesCitySelection(d.cities, row.cityName))
         reject("city", "工作城市不匹配");
       if (
         d.companies.length &&
@@ -3504,25 +3655,13 @@ export default Vue.defineComponent({
             : d.excluded.some((t) => test(escape(t), row.companyName, "公司"))
       )
         reject("company", "命中排除公司");
-      if (
-        !d.salary &&
-        d.skipUnparseableSalaryJob !== false &&
-        (row.salaryLow == null || row.salaryHigh == null)
-      )
-        unknown.push("薪资无法识别（兼职、日结、实习等）");
-      if (d.salary) {
-        if (row.salaryLow == null || row.salaryHigh == null)
-          unknown.push("薪资信息不足");
-        else {
-          // same as the run: a missing 薪数 counts as 12 months
-          const scale = d.unit === "year" ? (row.salaryMonth || 12) / 10 : 1000;
-          if (
-            (d.low != null && row.salaryHigh * scale < d.low) ||
-            (d.high != null && row.salaryLow * scale > d.high)
-          )
-            reject("salary", "薪资区间无交集");
-        }
-      }
+      if (!d.salary && d.skipUnparseableSalaryJob !== false && parsedPay.status !== "parsed")
+        unknown.push("薪资无法识别或面议");
+      if (d.salary && !matchesSalaryDetails(parsedPay, {
+        low: d.low == null ? null : d.low / (d.unit === "month" ? 1000 : 1),
+        high: d.high == null ? null : d.high / (d.unit === "month" ? 1000 : 1),
+        unit: ({ month: 1, year: 2, day: 3, hour: 4 })[d.unit],
+      })) reject("salary", parsedPay.status === "parsed" ? "薪资单位不同或区间无交集" : "薪资信息不足");
       if (d.experience.length && !matchesExperience(d.experience, row.experienceName))
         reject("experience", "经验要求不匹配");
       if (d.hr) {
@@ -3576,19 +3715,43 @@ export default Vue.defineComponent({
             : "匹配",
         reason:
           [...reasons, ...new Set(unknown)].join("；") || "全部已设置条件通过",
-        actionLabels: unknown.length
+        actionLabels: unknown.length || (collect && reasons.length)
           ? ["跳过"]
           : reasons.length
             ? actionCodes.map(
                 (code) => ({ 1: "标记不合适", 2: "7天冷却", 3: "跳过" })[code],
               )
-            : ["可打招呼"],
+            : [collect ? "可收集" : "可打招呼"],
         action: unknown.length
           ? "信息不足，本次跳过；不发送、不标记"
           : reasons.length
-            ? actions.join(" / ") + "（计划，受作用范围限制）"
-            : "符合条件；开始任务后才执行开聊",
+            ? collect ? "求职条件未满足，本次跳过；不发送、不标记" : actions.join(" / ") + "（计划，受作用范围限制）"
+            : collect ? "符合条件；开始任务后仅保存岗位，不发送、不标记" : "符合条件；开始任务后才执行开聊",
       };
+    }
+    async function previewMatches() {
+      const d = effective(), issues = [];
+      if (!isCollectAll(d)) conditionIssues(d, issues);
+      if (issues.length) { presentErrors(issues, "auto"); return; }
+      const request = ++previewRequest;
+      previewBusy.value = true;
+      preview.value = null;
+      modal.value = "preview";
+      try {
+        const data = await native.jobs();
+        if (request !== previewRequest || modal.value !== "preview") return;
+        preview.value = { total: data.total, rows: data.rows.map(row => evaluate(row, d)) };
+      } catch (error) {
+        R.message({ type: "error", message: "读取预览失败：" + error.message });
+      } finally {
+        if (request === previewRequest) previewBusy.value = false;
+      }
+    }
+    function previewControls() {
+      return inline([
+        button("预览筛选结果", previewMatches, { plain: true, loading: previewBusy.value }),
+        hint("用职位库已有岗位核对当前条件；预览不会开始任务。"),
+      ]);
     }
     const workerIds = {
       auto: "geekAutoStartWithBossMain",
@@ -3683,6 +3846,7 @@ export default Vue.defineComponent({
     }
     // why it is paused: the way its last part ended
     function pauseReason(r) {
+      if (r?.progress?.budget?.stopped && r.progress.detail) return r.progress.detail;
       const last = taskStore.taskHistory.find(
         (t) => t.workerId === workerIds.auto && String(t.runRecordId) === String(r?.runRecordId),
       );
@@ -3701,6 +3865,8 @@ export default Vue.defineComponent({
         ))
       )
         return;
+      // Resume must freeze the latest limits, even if the autosave timer has not fired.
+      if (!(await save(false, "auto"))) return;
       await startTask("auto", true);
       await refreshResume();
     }
@@ -4339,13 +4505,15 @@ export default Vue.defineComponent({
           return card(sourceTitle(), [
             hint("收集全部岗位，无需配置求职条件，选择下面的职位来源即可。"),
             ...sourceControls(),
+            budgetControls(),
+            previewControls(),
           ], { id: "job-preferences", tabIndex: -1 });
         return [
           card("我的求职条件", prefs(draft.value), {
             id: "job-preferences",
             tabIndex: -1,
           }),
-          card(sourceTitle(), sourceControls(), {
+          card(sourceTitle(), [...sourceControls(), budgetControls(), previewControls()], {
             id: "job-sources",
             tabIndex: -1,
           }),
@@ -4369,7 +4537,7 @@ export default Vue.defineComponent({
           h("span", { class: "ux-hint" }, pauseReason(r)),
         ]),
         h("p", [
-          `已查看并入库 ${p.viewed || 0}，${collect ? "已收集 " + (p.collected || 0) : "已打招呼 " + (p.sent || 0)}，已跳过 ${p.skipped || 0}`,
+          `已查看 ${p.viewed || 0}，${collect ? "已收集 " + (p.collected || 0) : "已打招呼 " + (p.sent || 0)}，已跳过 ${p.skipped || 0}`,
           tip("可以先改配置再点“继续运行”：会从停下的地方接着找，处理过的岗位不会再处理。"),
         ]),
         inline([
@@ -4437,8 +4605,8 @@ export default Vue.defineComponent({
         task === "follow"
           ? [["已检查会话", "viewed"], ["已发送", "sent"], ["已跳过", "skipped"]]
           : collect
-            ? [["已查看并入库", "viewed"], ["已收集", "collected"], ["已跳过", "skipped"]]
-            : [["已查看并入库", "viewed"], ["已打招呼", "sent"], ["已跳过", "skipped"]];
+            ? [["已查看", "viewed"], ["已收集", "collected"], ["已跳过", "skipped"]]
+            : [["已查看", "viewed"], ["已打招呼", "sent"], ["已跳过", "skipped"]];
       return h(
         "div",
         { class: "ux-task-curtain", role: "dialog", "aria-label": name + "任务运行中" },
@@ -4770,6 +4938,10 @@ export default Vue.defineComponent({
                 ),
               ])
             : null,
+          h("div", { class: "ux-run-mode-option" }, [
+            check(d, "runInBackground", "后台运行浏览器"),
+            hint("自动任务使用最小化窗口，不主动切到前台；登录或需要安全验证时会显示窗口。关闭后使用普通窗口。"),
+          ]),
         ],
         { id: "job-run-mode", class: "ux-card ux-run-mode" },
       );
@@ -4904,8 +5076,12 @@ export default Vue.defineComponent({
       closeTaskDetail();
       jumpStore.jump({
         dataset: target.dataset,
-        rows: [{ field: target.field, op: "between", value: target.range }],
-        label: target.label + "（" + clockTime(t.startedAt) + " 起）",
+        rows: target.dataset === "jobLibrary" && Number(t.runRecordId) > 0
+          ? [{ field: "firstSeenRunId", op: "eq", value: Number(t.runRecordId) }]
+          : [{ field: target.field, op: "between", value: target.range }],
+        label: target.dataset === "jobLibrary" && Number(t.runRecordId) > 0
+          ? "本轮新增岗位（任务 #" + t.runRecordId + "）"
+          : target.label + "（" + clockTime(t.startedAt) + " 起）",
       });
       if (target.route === "library") libraryTab.value = target.tab;
       else recordTab.value = target.tab;
@@ -4914,7 +5090,7 @@ export default Vue.defineComponent({
     // ---- task dashboard (任务列表 → 查看任务) ----
     const logFilter = ref("all");
     const logKinds = {
-      viewed: ["入库", "primary"],
+      viewed: ["查看", "primary"],
       collected: ["收集", "success"],
       sent: ["打招呼", "success"],
       skipped: ["跳过", "info"],
@@ -4987,8 +5163,8 @@ export default Vue.defineComponent({
           : workerId === "jobStatusPollMain"
             ? [["已检查职位", "viewed"], ["暂时无法确认", "skipped"]]
             : runMode === "collect"
-              ? [["已查看并入库", "viewed"], ["已收集", "collected"], ["已跳过", "skipped"], ["已标记不合适", "marked"]]
-              : [["已查看并入库", "viewed"], ["已打招呼", "sent"], ["已跳过", "skipped"], ["已标记不合适", "marked"]];
+              ? [["已查看", "viewed"], ["已收集", "collected"], ["已跳过", "skipped"], ["已标记不合适", "marked"]]
+              : [["已查看", "viewed"], ["已打招呼", "sent"], ["已跳过", "skipped"], ["已标记不合适", "marked"]];
       const minutes = startedAt && endAt ? Math.max(1, (endAt - startedAt) / 60000) : 0;
       const viewed = liveCount(live, "viewed");
       const reasons = Object.entries(p.skippedReasons || {})
@@ -5052,6 +5228,16 @@ export default Vue.defineComponent({
             minutes && viewed ? " 个/小时" : "",
           ),
         ]),
+        workerId === workerIds.auto && p.budget?.usage
+          ? card("运行预算", [
+              h("div", { class: "ux-task-metrics" }, [
+                metric("岗位接口请求", `${p.budget.usage.requests} / ${p.budget.limits?.requests || "不限"}`, "包含详情、失败和重试", " 次"),
+                metric("其中详情请求", `${p.budget.usage.detailRequests} / ${p.budget.limits?.detailRequests || "不限"}`, "请求次数，按次累计", " 次"),
+                metric("累计运行时间", `${(p.budget.usage.activeMs / 60000).toFixed(1)} / ${p.budget.limits?.activeMinutes || "不限"}`, "暂停、排队与验证不计时", " 分钟"),
+              ]),
+              p.budget.baselineUnknown ? hint("此任务启用预算前的用量未知，以上仅为启用后累计。") : null,
+            ])
+          : null,
         h("div", { class: "ux-task-detail-grid" }, [
           card("当前操作", [
             h(
@@ -5115,7 +5301,7 @@ export default Vue.defineComponent({
               },
               () => [
                 ["all", "全部"],
-                ["data", "入库/打招呼"],
+                ["data", "查看/收集/打招呼"],
                 ["skipped", "跳过"],
                 ["status", "状态"],
               ].map(([value, label]) => E("ElRadioButton", { value }, () => label)),
@@ -5334,6 +5520,8 @@ export default Vue.defineComponent({
       if (target.dataset === "jobLibrary")
         return h(JobLibrary, {
           ...shared,
+          baseFilters: Number(t.runRecordId) > 0 ? [] : shared.baseFilters,
+          runRecordId: Number(t.runRecordId) > 0 ? Number(t.runRecordId) : undefined,
           embedded: true,
           // the time the rows are limited by
           extraColumns: [{ key: "hireStatusCheckedAt", minWidth: 160 }],
@@ -5486,7 +5674,7 @@ export default Vue.defineComponent({
         ["config", "任务配置"],
       ];
       const libraryButton = target
-        ? button("在资料库查看", () => openHistoryData(t), { type: "primary", plain: true })
+        ? button(target.dataset === "jobLibrary" && Number(t.runRecordId) > 0 ? "在资料库查看本轮新增" : "在资料库查看", () => openHistoryData(t), { type: "primary", plain: true })
         : null;
       let body;
       if (detailTab.value === "overview")
@@ -5519,7 +5707,9 @@ export default Vue.defineComponent({
           ? [
               h("div", { class: "ux-task-data-head" }, [
                 h("span", target.label.replace(/^本次/, "这次")),
-                tip("按这次运行的开始和结束时间筛出来的数据。之后再查看或更新过的岗位，也可能出现在这里。"),
+                tip(target.dataset === "jobLibrary" && Number(t.runRecordId) > 0
+                  ? "按运行编号查看实际采集过的岗位；详情和摘要使用资料库当前保存的内容。后续任务更新岗位不会改变归属，删除详情后发现台账仍保留。"
+                  : "按这次运行的开始和结束时间筛出来的数据。之后再查看或更新过的岗位，也可能出现在这里。"),
                 libraryButton,
               ]),
               h("div", { class: "ux-data-panel ux-task-data-panel" }, [
@@ -6336,6 +6526,7 @@ export default Vue.defineComponent({
       valid: "登录正常",
       invalid: "登录已失效",
       missing: "未登录",
+      restricted: "BOSS限制了访问",
       unknown: "暂时无法确认",
     };
     async function refreshLoginStatus() {
@@ -6381,6 +6572,10 @@ export default Vue.defineComponent({
     async function ensureBossLogin(task) {
       const result = await refreshLoginStatus();
       if (result.status === "valid") return true;
+      if (result.status === "restricted") {
+        R.message({ type: "warning", message: result.detail + "；登录凭证已保留，请在BOSS完成验证或稍后重试。", duration: 7000 });
+        return false;
+      }
       if (result.status === "unknown") {
         R.message({
           type: "warning",
@@ -6446,13 +6641,14 @@ export default Vue.defineComponent({
     function templateFacts(sn = {}) {
       const list = (v) => (Array.isArray(v) && v.length ? v.join("、") : "");
       const collect = sn.runMode === "collect";
+      const required = sn.requiredConditions || {};
       const sources = (sn.sourceList || [])
         .filter((x) => x.enabled)
         .map((x) => {
           const label = sourceInfo[x.type]?.[0] || x.type;
           const words = (x.children || [])
-            .filter((c) => c.enabled && c.keyword)
-            .map((c) => c.keyword);
+            .filter((c) => c.enabled && hasSearchCriteria(c))
+            .map((c) => describeSearchSource(c));
           return words.length ? `${label}（${words.join("、")}）` : label;
         });
       return [
@@ -6481,14 +6677,23 @@ export default Vue.defineComponent({
                   ? `${sn.low} – ${sn.high} ${unit}`
                   : sn.low != null
                     ? `${sn.low} ${unit}以上`
-                    : `${sn.high} ${unit}以下`)(sn.unit === "year" ? "元/年" : "元/月")
+                    : `${sn.high} ${unit}以下`)(({ month: "元/月", year: "万元/年", day: "元/天", hour: "元/小时" })[sn.unit] || "单位未选择")
             : "不限",
         ],
+        ["求职类型", list(required.jobNatures) || "不限"],
+        ["公司人数", required.companyScaleMin != null || required.companyScaleMax != null ? `${required.companyScaleMin ?? 0}–${required.companyScaleMax ?? "不限"}人` : "不限"],
+        ["学历要求", list(required.degrees) || "不限"],
+        ["必需行业", list(required.industries) || "不限"],
+        ["融资阶段", list(required.financingStages) || "不限"],
+        ["岗位/JD屏蔽词", list(required.excludedWords) || "无"],
         ["工作经验", list(sn.experience) || "不限"],
         ["只看公司", list(sn.companies) || "不限"],
         ["排除公司", list(sn.excluded) || (sn.legacyPatterns?.excluded ? "沿用原有规则" : "无")],
         ["招聘者活跃", sn.activity || "不限"],
         ["职位来源", sources.join("；") || "未选择"],
+        ["组合预算", sn.platformMode === 2 ? "固定组合，按顺序全部查看" : `每个来源最多 ${filterCombinationLimit(sn.filterCombinationLimit)} 种，优先已选条件`],
+        ["运行预算", budgetFact(sn)],
+        ["浏览器窗口", sn.runInBackground !== false ? "后台最小化运行" : "普通窗口"],
         ...(rotationFact(sn) ? [["换源规则", rotationFact(sn)]] : []),
         ["默认处理方式", strategyLabel(sn.strategy)],
       ];
@@ -6880,7 +7085,7 @@ export default Vue.defineComponent({
           type:
             result.status === "valid"
               ? "success"
-              : result.status === "unknown"
+              : ["unknown", "restricted"].includes(result.status)
                 ? "warning"
                 : "error",
           message:
@@ -6890,6 +7095,8 @@ export default Vue.defineComponent({
                 ? "本机没有保存登录凭证"
                 : result.status === "invalid"
                   ? "登录凭证已失效：" + result.detail + "，请重新登录"
+                  : result.status === "restricted"
+                    ? "BOSS限制了访问：" + result.detail + "；登录凭证已保留"
                   : "暂时无法确认：" + result.detail,
           duration: 5000,
         });
@@ -7696,6 +7903,30 @@ export default Vue.defineComponent({
           button("创建模板", () => commitTemplate(), { type: "primary" }),
         ];
       }
+      if (kind === "preview") {
+        title = "筛选结果预览";
+        const data = preview.value;
+        content = previewBusy.value ? [hint("正在读取职位库…")] : data ? [
+          hint(`预览最近 ${data.rows.length} 条，职位库共 ${data.total} 条；匹配 ${data.rows.filter(row => row.result === "匹配").length} 条，不匹配 ${data.rows.filter(row => row.result === "不匹配").length} 条，信息不足 ${data.rows.filter(row => row.result === "信息不足").length} 条。`),
+          hint("这里只检查当前条件，不会发送消息或标记岗位。"),
+          E("ElTable", { data: data.rows, maxHeight: 380, style: { width: "100%" }, emptyText: "职位库暂无岗位" }, () => [
+            ...[["jobName", "岗位", 150], ["companyName", "公司", 120], ["degreeName", "学历", 70],
+              ["companyIndustryName", "行业", 100], ["companyStageName", "融资阶段", 100], ["jobNatureName", "类型", 70]]
+              .map(([prop, label, minWidth]) => E("ElTableColumn", { prop, label, minWidth, showOverflowTooltip: true })),
+            E("ElTableColumn", { label: "公司人数", minWidth: 100 }, { default: ({ row }) =>
+              row.companyScaleLow == null && row.companyScaleHigh == null ? "未提供" :
+                row.companyScaleHigh == null ? `${row.companyScaleLow}人以上` :
+                  row.companyScaleLow == null ? `${row.companyScaleHigh}人以下` :
+                    `${row.companyScaleLow}–${row.companyScaleHigh}人` }),
+            E("ElTableColumn", { label: "薪资", minWidth: 130 }, { default: ({ row }) => formatSalary(row) }),
+            E("ElTableColumn", { prop: "result", label: "结果", minWidth: 80 }),
+            E("ElTableColumn", { prop: "reason", label: "判定原因", minWidth: 220, showOverflowTooltip: true }),
+            E("ElTableColumn", { label: "计划操作", minWidth: 80 }, { default: ({ row }) => row.actionLabels.join("、") }),
+          ]),
+        ] : [hint("尚未读取到预览数据。")];
+        footerNodes = [button("重新预览", previewMatches, { plain: true, loading: previewBusy.value }),
+          button("关闭", () => (modal.value = ""), { type: "primary" })];
+      }
       if (!kind) return null;
       if (kind === "companies") {
         const obj = companyEditor.value,
@@ -7948,7 +8179,7 @@ export default Vue.defineComponent({
           modelValue: true,
           title,
           width:
-            kind === "template"
+            kind === "preview" ? "min(1240px, calc(100vw - 48px))" : kind === "template"
               ? "min(480px, calc(100vw - 48px))"
               : "min(720px, calc(100vw - 48px))",
           class: "ux-dialog",
@@ -8403,21 +8634,25 @@ export default Vue.defineComponent({
           (k) => workerIds[k] === message.workerId,
         );
         if (!task) return;
+        const completed = isSuccessfulTaskExit(message.workerId, message.code);
+        const resumable = isResumableTaskExit(message.workerId, message.code);
         running.value[task] = Boolean(message.restarting);
         if (taskProgress.value[task]) {
           taskProgress.value[task].state = message.restarting
             ? "retrying"
-            : [88, 89, 91].includes(message.code)
+            : resumable
               ? "blocked"
-              : requestedStop[task] || message.code === 0
+              : requestedStop[task] || completed
                 ? "stopped"
                 : "error";
           taskProgress.value[task].stoppedAt = Date.now();
           taskProgress.value[task].detail = message.restarting
             ? "重新检查后开始，不保证原位置续跑"
-            : requestedStop[task] || message.code === 0
+            : completed && message.code === 92
+              ? exitCodeLabels[92]
+              : requestedStop[task] || completed
               ? "任务已停止，实际累计统计保留"
-              : [88, 89, 91].includes(message.code)
+              : resumable
                 ? taskProgress.value[task].detail
                 : "请修复问题后重新开始；不会从原位置续跑";
         }
@@ -8430,16 +8665,16 @@ export default Vue.defineComponent({
             title: name + "遇到异常",
             message: "正在自动重新开始，不保证从原位置续跑。",
           });
-        else if (message.code === 0) {
+        else if (completed) {
           if (!requestedStop[task])
             R.message({ type: "success", title: name + "已结束", message: "任务已正常结束。" });
         } else
           R.message({
-            type: [88, 89, 91].includes(message.code) ? "warning" : "error",
+            type: resumable ? "warning" : "error",
             title:
               task === "auto"
                 ? name + "已暂停"
-                : name + ([88, 89, 91].includes(message.code) ? "已停止" : "异常结束"),
+                : name + (resumable ? "已停止" : "异常结束"),
             message:
               (labels[message.code] || "退出码 " + message.code) +
               (task === "auto"

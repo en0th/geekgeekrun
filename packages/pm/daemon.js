@@ -7,12 +7,12 @@ if (typeof require !== 'undefined') {
       if (process.platform === 'darwin') {
         app.dock?.hide();
       }
-      
+
       // 防止显示窗口
       app.on('ready', () => {
         // 不创建任何窗口，保持后台运行
       });
-      
+
       // 防止在没有窗口时退出
       app.on('window-all-closed', (e) => {
         e.preventDefault();
@@ -31,6 +31,8 @@ const split2 = require('split2');
 const fs = require('fs')
 const { tmpdir } = require('os')
 const { randomUUID } = require('crypto')
+const { isSuccessfulTaskExit } = require('./task-exit.cjs')
+const { writeJsonAtomicSync } = require('@geekgeekrun/utils/atomic-file.cjs')
 
 const ipcWritePipe = fs.createWriteStream(null, { fd: 3 })
 let ipcSocketName = process.env.GEEKGEEKRUND_PIPE_NAME
@@ -49,6 +51,9 @@ const pidToProcessInfoMap = new Map()
 const socketToWorkerIdSetMap = new WeakMap()
 const clientSockets = new Set()
 let idleShutdownTimer
+let shuttingDown = false
+const restartTimers = new Map()
+const STOP_TIMEOUT_MS = Math.max(100, Number(process.env.GEEKGEEKRUND_STOP_TIMEOUT_MS) || 8000)
 
 // ---- serial BOSS task queue ----
 // Tasks that drive a browser on the BOSS account run one at a time, so the account never has
@@ -95,8 +100,8 @@ function enqueueTask(entry, { front = false } = {}) {
   broadcastStatus()
 }
 
-function removeQueuedTask(workerId) {
-  const index = taskQueue.findIndex((it) => it.workerId === workerId)
+function removeQueuedTask(workerId, ownerSocket) {
+  const index = taskQueue.findIndex((it) => it.workerId === workerId && (!ownerSocket || it.ownerSocket === ownerSocket))
   if (index < 0) return false
   taskQueue.splice(index, 1)
   broadcastStatus()
@@ -104,12 +109,13 @@ function removeQueuedTask(workerId) {
 }
 
 function startNextQueuedTask() {
-  if (queueBusy()) return
+  if (shuttingDown || queueBusy()) return
   const next = taskQueue.shift()
   if (!next) {
     scheduleIdleShutdown()
     return
   }
+  if (next.ownerSocket?.destroyed) return startNextQueuedTask()
   stoppedWorkers.delete(next.workerId)
   startWorker(next, next.restartCount || 0)
 }
@@ -125,22 +131,28 @@ function shouldYield(workerId) {
 // finished task runs, kept across daemon restarts when the UI names a file for them
 const TASK_HISTORY_FILE = process.env.GEEKGEEKRUND_TASK_HISTORY_FILE || ''
 const TASK_HISTORY_LIMIT = 200
+let taskHistoryReadable = true
 
 function loadTaskHistory() {
   if (!TASK_HISTORY_FILE) return
   try {
     const saved = JSON.parse(fs.readFileSync(TASK_HISTORY_FILE, 'utf8'))
-    if (Array.isArray(saved)) taskHistory.push(...saved.slice(0, TASK_HISTORY_LIMIT))
-  } catch {
-    // no history yet, or an unreadable file: start empty
+    if (!Array.isArray(saved)) throw new Error('Invalid task history')
+    if (Array.isArray(saved)) taskHistory.push(...saved.slice(0, TASK_HISTORY_LIMIT).map(entry =>
+      entry.code === 92 && isSuccessfulTaskExit(entry.workerId, entry.code) && ['failed', 'restarting'].includes(entry.outcome)
+        ? { ...entry, outcome: 'finished' } : entry))
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      taskHistoryReadable = false
+      console.error('任务历史无法读取，原文件已保留；修复后请重启守护进程')
+    }
   }
 }
 
 function saveTaskHistory() {
-  if (!TASK_HISTORY_FILE) return
+  if (!TASK_HISTORY_FILE || !taskHistoryReadable) return
   try {
-    fs.writeFileSync(TASK_HISTORY_FILE + '.tmp', JSON.stringify(taskHistory))
-    fs.renameSync(TASK_HISTORY_FILE + '.tmp', TASK_HISTORY_FILE)
+    writeJsonAtomicSync(TASK_HISTORY_FILE, taskHistory)
   } catch (e) {
     console.error('保存任务历史失败:', e)
   }
@@ -192,13 +204,13 @@ const server = net.createServer((socket) => {
   // 使用 split2 按行分割流式数据，处理 JSONL 格式（每行一个 JSON）
   // split2 会自动处理 TCP 分包问题，确保每条完整的消息（以换行符结尾）才会触发
   const splitStream = split2();
-  
+
   socket.pipe(splitStream).on('data', (line) => {
     const trimmedLine = line.toString().trim();
     if (!trimmedLine) {
       return; // 跳过空行
     }
-    
+
     let _callbackUuid
     try {
       const message = JSON.parse(trimmedLine);
@@ -234,7 +246,7 @@ const server = net.createServer((socket) => {
     }
     const workerIdSet = socketToWorkerIdSetMap.get(socket) || new Set()
     ;[...workerIdSet].forEach(workerId => {
-      stopWorker(workerId);
+      void stopWorker(workerId, socket);
     })
     scheduleIdleShutdown()
   });
@@ -246,7 +258,7 @@ function handleMessage(socket, message) {
   const _callbackUuid = message._callbackUuid
   if (message.type === 'ping') {
     sendResponse(socket, _callbackUuid, {
-      success: true, 
+      success: true,
       message: 'pong'
     });
     return
@@ -258,7 +270,7 @@ function handleMessage(socket, message) {
       userProcessClients.add(socket);
     }
     sendResponse(socket, _callbackUuid, {
-      success: true, 
+      success: true,
     });
     return;
   }
@@ -266,16 +278,22 @@ function handleMessage(socket, message) {
   const workerId = message.workerId;
   const workerInfo = workers.get(workerId);
   switch (message.type) {
+    case 'stop-owned-workers': {
+      const ids = [...(socketToWorkerIdSetMap.get(socket) || [])]
+      void Promise.all(ids.map(id => stopWorker(id, socket))).then(() =>
+        sendResponse(socket, _callbackUuid, { success: true }))
+      return
+    }
     // 从工具进程发送的消息（数据、心跳、截图等）
     case 'check-should-exit': {
       const workerId = message.workerId;
       const shouldExit = stoppedWorkers.has(workerId) || !workers.has(workerId);
-      
+
       sendResponse(socket, _callbackUuid, {
         workerId: workerId,
         shouldExit: shouldExit
       });
-      
+
       if (shouldExit) {
         console.log(`工具进程 ${workerId} 查询是否应该退出，返回: 是`);
       }
@@ -337,18 +355,23 @@ function handleMessage(socket, message) {
 
     // 从GUI进程发送的消息（数据、心跳、截图等）
     case 'start-worker': {
+      if (shuttingDown) {
+        sendResponse(socket, _callbackUuid, { _isError: true, error: '守护进程正在退出' })
+        return
+      }
       const {
         workerId,
         command,
         args,
         env
       } = message
-      if (workers.has(workerId)) {
+      if (workers.has(workerId) && workers.get(workerId).status !== 'stopping') {
         console.log(`工具进程 ${workerId} 已在运行`);
+        sendResponse(socket, _callbackUuid, { success: true, alreadyRunning: true, workerId })
         return;
       }
       if (QUEUED_WORKER_IDS.has(workerId) && (queueBusy() || taskQueue.length)) {
-        enqueueTask({ workerId, command, args, env, reason: 'waiting' })
+        enqueueTask({ workerId, command, args, env, ownerSocket: socket, reason: 'waiting' })
         sendResponse(socket, _callbackUuid, {
           success: true,
           queued: true,
@@ -363,12 +386,13 @@ function handleMessage(socket, message) {
           workerId,
           command,
           args,
-          env
+          env,
+          ownerSocket: socket
         });
         sendResponse(socket, _callbackUuid, {
-          success: true, 
+          success: true,
           message: `工具进程 ${message.workerId} 已启动`,
-          workerId: message.workerId 
+          workerId: message.workerId
         });
       }
       let socketToWorkerIdSet = socketToWorkerIdSetMap.get(socket)
@@ -386,19 +410,18 @@ function handleMessage(socket, message) {
     }
 
     case 'stop-worker': {
-      stopWorker(message.workerId);
-      sendResponse(socket, _callbackUuid, { 
-        success: true, 
+      void stopWorker(message.workerId).then(() => sendResponse(socket, _callbackUuid, {
+        success: true,
         message: `工具进程 ${message.workerId} 已停止`,
-        workerId: message.workerId 
-      });
+        workerId: message.workerId
+      }));
       return
     }
 
     case 'get-status': {
       const status = getWorkersStatus();
       sendResponse(socket, _callbackUuid, {
-        success: true, 
+        success: true,
         workers: status,
         ...getQueueStatus()
       });
@@ -412,7 +435,7 @@ function handleMessage(socket, message) {
 }
 
 // 启动工具进程
-function startWorker({ workerId, command, args, env }, restartCount = 0) {
+function startWorker({ workerId, command, args, env, ownerSocket }, restartCount = 0) {
   const noAutoRestartExitCodeSet = new Set([0]);
   (env.GEEKGEEKRUND_NO_AUTO_RESTART_EXIT_CODE ?? '')
     .split(',')
@@ -431,9 +454,7 @@ function startWorker({ workerId, command, args, env }, restartCount = 0) {
     }
   });
 
-  let output = '';
   workerProcess.stdout.on('data', (data) => {
-    output += data.toString();
     // the task writes its own log file entries; the relay only matters at debug level
     console.debug(`工具进程 ${workerId} 输出:`, data.toString().trim());
   });
@@ -446,38 +467,39 @@ function startWorker({ workerId, command, args, env }, restartCount = 0) {
     console.log(`工具进程 ${workerId} 退出，代码: ${code}, 信号: ${signal}`);
     const workerInfo = pidToProcessInfoMap.get(workerProcess.pid)
     if (workerInfo) {
+      clearTimeout(workerInfo.stopTimer)
       pidToProcessInfoMap.delete(workerProcess.pid)
       // 关闭工具进程的TCP连接
       if (workerInfo.socket) {
         workerInfo.socket.destroy();
       }
-      
+
       // made way for a queued task: requeue it behind the others, no restart and no exit event
       if (code === TASK_YIELD_EXIT_CODE && !stoppedWorkers.has(workerId)) {
-        workers.delete(workerId);
+        if (workers.get(workerId) === workerInfo) workers.delete(workerId);
         recordTaskHistory(workerInfo, 'yielded', code)
-        enqueueTask({ workerId, command, args, env, reason: 'yielded' })
+        enqueueTask({ workerId, command, args, env, ownerSocket, reason: 'yielded' })
         broadcastToGUI({ type: 'worker-yielded', workerId })
         startNextQueuedTask()
         return
       }
 
-      const shouldRestart = !noAutoRestartExitCodeSet.has(code) // && code !== null;
+      const shouldRestart = !shuttingDown && !workerInfo.stopping && !isSuccessfulTaskExit(workerId, code) && !noAutoRestartExitCodeSet.has(code)
       // 使用当前的 restartCount 加1，而不是从 workerInfo 中取（因为可能已经被删除）
       const restartCount = (workerInfo.restartCount || 0) + 1;
-      
-      workers.delete(workerId);
+
+      if (workers.get(workerId) === workerInfo) workers.delete(workerId);
       const willRestart = shouldRestart && !stoppedWorkers.has(workerId)
       if (QUEUED_WORKER_IDS.has(workerId)) {
         recordTaskHistory(
           workerInfo,
-          stoppedWorkers.has(workerId) ? 'stopped' : willRestart ? 'restarting' : code === 0 ? 'finished' : 'failed',
+          stoppedWorkers.has(workerId) ? 'stopped' : willRestart ? 'restarting' : isSuccessfulTaskExit(workerId, code) ? 'finished' : 'failed',
           code
         )
         // the crashed task keeps its turn until it has been restarted
         if (willRestart) queueSlotHeldUntilRestart = workerId
       }
-      
+
       // 通知GUI客户端工具进程已退出
       broadcastToGUI({
         type: 'worker-exited',
@@ -487,17 +509,18 @@ function startWorker({ workerId, command, args, env }, restartCount = 0) {
         restarting: shouldRestart && !stoppedWorkers.has(workerId),
         restartCount: restartCount
       });
-      
+
       // 如果进程意外退出（非正常停止），且不在停止列表中，自动重启
       if (shouldRestart && !stoppedWorkers.has(workerId)) {
         console.log(`工具进程 ${workerId} 意外退出，准备重启 (第${restartCount}次)`);
-        
+
         // 延迟重启，避免频繁重启
-        setTimeout(() => {
+        const timer = setTimeout(() => {
+          restartTimers.delete(workerId)
           if (queueSlotHeldUntilRestart === workerId) queueSlotHeldUntilRestart = null
           // 再次检查：确保worker不在停止列表中，且当前没有运行
-          if (!workers.has(workerId) && !stoppedWorkers.has(workerId)) {
-            startWorker({ workerId, command, args, env }, restartCount);
+          if (!shuttingDown && !ownerSocket?.destroyed && !workers.has(workerId) && !stoppedWorkers.has(workerId)) {
+            startWorker({ workerId, command, args, env, ownerSocket }, restartCount);
           } else if (stoppedWorkers.has(workerId)) {
             console.log(`工具进程 ${workerId} 在重启前被标记为停止，取消重启`);
             // 从停止列表中移除，因为已经处理完毕
@@ -513,12 +536,14 @@ function startWorker({ workerId, command, args, env }, restartCount = 0) {
             if (QUEUED_WORKER_IDS.has(workerId)) startNextQueuedTask()
           }
         }, 2000);
+        restartTimers.set(workerId, { timer, ownerSocket })
       } else if (stoppedWorkers.has(workerId)) {
         // 如果是在停止列表中，清理标记
         console.log(`工具进程 ${workerId} 已停止，清理停止标记`);
         stoppedWorkers.delete(workerId);
       }
       if (!willRestart && QUEUED_WORKER_IDS.has(workerId)) startNextQueuedTask()
+      scheduleIdleShutdown()
     } else {
       // 如果workerInfo不存在，可能是已经被stopWorker删除
       // 检查停止列表，如果在则清理
@@ -530,6 +555,13 @@ function startWorker({ workerId, command, args, env }, restartCount = 0) {
 
   workerProcess.on('error', (err) => {
     console.log(err)
+    if (!workerProcess.pid) {
+      if (workers.get(workerId) === workerInfo) workers.delete(workerId)
+      recordTaskHistory(workerInfo, 'failed', 1)
+      broadcastToGUI({ type: 'worker-exited', workerId, code: 1, restarting: false })
+      startNextQueuedTask()
+      scheduleIdleShutdown()
+    }
   })
 
   const workerInfo = {
@@ -546,6 +578,7 @@ function startWorker({ workerId, command, args, env }, restartCount = 0) {
     args,
     env,
     workerId,
+    ownerSocket,
   }
   workers.set(workerId, workerInfo);
   pidToProcessInfoMap.set(workerProcess.pid, workerInfo);
@@ -554,11 +587,18 @@ function startWorker({ workerId, command, args, env }, restartCount = 0) {
 }
 
 // 停止工具进程
-function stopWorker(workerId) {
+function stopWorker(workerId, ownerSocket) {
   const workerInfo = workers.get(workerId);
   // a task that is only waiting in the queue just leaves it
-  removeQueuedTask(workerId)
-  
+  removeQueuedTask(workerId, ownerSocket)
+  const pendingRestart = restartTimers.get(workerId)
+  if (pendingRestart && (!ownerSocket || pendingRestart.ownerSocket === ownerSocket)) {
+    clearTimeout(pendingRestart.timer)
+    restartTimers.delete(workerId)
+    if (queueSlotHeldUntilRestart === workerId) queueSlotHeldUntilRestart = null
+  }
+  if (ownerSocket && workerInfo && workerInfo.ownerSocket !== ownerSocket) return Promise.resolve()
+
   // 无论workerInfo是否存在，都添加到停止列表，防止竞态条件
   stoppedWorkers.add(workerId);
   console.log(`停止工具进程: ${workerId} (已添加到停止列表)`);
@@ -572,26 +612,34 @@ function stopWorker(workerId) {
     });
     // 延迟发送状态更新
     setTimeout(() => broadcastStatus(), 500);
-    return;
+    startNextQueuedTask()
+    scheduleIdleShutdown()
+    return Promise.resolve();
   }
-  
-  // 关闭工具进程的TCP连接
-  if (workerInfo.socket) {
-    workerInfo.socket.destroy();
-  }
-  
+  if (workerInfo.stopPromise) return workerInfo.stopPromise
+  workerInfo.stopping = true
+  workerInfo.status = 'stopping'
+  workerInfo.stopPromise = new Promise(resolve => {
+    workerInfo.process.once('close', resolve)
+  })
+  workerInfo.stopTimer = setTimeout(() => {
+    if (workerInfo.process.exitCode == null && workerInfo.process.signalCode == null)
+      workerInfo.process.kill('SIGKILL')
+  }, STOP_TIMEOUT_MS)
+  workerInfo.stopTimer.unref()
+
   workerInfo.process.kill('SIGTERM');
-  workers.delete(workerId);
-  
+
   // 通知GUI客户端
   broadcastToGUI({
     type: 'worker-disconnected',
     workerId: workerId,
     message: `工具进程 ${workerId} 已断开`
   });
-  
+
   // 延迟发送状态更新
   setTimeout(() => broadcastStatus(), 500);
+  return workerInfo.stopPromise
 }
 
 // 获取所有工具进程状态
@@ -685,6 +733,7 @@ new Promise((resolve, reject) => {
     )
     if (!err) {
       resolve(true)
+      scheduleIdleShutdown()
     }
     else {
       reject(err)
@@ -692,25 +741,18 @@ new Promise((resolve, reject) => {
   });
 })
 
-// 优雅关闭
-process.on('SIGTERM', () => {
-  console.log('收到SIGTERM信号，正在关闭所有工具进程...');
-  for (const [workerId, workerInfo] of workers.entries()) {
-    workerInfo.process.kill('SIGTERM');
-  }
-  server.close(() => {
-    console.log('守护进程已关闭');
-    process.exit(0);
-  });
-});
-
-process.on('SIGINT', () => {
-  console.log('收到SIGINT信号，正在关闭所有工具进程...');
-  for (const [workerId, workerInfo] of workers.entries()) {
-    workerInfo.process.kill('SIGTERM');
-  }
-  server.close(() => {
-    console.log('守护进程已关闭');
-    process.exit(0);
-  });
-});
+// Stop new dispatches first, then let each owned worker finish its browser cleanup.
+async function shutdownDaemon() {
+  if (shuttingDown) return
+  shuttingDown = true
+  clearTimeout(idleShutdownTimer)
+  taskQueue.length = 0
+  for (const { timer } of restartTimers.values()) clearTimeout(timer)
+  restartTimers.clear()
+  queueSlotHeldUntilRestart = null
+  await Promise.all([...workers.keys()].map(id => stopWorker(id)))
+  for (const socket of clientSockets) socket.destroy()
+  server.close(() => { ipcWritePipe.end(); process.exit(0) })
+}
+process.on('SIGTERM', () => { void shutdownDaemon() });
+process.on('SIGINT', () => { void shutdownDaemon() });

@@ -9,7 +9,7 @@
 </template>
 
 <script lang="ts" setup>
-import { PropType, computed } from 'vue'
+import { computed } from 'vue'
 import { diffWords } from 'diff'
 const props = defineProps({
   a: {

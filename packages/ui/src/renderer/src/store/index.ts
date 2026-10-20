@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { NewReleaseInfo } from '../../../common/types/update'
 import { ref } from 'vue'
 import { throttle } from 'lodash'
+import type { RunningTask } from '../../../common/types/task'
 
 export const useUpdateStore = defineStore('update', () => {
   const availableNewRelease = ref<NewReleaseInfo | null>(null)
@@ -41,7 +42,7 @@ export interface TaskHistoryEntry {
 }
 
 export const useTaskManagerStore = defineStore('taskManager', () => {
-  const runningTasks = ref<unknown[]>([])
+  const runningTasks = ref<RunningTask[]>([])
   // BOSS tasks run one at a time; the rest wait here in order
   const taskQueue = ref<QueuedTask[]>([])
   const taskHistory = ref<TaskHistoryEntry[]>([])

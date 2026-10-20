@@ -75,13 +75,16 @@ export async function createNativeState() {
       current.prompts[type] = text
     },
     async jobs() {
-      const result = await ipc.invoke('run-data-query-all', {
+      const { data: result } = await ipc.invoke('run-data-query', {
         dataset: 'jobLibrary',
         filters: [],
         keyword: '',
-        sort: null
+        sort: null,
+        pageNo: 1,
+        pageSize: 100
       })
-      return Array.isArray(result) ? result : result.rows || result.data || []
+      if (!Array.isArray(result?.data)) throw new Error('职位库返回的数据格式不正确')
+      return { rows: result.data, total: Number(result.totalItemCount || 0) }
     }
   }
   return bridge

@@ -103,9 +103,6 @@ import { toast } from '@renderer/features/Toast'
 import { ElForm } from 'element-plus'
 import { ref, onUnmounted, onMounted, nextTick } from 'vue'
 import { checkCookieListFormat } from '../../../../common/utils/cookie'
-import { useRouter } from 'vue-router'
-
-const router = useRouter()
 const cookieInvalid = ref(false)
 
 enum LOGIN_COOKIE_WAITING_STATUS {
@@ -128,20 +125,20 @@ const formRules = {
     },
     {
       trigger: 'blur',
-      validator(rule, val, cb) {
-        let arr
+      validator(_rule, val, cb) {
+        let arr: unknown
         try {
           arr = JSON.parse(val)
-        } catch (err) {
+        } catch {
           cb(
             new Error(
-              `JSON格式无效 - 存在语法错误: ${err.message}；建议使用EditThisCookie扩展程序进行复制。`
+              'JSON格式无效；建议使用EditThisCookie扩展程序进行复制。'
             )
           )
           return
         }
 
-        if (!checkCookieListFormat(JSON.parse(formContent.value.collectedCookies))) {
+        if (!checkCookieListFormat(arr)) {
           cb(new Error(`Cookie格式无效 - 部分字段缺失；建议使用EditThisCookie扩展程序进行复制。`))
           return
         }

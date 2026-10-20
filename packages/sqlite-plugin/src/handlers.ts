@@ -1,9 +1,11 @@
-import { DataSource, Raw } from "typeorm";
+import { DataSource, MoreThanOrEqual } from "typeorm";
 import { BossActiveStatusRecord } from "./entity/BossActiveStatusRecord";
 import { BossInfo } from "./entity/BossInfo";
 import { CompanyInfo } from "./entity/CompanyInfo";
 import { JobInfo } from "./entity/JobInfo";
-import { parseCompanyScale, parseSalary } from "./utils/parser";
+import { parseCompanyScale, parseSalary, parseSalaryDetails } from "./utils/parser";
+import { explicitJobNature } from '@geekgeekrun/utils/job-values.cjs'
+import { saveCapturedJob } from './job-discovery'
 import { ChatStartupLog } from "./entity/ChatStartupLog";
 import { BossInfoChangeLog } from "./entity/BossInfoChangeLog";
 import { CompanyInfoChangeLog } from "./entity/CompanyInfoChangeLog";
@@ -80,6 +82,10 @@ function getJobInfoIfIsEqual (savedOne, currentOne) {
     'experienceName',
     'degreeName',
     'salaryDesc',
+    'jobType',
+    'jobTypeName',
+    'jobNature',
+    'jobNatureName',
     'payTypeDesc',
     'address',
     'jobStatusDesc'
@@ -101,7 +107,7 @@ function getJobInfoIfIsEqual (savedOne, currentOne) {
   return true;
 }
 
-export async function saveJobInfoFromRecommendPage(ds: DataSource, _jobInfo) {
+export async function saveJobInfoFromRecommendPage(ds: DataSource, _jobInfo, runRecordId?: number) {
   const { bossInfo, brandComInfo, jobInfo } = _jobInfo;
 
   bossInfo['__ggr_encryptBrandId'] = brandComInfo.encryptBrandId
@@ -193,6 +199,7 @@ export async function saveJobInfoFromRecommendPage(ds: DataSource, _jobInfo) {
 
   const job = new JobInfo();
   const jobSalary = parseSalary(jobInfo.salaryDesc);
+  const salary = parseSalaryDetails(jobInfo.salaryDesc)
   const jobUpdatePayload: JobInfo = {
     address: jobInfo.address,
     degreeName: jobInfo.degreeName,
@@ -206,12 +213,16 @@ export async function saveJobInfoFromRecommendPage(ds: DataSource, _jobInfo) {
     salaryHigh: jobSalary.high,
     salaryLow: jobSalary.low,
     salaryMonth: jobSalary.month,
+    salaryDesc: salary.raw,
+    salaryUnit: salary.unit,
+    salaryAmountLow: salary.low,
+    salaryAmountHigh: salary.high,
+    jobNatureName: explicitJobNature(jobInfo),
   };
 
   Object.assign(job, jobUpdatePayload);
 
-  const jobInfoRepository = ds.getRepository(JobInfo);
-  await jobInfoRepository.save(job);
+  saveCapturedJob((ds.driver as any).databaseConnection, job, runRecordId)
   //#endregion
 
   //#region save boss active status
@@ -332,26 +343,29 @@ export async function saveGptCompletionRequestRecord(
   return
 }
 
-export async function getNotSuitMarkRecordsInLastSomeDays (ds: DataSource, days = 0) {
+function historyDateCondition(days: number) {
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+  // Preserve the existing UTC calendar-day boundary without applying DATE() to every row.
+  cutoff.setUTCHours(0, 0, 0, 0)
+  return MoreThanOrEqual(cutoff)
+}
+
+export async function getNotSuitMarkRecordsInLastSomeDays (ds: DataSource, days = 0, encryptCurrentUserId?: string) {
+  if (typeof encryptCurrentUserId !== 'string' || !encryptCurrentUserId.trim()) return []
   const repo = ds.getRepository(MarkAsNotSuitLog)
   const result = await repo.findBy({
-    date: Raw(alias => `DATE(${alias}) >= DATE('${
-      new Date(
-        Number(new Date()) - days * 24 * 60 * 60 * 1000
-      ).toISOString()
-    }')`)
+    encryptCurrentUserId,
+    date: historyDateCondition(days)
   })
   return result
 }
 
-export async function getChatStartupRecordsInLastSomeDays (ds: DataSource, days = 0) {
+export async function getChatStartupRecordsInLastSomeDays (ds: DataSource, days = 0, encryptCurrentUserId?: string) {
+  if (typeof encryptCurrentUserId !== 'string' || !encryptCurrentUserId.trim()) return []
   const repo = ds.getRepository(ChatStartupLog)
   const result = await repo.findBy({
-    date: Raw(alias => `DATE(${alias}) >= DATE('${
-      new Date(
-        Number(new Date()) - days * 24 * 60 * 60 * 1000
-      ).toISOString()
-    }')`)
+    encryptCurrentUserId,
+    date: historyDateCondition(days)
   })
   return result
 }

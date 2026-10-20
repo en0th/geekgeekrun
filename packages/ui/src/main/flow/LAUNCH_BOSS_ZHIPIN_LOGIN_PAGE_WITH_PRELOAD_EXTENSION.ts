@@ -13,7 +13,7 @@ export const launchBossZhipinLoginPageWithPreloadExtension = async () => {
   app.dock?.hide()
   let pipe: null | fs.WriteStream = null
   try {
-    pipe = fs.createWriteStream(null, { fd: 3 })
+    pipe = fs.createWriteStream('', { fd: 3 })
   } catch {
     console.warn('pipe is not available')
   }

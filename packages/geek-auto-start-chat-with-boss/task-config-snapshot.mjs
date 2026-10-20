@@ -1,9 +1,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { writeJsonAtomicSync } from '@geekgeekrun/utils/atomic-json.mjs'
 
 // Freeze job settings, never cookies/API keys. Every restart of a queued worker uses this file.
 const bossKeys = [
+  'requiredJobConditions',
   'combineRecommendJobFilterType', 'anyCombineRecommendJobFilter', 'staticCombineRecommendJobFilterConditions',
   'isSkipEmptyConditionForCombineRecommendJobFilter', 'expectJobRegExpStr', 'expectJobNameRegExpStr',
   'expectJobTypeRegExpStr', 'expectJobDescRegExpStr', 'jobDetailRegExpMatchLogic', 'jobNotMatchStrategy',
@@ -13,8 +14,8 @@ const bossKeys = [
   'strategyScopeOptionWhenMarkJobWorkExpNotMatch', 'isPosterHrFilterEnabled', 'posterHrTitleRegExpStr',
   'posterHrNotMatchStrategy', 'blockCompanyNameRegExpStr', 'blockCompanyNameRegMatchStrategy',
   'markAsNotActiveSelectedTimeRange', 'jobNotActiveStrategy', 'fieldsForUseCommonConfig', 'jobSourceList',
-  'autoChatRunMode', 'collectOnlyMatchingJobs', 'skipUnparseableSalaryJob', 'autoChatPerSourceSuccessLimit',
-  'autoChatNoMatchStreakLimit', 'jobListLoadWaitSeconds', 'jobDetailViewWaitSeconds',
+  'autoChatRunMode', 'autoChatRunInBackground', 'collectOnlyMatchingJobs', 'skipUnparseableSalaryJob', 'autoChatPerSourceSuccessLimit',
+  'autoChatNoMatchStreakLimit', 'autoChatFilterCombinationLimit', 'autoChatRunBudget', 'jobListLoadWaitSeconds', 'jobDetailViewWaitSeconds',
   'isSageTimeEnabled', 'sageTimeOpTimes', 'sageTimePauseMinute'
 ]
 const copy = value => JSON.parse(JSON.stringify(value))
@@ -26,9 +27,16 @@ export function jobConfigSnapshot(config) {
   }
 }
 export function readTaskConfigSnapshot(filePath) {
-  const data = JSON.parse(fs.readFileSync(filePath, 'utf8'))
-  if (data.version !== 1 || !data.config?.['boss.json'] || !data.config?.['common-job-condition-config.json'] || !Array.isArray(data.config?.['target-company-list.json']))
-    throw new Error('任务配置快照无效，请重新创建任务')
+  let text, data
+  try { text = fs.readFileSync(filePath, 'utf8') }
+  catch { throw Object.assign(new Error('任务配置快照无法读取，请修复或重新创建任务'), { code: 'GGR_FILE_READ_FAILED' }) }
+  try { data = JSON.parse(text) }
+  catch { throw Object.assign(new Error('任务配置快照无效，原文件已保留，请修复或重新创建任务'), { code: 'GGR_JSON_INVALID' }) }
+  const record = value => value !== null && typeof value === 'object' && !Array.isArray(value)
+  if (data?.version !== 1 || !record(data.config) || !record(data.config['boss.json']) ||
+    !record(data.config['common-job-condition-config.json']) || !Array.isArray(data.config['target-company-list.json']) ||
+    data.config['target-company-list.json'].some(value => typeof value !== 'string'))
+    throw Object.assign(new Error('任务配置快照无效，原文件已保留，请修复或重新创建任务'), { code: 'GGR_JSON_INVALID' })
   return data.config
 }
 export function writeTaskConfigSnapshot(folder, runRecordId, config, { resuming = false } = {}) {
@@ -41,8 +49,6 @@ export function writeTaskConfigSnapshot(folder, runRecordId, config, { resuming 
     if ((previous['boss.json'].autoChatRunMode || 'chat') !== (snapshot['boss.json'].autoChatRunMode || 'chat'))
       throw new Error('恢复任务不能切换收集或打招呼方式，请新建任务')
   }
-  const temporary = filePath + '.' + randomUUID() + '.tmp'
-  fs.writeFileSync(temporary, JSON.stringify({ version: 1, config: snapshot }))
-  fs.renameSync(temporary, filePath)
+  writeJsonAtomicSync(filePath, { version: 1, config: snapshot })
   return filePath
 }

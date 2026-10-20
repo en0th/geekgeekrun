@@ -1,9 +1,15 @@
+import { countFilterCombinations } from '@geekgeekrun/geek-auto-start-chat-with-boss/combineCalculator.mjs'
+
 // The editor keeps all saved search rows. Single-search mode disables additional
 // rows for execution without deleting their text from the user's draft/template.
+import { hasSearchCriteria } from '@geekgeekrun/geek-auto-start-chat-with-boss/search-source.mjs'
+// The cascader rebuilds its node store when this object changes identity.
+export const positionCascaderProps = Object.freeze({ multiple: true, emitPath: false })
+export const emptyPositionCodes = Object.freeze([])
 export function isSearchRotationEnabled(draft) {
   if (typeof draft.searchRotation === 'boolean') return draft.searchRotation
   const search = draft.sourceList?.find((source) => source.type === 'search')
-  return (search?.children || []).slice(1).some((row) => row.enabled && row.keyword?.trim())
+  return (search?.children || []).slice(1).some((row) => row.enabled && hasSearchCriteria(row))
 }
 
 export function searchOptionsForRun(draft, search) {
@@ -11,7 +17,8 @@ export function searchOptionsForRun(draft, search) {
   return (search?.children || []).map((row, index) => ({
     ...row,
     enabled: Boolean(row.enabled && (index === 0 || rotate)),
-    keyword: String(row.keyword || '').trim()
+    keyword: String(row.keyword || '').trim(),
+    positionCodes: row.positionCodes == null ? [] : Array.isArray(row.positionCodes) ? [...row.positionCodes] : [row.positionCodes]
   }))
 }
 
@@ -23,7 +30,7 @@ export function potentialSourceCount(draft) {
   for (const source of draft?.sourceList || []) {
     if (!source?.enabled) continue
     if (source.type === 'search') {
-      const words = (source.children || []).filter((row) => row.enabled && row.keyword?.trim()).length
+      const words = searchOptionsForRun(draft, source).filter((row) => row.enabled && hasSearchCriteria(row)).length
       total += Math.max(words, 1)
     } else {
       total += 1
@@ -32,28 +39,6 @@ export function potentialSourceCount(draft) {
   return total
 }
 
-// Same combination rules as combineCalculator.mjs, without enumerating the
-// potentially large Cartesian product just to explain its size in the editor.
 export function countPlatformCombinations(filters = {}, skipEmpty = false) {
-  const count = (key) => BigInt((filters[key] || []).filter((value) => value !== 0).length)
-  const city = count('cityList'),
-    salary = count('salaryList')
-  const experience = count('experienceList'),
-    degree = count('degreeList')
-  const scale = count('scaleList'),
-    industry = count('industryList')
-  const industryCombinations =
-    1n +
-    industry +
-    (industry * (industry - 1n)) / 2n +
-    (industry * (industry - 1n) * (industry - 2n)) / 6n
-  const total =
-    (city + 1n) *
-    (salary + 1n) *
-    2n ** experience *
-    2n ** degree *
-    2n ** scale *
-    industryCombinations
-  const hasConditions = city + salary + experience + degree + scale + industry > 0n
-  return { total: total - (skipEmpty && hasConditions ? 1n : 0n), hasConditions }
+  return countFilterCombinations(filters, skipEmpty)
 }

@@ -58,27 +58,21 @@
 import { useTaskManagerStore } from '@renderer/store'
 import { getAutoStartChatSteps } from '../../../../common/prerequisite-step-by-step-check'
 import { computed, onUnmounted, ref, watch } from 'vue'
+import type { PrerequisiteStep } from '../../../../common/types/task'
 import {
   AUTO_CHAT_ERROR_EXIT_CODE,
   RUNNING_STATUS_ENUM
 } from '../../../../common/enums/auto-start-chat'
-const props = defineProps({
-  workerId: {
-    type: String
-  },
-  runRecordId: {
-    type: Number
-  }
-})
+const props = defineProps<{ workerId?: string; runRecordId?: number | null }>()
 const taskManagerStore = useTaskManagerStore()
 const runningTaskInfo = computed(() => {
   return taskManagerStore.runningTasks?.find((it) => {
     return it.workerId === props.workerId
   })
 })
-const steps = ref([])
+const steps = ref<PrerequisiteStep[]>([])
 const stepsForRender = computed(() => {
-  const clonedSteps = JSON.parse(JSON.stringify(steps.value))
+  const clonedSteps = steps.value.map(step => ({ ...step }))
   if (clonedSteps.some((it) => it.status === 'rejected')) {
     return clonedSteps
   }
@@ -149,7 +143,7 @@ watch(
 )
 
 const { ipcRenderer } = electron
-function messageHandler(ev, { data }) {
+function messageHandler(_ev, { data }) {
   if (data.type !== 'prerequisite-step-by-step-check' || data.runRecordId !== props.runRecordId) {
     return
   }
@@ -182,7 +176,7 @@ defineExpose({
   show,
   hide
 })
-const unListenExit = ipcRenderer.on('worker-exited', (ev, payload) => {
+const unListenExit = ipcRenderer.on('worker-exited', (_ev, payload) => {
   const { workerId, code } = payload
   if (
     workerId !== props.workerId

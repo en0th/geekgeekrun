@@ -1,5 +1,5 @@
 import DingtalkPlugin from '@geekgeekrun/dingtalk-plugin/index.mjs'
-import { mainLoop, closeBrowserWindow } from '@geekgeekrun/geek-auto-start-chat-with-boss/index.mjs'
+import { isJsonStorageError } from '@geekgeekrun/utils/atomic-json.mjs'
 import {
   SyncHook,
   AsyncSeriesHook
@@ -8,7 +8,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { get__dirname } from '@geekgeekrun/utils/legacy-path.mjs';
 import JSON5 from 'json5'
-import { readConfigFile, readStorageFile, getPublicDbFilePath } from '@geekgeekrun/geek-auto-start-chat-with-boss/runtime-file-utils.mjs'
+import { readRunSettings } from '@geekgeekrun/geek-auto-start-chat-with-boss/run-settings.mjs'
 import { sleep } from '@geekgeekrun/utils/sleep.mjs'
 import {
   AUTO_CHAT_ERROR_EXIT_CODE
@@ -32,15 +32,19 @@ process.on('disconnect', () => {
   process.exit()
 })
 
-const bossCookies = readStorageFile('boss-cookies.json')
-const { groupRobotAccessToken: dingTalkAccessToken } = readConfigFile('dingtalk.json')
-
-const initPlugins = (hooks) => {
-  new DingtalkPlugin(dingTalkAccessToken).apply(hooks)
-  new SqlitePlugin(getPublicDbFilePath()).apply(hooks)
+const initPlugins = (hooks, { readConfigFile, getPublicDbFilePath }) => {
+  const { groupRobotAccessToken: dingTalkAccessToken } = readConfigFile('dingtalk.json')
+  if (!process.env.GEEKGEEKRUN_COLLECT_AUDIT_DIR) new DingtalkPlugin(dingTalkAccessToken).apply(hooks)
+  const settings = readRunSettings(readConfigFile('boss.json'))
+  new SqlitePlugin(getPublicDbFilePath(), {
+    collectOnlyMatched: settings.runMode === 'collect' && settings.collectOnlyMatchingJobs
+  }).apply(hooks)
 }
 
 const main = async () => {
+  const { readConfigFile, readStorageFile, getPublicDbFilePath } = await import('@geekgeekrun/geek-auto-start-chat-with-boss/runtime-file-utils.mjs')
+  const bossCookies = readStorageFile('boss-cookies.json')
+  const { mainLoop, closeBrowserWindow } = await import('@geekgeekrun/geek-auto-start-chat-with-boss/index.mjs')
   if (!bossCookies?.length) {
     console.error('There is no cookies. You can save a copy with EditThisCookie extension.')
     process.exit(AUTO_CHAT_ERROR_EXIT_CODE.COOKIE_INVALID)
@@ -50,10 +54,11 @@ const main = async () => {
     puppeteerLaunched: new SyncHook(['browser']),
     pageGotten: new SyncHook(['page']),
     pageLoaded: new SyncHook(),
-    cookieWillSet: new SyncHook(['cookies']),
+    cookieWillSet: new AsyncSeriesHook(['cookies']),
     userInfoResponse: new AsyncSeriesHook(['userInfo']),
     mainFlowWillLaunch: new AsyncSeriesHook(['args']),
     jobDetailIsGetFromRecommendList: new AsyncSeriesHook(['positionInfoDetail']),
+    jobMatchedForCollection: new AsyncSeriesHook(['detail']),
     newChatWillStartup: new AsyncSeriesHook(['positionInfoDetail']),
     newChatStartup: new AsyncSeriesHook(['positionInfoDetail', 'chatRunningContext']),
     jobMarkedAsNotSuit: new AsyncSeriesHook(['positionInfoDetail', 'markDetail']),
@@ -64,13 +69,49 @@ const main = async () => {
     sageTimeEnter: new AsyncSeriesHook(['args']),
     sageTimeExit: new AsyncSeriesHook(['args'])
   }
-  initPlugins(hooks)
+  initPlugins(hooks, { readConfigFile, getPublicDbFilePath })
   await hooks.daemonInitialized.promise()
   while (true) {
     try {
       await mainLoop(hooks)
     } catch (err) {
       if (err instanceof Error) {
+        if (err.message.includes('AUTO_CHAT_BACKGROUND_WINDOW_UNAVAILABLE')) {
+          console.error(err.detail || err.message)
+          await closeBrowserWindow?.()
+          process.exit(AUTO_CHAT_ERROR_EXIT_CODE.BACKGROUND_WINDOW_UNAVAILABLE)
+          return
+        }
+        if (isJsonStorageError(err)) {
+          console.error(err.message)
+          await closeBrowserWindow?.()
+          process.exit(AUTO_CHAT_ERROR_EXIT_CODE.JSON_STORAGE_UNAVAILABLE)
+          return
+        }
+        if (/AUTO_CHAT_RUN_BUDGET_(EXCEEDED|UNAVAILABLE)/.test(err.message)) {
+          console.error(err.detail || err.message)
+          await closeBrowserWindow?.()
+          process.exit(err.message.includes('EXCEEDED') ? AUTO_CHAT_ERROR_EXIT_CODE.RUN_BUDGET_EXCEEDED : AUTO_CHAT_ERROR_EXIT_CODE.RUN_BUDGET_UNAVAILABLE)
+          return
+        }
+        if (err.message.includes('AUTO_CHAT_ALL_SOURCES_ROTATED')) {
+          console.log('所有职位来源已轮换完成，任务结束')
+          await closeBrowserWindow?.()
+          process.exit(AUTO_CHAT_ERROR_EXIT_CODE.ALL_SOURCES_ROTATED)
+          return
+        }
+        if (err.message.includes('AUTO_CHAT_CITY_FILTER_NOT_APPLIED')) {
+          console.error(err.detail || err.message)
+          await closeBrowserWindow?.()
+          process.exit(AUTO_CHAT_ERROR_EXIT_CODE.CITY_FILTER_NOT_APPLIED)
+          return
+        }
+        if (/LOGIN_STATUS_(RESTRICTED|UNKNOWN)|AUTO_CHAT_ACCOUNT_CHANGED|AUTO_CHAT_SEARCH_FILTER_NOT_APPLIED|AUTO_CHAT_JOB_PAGE_CLOSED/.test(err.message)) {
+          console.error(err.detail || err.message)
+          await closeBrowserWindow?.()
+          process.exit(err.message.includes('ACCOUNT_CHANGED') ? AUTO_CHAT_ERROR_EXIT_CODE.ACCOUNT_CHANGED : AUTO_CHAT_ERROR_EXIT_CODE.LOGIN_STATUS_UNCONFIRMED)
+          return
+        }
         if (err.message.includes('LOGIN_STATUS_INVALID')) {
           process.exit(AUTO_CHAT_ERROR_EXIT_CODE.LOGIN_STATUS_INVALID)
           break
@@ -97,5 +138,6 @@ const main = async () => {
     await main()
   } catch(err) {
     console.error(err)
+    if (isJsonStorageError(err)) process.exit(AUTO_CHAT_ERROR_EXIT_CODE.JSON_STORAGE_UNAVAILABLE)
   }
 })()

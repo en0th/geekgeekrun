@@ -20,7 +20,7 @@
           label="热门城市"
           name="热门城市"
         >
-          <el-checkbox-group v-if="multiple" v-model="selectedCities">
+          <el-checkbox-group v-if="multiple" v-model="selectedCityList">
             <div
               :style="{
                 display: 'grid',
@@ -28,7 +28,7 @@
               }"
             >
               <el-checkbox
-                v-for="op in hotCityList.filter((it) => it.code !== 100010000)"
+                v-for="op in hotCityList"
                 :key="op.code"
                 :label="op.name"
               >
@@ -36,7 +36,7 @@
               </el-checkbox>
             </div>
           </el-checkbox-group>
-          <el-radio-group v-else v-model="selectedCities" w-full>
+          <el-radio-group v-else v-model="selectedCity" w-full>
             <div
               w-full
               :style="{
@@ -45,7 +45,7 @@
               }"
             >
               <el-radio
-                v-for="op in hotCityList.filter((it) => it.code !== 100010000)"
+                v-for="op in hotCityList"
                 :key="op.code"
                 :label="op.name"
               >
@@ -63,7 +63,7 @@
         >
           <div v-for="group in cityGroupsByAlphabetMap.get(it)" :key="group.firstChar">
             <div pt4px pb4px>{{ group.firstChar }}</div>
-            <el-checkbox-group v-if="multiple" v-model="selectedCities">
+            <el-checkbox-group v-if="multiple" v-model="selectedCityList">
               <div
                 :style="{
                   display: 'grid',
@@ -75,7 +75,7 @@
                 </el-checkbox>
               </div>
             </el-checkbox-group>
-            <el-radio-group v-else v-model="selectedCities" w-full>
+            <el-radio-group v-else v-model="selectedCity" w-full>
               <div
                 w-full
                 :style="{
@@ -122,7 +122,7 @@
                     closable
                     @close="
                       () => {
-                        selectedCities = null
+                        selectedCity = undefined
                       }
                     "
                     >{{ selectedCities }}</el-tag
@@ -132,12 +132,12 @@
               <div v-if="multiple" flex flex-1 flex-wrap gap-6px of-auto max-h-160px>
                 <span font-size-13px class="color-#999" flex items-center>已选择：</span>
                 <el-tag
-                  v-for="(city, index) in selectedCities"
+                  v-for="(city, index) in selectedCityList"
                   :key="city"
                   closable
                   @close="
                     () => {
-                      ;(selectedCities ?? []).splice(index, 1)
+                      selectedCityList.splice(index, 1)
                     }
                   "
                 >
@@ -157,7 +157,7 @@
 </template>
 
 <script lang="ts" setup>
-import { PropType, ref } from 'vue'
+import { PropType, computed, ref } from 'vue'
 import cityGroupData from '@geekgeekrun/geek-auto-start-chat-with-boss/cityGroup.mjs'
 import { ElRadioGroup } from 'element-plus'
 
@@ -175,30 +175,31 @@ const props = defineProps({
   }
 })
 const emits = defineEmits(['update:modelValue'])
-const { hotCityList, cityGroup } = cityGroupData.zpData
+interface City { code: number; name: string }
+interface CityGroup { firstChar: string; cityList: City[] }
+const { hotCityList, cityGroup }: { hotCityList: City[]; cityGroup: CityGroup[] } = cityGroupData.zpData
 
 const activeTabName = ref('热门城市')
 const isDialogVisible = ref(false)
-const selectedCities = ref(null)
+const selectedCityList = ref<string[]>([])
+const selectedCity = ref<string>()
+const selectedCities = computed(() => props.multiple ? selectedCityList.value : selectedCity.value)
 
 const cityGroupsByAlphabetMap = ref(
-  new Map(['ABCDE', 'FGHJ', 'KLMN', 'PQRST', 'WXYZ'].map((it) => [it, []]))
+  new Map<string, CityGroup[]>(['ABCDE', 'FGHJ', 'KLMN', 'PQRST', 'WXYZ'].map((it) => [it, []]))
 )
 for (const group of cityGroup) {
   const { firstChar } = group
   const targetKey =
-    [...cityGroupsByAlphabetMap.value.keys()].find((it) => it.includes(firstChar)) ?? null
-  if (!targetKey) {
-    if (!cityGroupsByAlphabetMap.value.get(targetKey)) {
-      cityGroupsByAlphabetMap.value.set(targetKey, [])
-    }
-  }
+    [...cityGroupsByAlphabetMap.value.keys()].find((it) => it.includes(firstChar)) ?? firstChar
+  if (!cityGroupsByAlphabetMap.value.has(targetKey)) cityGroupsByAlphabetMap.value.set(targetKey, [])
   cityGroupsByAlphabetMap.value.get(targetKey)?.push(group)
 }
 
 function handleDialogOpen() {
   activeTabName.value = '热门城市'
-  selectedCities.value = props.multiple ? [...(props.modelValue ?? [])] : props.modelValue
+  selectedCityList.value = Array.isArray(props.modelValue) ? [...props.modelValue] : []
+  selectedCity.value = typeof props.modelValue === 'string' ? props.modelValue : undefined
 }
 
 function handleCancelClicked() {
@@ -208,17 +209,19 @@ function handleConfirmClicked() {
   isDialogVisible.value = false
   emits(
     'update:modelValue',
-    props.multiple ? [...(selectedCities.value ?? [])] : selectedCities.value
+    props.multiple ? [...selectedCityList.value] : selectedCity.value ?? null
   )
 }
 function handleDialogClosed() {
-  selectedCities.value = props.multiple ? [] : null
+  selectedCityList.value = []
+  selectedCity.value = undefined
 }
 
 function handleClearSelectedCitiesInModelValue() {
-  emits('update:modelValue', (selectedCities.value = props.multiple ? [] : null))
+  handleDialogClosed()
+  emits('update:modelValue', props.multiple ? [] : null)
 }
 function handleClearSelectedCitiesInDialog() {
-  selectedCities.value = props.multiple ? [] : null
+  handleDialogClosed()
 }
 </script>

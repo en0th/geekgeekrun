@@ -180,13 +180,19 @@ import {
 import { DEFAULT_CONSTANT_OPEN_CONTENT_SEGS } from '../../../../common/constant'
 import lookForwardReplyEmotion from '../MainLayout/resources/look-forward-reply-emotion.gif'
 
-type MessageItem = {
-  text: string
-  usedLlmConfig: string
-  type: 'text'
-  // recordInfo: any
+interface ModelChoice {
+  id: string | null
+  model: string
+  providerCompleteApiUrl: string | null
+  enabled: boolean
+  hasProviderApiSecret?: boolean
 }
-type ImageMessageItem = MessageItem & {
+type MessageBase = {
+  text: string
+  usedLlmConfig: string | ModelChoice
+}
+type MessageItem = MessageBase & { type: 'text' }
+type ImageMessageItem = MessageBase & {
   type: 'image'
   imageUrl: string
 }
@@ -198,8 +204,8 @@ function getIsEnterContent(index) {
   return messageList.value.length - index - 1 < recentMessageQuantityForLlm
 }
 
-const llmConfigList = ref([])
-const llmConfigListForRender = computed(() => {
+const llmConfigList = ref<ModelChoice[]>([])
+const llmConfigListForRender = computed<ModelChoice[]>(() => {
   return [
     {
       id: null,
@@ -214,14 +220,14 @@ async function getLlmConfigList() {
   llmConfigList.value = await electron.ipcRenderer.invoke('get-llm-config-for-test')
 }
 getLlmConfigList().catch(() => {})
-const selectedLlmConfig = ref(null)
+const selectedLlmConfig = ref<string | null>(null)
 watch(
   () => selectedLlmConfig.value,
   () => {
   }
 )
 
-const scrollElRef = ref(null)
+const scrollElRef = ref<HTMLDivElement | null>(null)
 const isLoading = ref(false)
 const openContentSource = Number(searchParams.openContentSource)
 const constantOpenContent = (() => {
@@ -253,7 +259,7 @@ async function sendLlmGeneratedContent() {
           usedLlmConfig: response.usedLlmConfig
         })
         await sleep(50)
-        ;(scrollElRef.value as any as HTMLDivElement)?.scrollTo({
+        scrollElRef.value?.scrollTo({
           top: scrollElRef.value?.scrollHeight,
           behavior: 'smooth'
         })
@@ -287,7 +293,7 @@ async function sendLlmGeneratedContent() {
           usedLlmConfig: response.usedLlmConfig
         })
         await sleep(50)
-        ;(scrollElRef.value as any as HTMLDivElement)?.scrollTo({
+        scrollElRef.value?.scrollTo({
           top: scrollElRef.value?.scrollHeight,
           behavior: 'smooth'
         })

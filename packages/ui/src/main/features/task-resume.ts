@@ -3,6 +3,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { storageFilePath } from '@geekgeekrun/geek-auto-start-chat-with-boss/runtime-file-utils.mjs'
+import { writeJsonAtomicSync } from '@geekgeekrun/utils/atomic-json.mjs'
 
 const FILE_NAME = 'auto-chat-resume.json'
 const filePath = () => path.join(storageFilePath, FILE_NAME)
@@ -33,7 +34,7 @@ export function markAutoChatRunTerminated(runRecordId: unknown) {
   const ids = terminatedRunIds().filter((it) => it !== id)
   ids.push(id)
   try {
-    fs.writeFileSync(terminatedFilePath(), JSON.stringify(ids.slice(-TERMINATED_KEEP)))
+    writeJsonAtomicSync(terminatedFilePath(), ids.slice(-TERMINATED_KEEP))
   } catch (err) {
     console.error('cannot save the terminated run', err)
   }
@@ -77,7 +78,7 @@ export function discardAutoChatResume() {
 export function writeAutoChatResume(state: AutoChatResumeState) {
   if (isAutoChatRunTerminated(state.runRecordId)) return
   try {
-    fs.writeFileSync(filePath(), JSON.stringify(state))
+    writeJsonAtomicSync(filePath(), state)
   } catch (err) {
     console.error('cannot save the resume state', err)
   }

@@ -1,3 +1,4 @@
+import type { BossVueElement, BossUserInfo, BossContact, BossJobDetail, BossChatMessage } from '../types/boss-page'
 import { app } from 'electron'
 import { initPuppeteer } from '@geekgeekrun/geek-auto-start-chat-with-boss/index.mjs'
 import {
@@ -73,13 +74,14 @@ async function readAddFriendResult(page: Page, response: HTTPResponse) {
 }
 
 const attachRequestsListener = async (target: Target) => {
-  const page = await target.page()
-  if (!page) {
+  const targetPage = await target.page()
+  if (!targetPage) {
     return
   }
+  const page: Page = targetPage
 
   // FIXME: might not work
-  async function handleJobDetailPage({ encryptJobId } = { encryptJobId: null }) {
+  async function handleJobDetailPage({ encryptJobId }: { encryptJobId?: string | null } = {}) {
     if (!encryptJobId) {
       return
     }
@@ -170,7 +172,7 @@ const attachRequestsListener = async (target: Target) => {
       async search() {
         const elHandle = await page.$(`.page-jobs-main`)
         const currentKeyWord = await elHandle?.evaluate((el) => {
-          return el?.__vue__?.formData?.query
+          return (el as BossVueElement<{ formData?: { query?: string } }>)?.__vue__?.formData?.query
         })
         return !!currentKeyWord
       }
@@ -238,7 +240,8 @@ const attachRequestsListener = async (target: Target) => {
     ) {
       const currentJobData = await page.evaluate(
         'document.querySelector(".job-detail-box").__vue__.data'
-      )
+      ) as BossJobDetail | null
+      if (!currentJobData) return
       const requestBody = new URLSearchParams(response.request().postData())
 
       const securityIdInRequest = requestBody.get('securityId')
@@ -251,7 +254,7 @@ const attachRequestsListener = async (target: Target) => {
       const chosenCode = Number(requestBody.get('code'))
       const currentUserInfo = await page.evaluate(
         'document.querySelector(".job-detail-box").__vue__.$store.state.userInfo'
-      )
+      ) as BossUserInfo
       const reasonCodeToTextMap = await readStorageFile(
         'job-not-suit-reason-code-to-text-cache.json'
       )
@@ -259,6 +262,7 @@ const attachRequestsListener = async (target: Target) => {
       const markDetail = {
         markFrom: ChatStartupFrom.ManuallyFromRecommendList,
         extInfo: {
+          bossActiveTimeDesc: undefined as string | undefined,
           chosenReasonInUi: {
             code: chosenCode,
             text: reasonCodeToTextMap[chosenCode]
@@ -269,7 +273,7 @@ const attachRequestsListener = async (target: Target) => {
       }
       if (reasonCodeToTextMap[chosenCode]?.includes('活跃度低')) {
         markDetail.markReason = MarkAsNotSuitReason.BOSS_INACTIVE
-        markDetail.extInfo.bossActiveTimeDesc = currentJobData?.bossInfo.activeTimeDesc
+        markDetail.extInfo.bossActiveTimeDesc = currentJobData?.bossInfo?.activeTimeDesc
       }
       await saveMarkAsNotSuitRecord(
         await dbInitPromise,
@@ -292,7 +296,8 @@ const attachRequestsListener = async (target: Target) => {
       // in case of page changed after startup chat
       const currentJobData = await page.evaluate(
         'document.querySelector(".job-detail-box").__vue__.data'
-      )
+      ) as BossJobDetail | null
+      if (!currentJobData) return
       const currentJobId = currentJobData?.jobInfo?.encryptId
       if (jobIdInAddFriendUrl !== currentJobId) {
         return
@@ -300,7 +305,7 @@ const attachRequestsListener = async (target: Target) => {
 
       const currentUserInfo = await page.evaluate(
         'document.querySelector(".job-detail-box").__vue__.$store.state.userInfo'
-      )
+      ) as BossUserInfo
       const jobSource = await getCurrentJobSource()
       await saveChatStartupRecord(
         await dbInitPromise,
@@ -319,7 +324,7 @@ const attachRequestsListener = async (target: Target) => {
     ) {
       const currentUserInfo = await page.evaluate(
         'document.querySelector(".main-wrap").__vue__.$store.state.userInfo'
-      )
+      ) as BossUserInfo
       const request = response.request().url()
 
       const url = new URL(request)
@@ -328,7 +333,7 @@ const attachRequestsListener = async (target: Target) => {
       const bossInfo =
         (await page.evaluate(
           'document.querySelector(".chat-conversation .chat-record")?.__vue__?.boss'
-        )) ?? null
+        ) as BossContact | null) ?? null
       if (!bossInfo) {
         console.warn('cannot find boss info on page.')
         return
@@ -356,7 +361,7 @@ const attachRequestsListener = async (target: Target) => {
         (
           await page.evaluate(
             'document.querySelector(".message-content .chat-record").__vue__.list$'
-          )
+          ) as BossChatMessage[] | null
         )?.filter(messageForSaveFilter) ?? []
 
       const chatRecordList = rawChatRecordList.map((it) => {
@@ -374,8 +379,8 @@ const attachRequestsListener = async (target: Target) => {
         mappedItem.text = it.text
         if (it.type === 'image') {
           mappedItem.imageUrl = it.image?.originImage?.url
-          mappedItem.imageHeight = it.image?.originImage?.url?.height
-          mappedItem.imageWidth = it.image?.originImage?.url?.width
+          mappedItem.imageHeight = it.image?.originImage?.height
+          mappedItem.imageWidth = it.image?.originImage?.width
         }
 
         return mappedItem
@@ -503,12 +508,12 @@ export async function launchBossSite() {
   let pipeForWrite: null | fs.WriteStream = null
   let pipeForRead: null | fs.ReadStream = null
   try {
-    pipeForWrite = fs.createWriteStream(null, { fd: 3 })
+    pipeForWrite = fs.createWriteStream('', { fd: 3 })
   } catch {
     console.warn('pipeForWrite is not available')
   }
   try {
-    pipeForRead = fs.createReadStream(null, { fd: 3 })
+    pipeForRead = fs.createReadStream('', { fd: 3 })
   } catch {
     console.warn('pipeForRead is not available')
   }

@@ -192,11 +192,8 @@
 import { computed, ref } from 'vue'
 import draggable from 'vuedraggable'
 import { toast as Message } from '@renderer/features/Toast'
-const props = defineProps({
-  modelValue: {
-    type: Array
-  }
-})
+import type { JobSourceForm } from '../../../../common/types/job-config'
+const props = defineProps<{ modelValue?: JobSourceForm[] }>()
 
 const setTimeout = globalThis.setTimeout.bind(globalThis)
 
@@ -212,7 +209,7 @@ const dragOptions = computed(() => {
   }
 })
 
-function addSearchKeyword(item) {
+function addSearchKeyword(item: JobSourceForm) {
   if (!item.children) {
     item.children = []
   }
@@ -224,15 +221,15 @@ function addSearchKeyword(item) {
   })
 }
 
-function removeSearchKeywordByIndex(item, index) {
+function removeSearchKeywordByIndex(item: JobSourceForm, index: number) {
   item.children?.splice(index, 1)
 }
-const searchKeywordCountMap = computed(() => {
+const searchKeywordCountMap = computed<Record<string, number>>(() => {
   const target = props.modelValue?.find((it) => it.type === 'search' && it.enabled)
   if (!target || !target?.children?.length) {
     return {}
   }
-  const map = {}
+  const map: Record<string, number> = {}
   target.children?.forEach((it) => {
     if (!it.keyword) {
       return

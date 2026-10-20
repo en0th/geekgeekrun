@@ -1,6 +1,7 @@
+import { errorMessage } from '../../../../../common/utils/error'
 import { SalaryCalculateWay, JobDetailRegExpMatchLogic } from '@geekgeekrun/sqlite-plugin/src/enums'
 import sampleCompanyList from '@geekgeekrun/geek-auto-start-chat-with-boss/default-config-file/sample-company-list.json'
-import { nextTick } from 'vue'
+import { nextTick, watch } from 'vue'
 
 export function isJobDetailRegExpEmpty({ formContent }) {
   return [
@@ -44,6 +45,14 @@ export const expectSalaryCalculateWayOption = [
   {
     name: '总包（单位为 万元 - 即“W”）',
     value: SalaryCalculateWay.ANNUAL_PACKAGE
+  },
+  {
+    name: '日薪（单位为元/天）',
+    value: SalaryCalculateWay.DAY_SALARY
+  },
+  {
+    name: '时薪（单位为元/小时）',
+    value: SalaryCalculateWay.HOUR_SALARY
   }
 ]
 
@@ -78,7 +87,7 @@ export function getRuleOfExpectJobNameRegExpStr({ jobDetailRegExpSectionEl }) {
       new RegExp(value, 'ig')
       cb()
     } catch (err) {
-      cb(new Error(`正则无效：${err?.message}`))
+      cb(new Error(`正则无效：${errorMessage(err)}`))
       jobDetailRegExpSectionEl.value?.scrollIntoViewIfNeeded()
     }
   }
@@ -94,7 +103,7 @@ export function getRuleOfExpectJobTypeRegExpStr({ jobDetailRegExpSectionEl }) {
       new RegExp(value, 'ig')
       cb()
     } catch (err) {
-      cb(new Error(`正则无效：${err?.message}`))
+      cb(new Error(`正则无效：${errorMessage(err)}`))
       jobDetailRegExpSectionEl.value?.scrollIntoViewIfNeeded()
     }
   }
@@ -110,7 +119,7 @@ export function getRuleOfExpectJobDescRegExpStr({ jobDetailRegExpSectionEl }) {
       new RegExp(value, 'ig')
       cb()
     } catch (err) {
-      cb(new Error(`正则无效：${err?.message}`))
+      cb(new Error(`正则无效：${errorMessage(err)}`))
       jobDetailRegExpSectionEl.value?.scrollIntoViewIfNeeded()
     }
   }
@@ -128,7 +137,7 @@ export function getRuleOfPosterHrTitleRegExpStr({
       new RegExp(value, 'ig')
       cb()
     } catch (err) {
-      cb(new Error(`正则无效：${err?.message}`))
+      cb(new Error(`正则无效：${errorMessage(err)}`))
       posterHrTitleRegExpSectionEl.value?.scrollIntoViewIfNeeded()
     }
   }
@@ -146,7 +155,7 @@ export function getRuleOfBlockCompanyNameRegExpStr({
       new RegExp(value, 'ig')
       cb()
     } catch (err) {
-      cb(new Error(`正则无效：${err?.message}`))
+      cb(new Error(`正则无效：${errorMessage(err)}`))
       blockCompanyNameRegExpSectionEl.value?.scrollIntoViewIfNeeded()
     }
   }
@@ -234,9 +243,16 @@ export const jobDetailRegExpMatchLogicOptions = [
 ]
 
 export function getHandlerForExpectSalaryCalculateWayChanged({ formContent }) {
+  let previous = formContent.value.expectSalaryCalculateWay
+  watch(() => formContent.value.expectSalaryCalculateWay, (_, old) => { previous = old }, { flush: 'sync' })
   return async function handleExpectSalaryCalculateWayChanged(value) {
 
     await nextTick()
+    if (![1, 2].includes(value) || ![1, 2].includes(previous)) {
+      formContent.value.expectSalaryHigh = null
+      formContent.value.expectSalaryLow = null
+      return
+    }
     // convert annual package to month salary as 12-month
     if (value === SalaryCalculateWay.MONTH_SALARY) {
       if (formContent.value.expectSalaryHigh) {

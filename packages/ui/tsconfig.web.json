@@ -9,6 +9,7 @@
   ],
   "compilerOptions": {
     "composite": true,
+    "experimentalDecorators": true,
     "baseUrl": ".",
     "paths": {
       "@renderer/*": [

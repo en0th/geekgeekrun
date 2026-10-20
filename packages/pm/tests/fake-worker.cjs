@@ -19,6 +19,9 @@ socket.on('data', (d) => {
 })
 const ask = (m) => new Promise((r) => { const id = randomUUID(); pending.set(id, r); socket.write(JSON.stringify({ ...m, _callbackUuid: id }) + '\n') })
 const workerId = process.env.GEEKGEEKRUND_WORKER_ID
+if (process.env.FAKE_STOP_DELAY_MS) process.on('SIGTERM', () => {
+  setTimeout(() => process.exit(0), Number(process.env.FAKE_STOP_DELAY_MS))
+})
 ;(async () => {
   if (process.env.FAKE_KIND === 'finite') {
     await new Promise((r) => setTimeout(r, Number(process.env.FAKE_MS || 300)))

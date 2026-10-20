@@ -36,7 +36,7 @@ export default function initPublicIpc() {
       activate: true
     })
   })
-  ipcMain.on('send-feed-back-to-github-issue', (ev, payload) => {
+  ipcMain.on('send-feed-back-to-github-issue', () => {
     const getIssueUrlWithBody = (issueBody: string = '') => {
       const baseUrl = ISSUE_NEW_URL
       issueBody = issueBody || ''
@@ -60,14 +60,17 @@ export default function initPublicIpc() {
     )
   })
 
-  ipcMain.handle('read-storage-file', async (ev, payload) => {
+  ipcMain.handle('read-storage-file', async (_ev, payload) => {
     ensureStorageFileExist()
     return await readStorageFile(payload.fileName)
   })
 
-  ipcMain.handle('write-storage-file', async (ev, payload) => {
+  ipcMain.handle('write-storage-file', async (_ev, payload) => {
     ensureStorageFileExist()
-    return await writeStorageFile(payload.fileName, JSON.parse(payload.data))
+    let data
+    try { data = JSON.parse(payload.data) }
+    catch { throw new Error('存储内容不是有效 JSON，原文件未修改') }
+    return await writeStorageFile(payload.fileName, data)
   })
   ipcMain.handle('get-os-platform', () => {
     return os.platform()
@@ -83,7 +86,7 @@ export default function initPublicIpc() {
       return dialog.showOpenDialog(win, fileChooserConfig)
     }
   })
-  ipcMain.handle('check-executable-file', (ev, filePath: string) => {
+  ipcMain.handle('check-executable-file', (_ev, filePath: string) => {
     if (!filePath?.trim()) {
       return {
         message: '文件名无效'

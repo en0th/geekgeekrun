@@ -37,6 +37,7 @@ export type TaskProgressSeed = Partial<{
   lastSkippedDetail: string;
   skippedReasons: Record<string, number>;
   log: TaskLogEntry[];
+  budget: unknown;
 }>;
 
 export function createTaskProgress(seed?: TaskProgressSeed | null) {
@@ -54,6 +55,7 @@ export function createTaskProgress(seed?: TaskProgressSeed | null) {
     lastSkippedDetail: "",
     skippedReasons: {} as Record<string, number>,
     log: [] as TaskLogEntry[],
+    budget: null as unknown,
   };
   if (seed) {
     for (const key of ["startedAt", "viewed", "sent", "skipped", "collected", "marked"] as const) {
@@ -63,6 +65,7 @@ export function createTaskProgress(seed?: TaskProgressSeed | null) {
     if (seed.lastSkippedDetail) progress.lastSkippedDetail = seed.lastSkippedDetail;
     if (seed.skippedReasons) progress.skippedReasons = { ...seed.skippedReasons };
     if (Array.isArray(seed.log)) progress.log = seed.log.slice(-TASK_LOG_LIMIT);
+    if (seed.budget) progress.budget = seed.budget;
   }
   const runRecordId = minimist(process.argv.slice(2))["run-record-id"] ?? null;
   function addLog(kind: string, text: string) {
@@ -114,7 +117,8 @@ export function createTaskProgress(seed?: TaskProgressSeed | null) {
     addLog(kind, text);
     send();
   }
-  return { update, log, progress };
+  function setBudget(budget: unknown) { progress.budget = budget; send(); }
+  return { update, log, progress, setBudget };
 }
 
 const isCounted = (kind: string) =>

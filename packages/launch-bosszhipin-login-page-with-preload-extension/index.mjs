@@ -8,7 +8,7 @@ import {
 } from '@geekgeekrun/utils/sleep.mjs'
 import { blockNavigation } from '@geekgeekrun/utils/puppeteer/block-navigation.mjs'
 import {
-  writeStorageFile
+  writeBossSession
 } from '@geekgeekrun/geek-auto-start-chat-with-boss/runtime-file-utils.mjs'
 
 import JSON5 from 'json5'
@@ -95,8 +95,10 @@ export async function main() {
       await page.waitForNavigation({ timeout: 60 * 1000 }).catch(() => void 0)
     }
     await sleep(2000)
-    const cookies = await page.cookies()
-    await writeStorageFile('boss-cookies.json', cookies)
+    const [cookies, localStorage] = await Promise.all([
+      page.cookies(), page.evaluate(() => Object.fromEntries(Object.entries(window.localStorage)))
+    ])
+    await writeBossSession({ cookies, localStorage })
     loginEventBus.emit('cookie-collected', cookies)
     // let the message reach the login assistant before the process goes away
     await sleep(800)

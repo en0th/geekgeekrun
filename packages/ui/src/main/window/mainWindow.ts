@@ -4,6 +4,7 @@ import os from 'os'
 import { nativeWindowMaterial } from '../../common/window-material.mjs'
 import { openDevTools } from '../commands'
 import { daemonEE } from '../flow/OPEN_SETTING_WINDOW/connect-to-daemon'
+import { attachCollectFocusEvidence } from '../features/collect-acceptance'
 export let mainWindow: BrowserWindow | null = null
 
 // tells the renderer that the window has a native glass material behind transparent areas
@@ -34,8 +35,9 @@ export function createMainWindow(): BrowserWindow {
     }
   })
 
+  attachCollectFocusEvidence(mainWindow)
   mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
+    mainWindow?.show()
   })
   mainWindow.on('ready-to-show', async () => {
     process.env.NODE_ENV === 'development' &&

@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master, main]
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Keep cancellation outside the reusable workflow: nested release callers must
+# never cancel their own parent while rechecking a release tag.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    uses: ./.github/workflows/quality-checks.yml
+    with:
+      ref: ${{ github.sha }}

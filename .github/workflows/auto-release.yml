@@ -22,14 +22,25 @@ on:
       - master
 
 jobs:
+  verify:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/quality-checks.yml
+    with:
+      ref: ${{ github.sha }}
+      artifact_prefix: pre-release
+
   prepare:
+    needs: verify
+    timeout-minutes: 60
     # the version commit pushed below must not start another release
     if: ${{ !startsWith(github.event.head_commit.message, 'ui-v') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    # one version bump at a time; a newer queued run supersedes an older queued one and
-    # covers its commits too, since it works from the current tip of master
+      actions: write
+    # Serialize version preparation. A stale checked commit cannot overwrite a newer
+    # master: the final push is a fast-forward and the release candidate has its own CI.
     concurrency:
       group: auto-release-prepare
       cancel-in-progress: false
@@ -42,7 +53,8 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
         with:
-          ref: master
+          # Release the checked commit; a newer master must pass its own checks.
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -61,7 +73,8 @@ jobs:
           RELEASE_NOTES_MODEL: ${{ vars.RELEASE_NOTES_MODEL }}
         run: node .github/scripts/release/prepare-release.mjs
 
-      - name: Commit version and push tag
+      - name: Commit version on an isolated candidate branch
+        id: candidate
         if: steps.prepare.outputs.skip != 'true'
         env:
           TAG: ${{ steps.prepare.outputs.tag }}
@@ -71,7 +84,32 @@ jobs:
           git add packages/ui/package.json packages/ui/src/common/build-info.json packages/ui/src/common/release-notes.json
           git commit -m "$TAG"
           git tag "$TAG"
+          CANDIDATE_BRANCH="automation/release-${TAG}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          git push origin "HEAD:refs/heads/$CANDIDATE_BRANCH"
+          echo "branch=$CANDIDATE_BRANCH" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Run the required Quality gate on the version commit
+        if: steps.prepare.outputs.skip != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_CANDIDATE_BRANCH: ${{ steps.candidate.outputs.branch }}
+          RELEASE_CANDIDATE_SHA: ${{ steps.candidate.outputs.sha }}
+        run: node scripts/ci/await-release-checks.mjs
+
+      - name: Advance checked master and publish tag
+        if: steps.prepare.outputs.skip != 'true'
+        env:
+          TAG: ${{ steps.prepare.outputs.tag }}
+        run: |
           git push --atomic origin HEAD:master "$TAG"
+
+      - name: Remove successful release candidate branch
+        if: success() && steps.prepare.outputs.skip != 'true'
+        continue-on-error: true
+        env:
+          CANDIDATE_BRANCH: ${{ steps.candidate.outputs.branch }}
+        run: git push origin --delete "$CANDIDATE_BRANCH"
 
   release:
     needs: prepare

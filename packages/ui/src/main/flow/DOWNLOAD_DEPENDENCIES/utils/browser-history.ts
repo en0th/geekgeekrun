@@ -2,6 +2,7 @@ import * as path from 'path'
 import * as fs from 'fs'
 import * as fsPromise from 'fs/promises'
 import { resolveStorageFolder } from '@geekgeekrun/geek-auto-start-chat-with-boss/data-location.mjs'
+import { writeFileAtomicSync } from '@geekgeekrun/utils/atomic-json.mjs'
 
 export interface BrowserInfo {
   browser: string
@@ -43,21 +44,14 @@ export const getLastUsedAndAvailableBrowser = async (): Promise<BrowserInfo | nu
       browser
     }
   } catch {
-    await removeLastUsedAndAvailableBrowserPath()
+    // A transient read failure is not evidence that the saved browser is invalid.
     return null
   }
 }
 
 export const saveLastUsedAndAvailableBrowserInfo = async (browserInfo: BrowserInfo) => {
-  try {
-    await fsPromise.mkdir(path.dirname(lastUsedBrowserRecordFilePath), { recursive: true })
-    await fsPromise.writeFile(
-      lastUsedBrowserRecordFilePath,
-      [browserInfo.executablePath, browserInfo.browser, CONFIG_VERSION].join('\n')
-    )
-  } catch {
-    console.warn('lastUsedBrowserRecordFile write error')
-  }
+  writeFileAtomicSync(lastUsedBrowserRecordFilePath,
+    [browserInfo.executablePath, browserInfo.browser, CONFIG_VERSION].join('\n'))
 }
 
 export const removeLastUsedAndAvailableBrowserPath = async () => {

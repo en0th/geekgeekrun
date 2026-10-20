@@ -1,3 +1,4 @@
+import { errorMessage } from '../../../common/utils/error'
 import { Page } from "puppeteer";
 import { sleepWithRandomDelay, sleep } from "@geekgeekrun/utils/sleep.mjs";
 import { completes } from "@geekgeekrun/utils/gpt-request.mjs";
@@ -165,12 +166,12 @@ export const requestNewMessageContent = async (
   }
   console.log(chatList);
   let textToSend, llmConfig;
-  const llmRequestRecord: Omit<
+  let llmRequestRecord: Omit<
     LlmModelUsageRecord,
     "id" | "providerApiSecretMd5"
   > & {
     providerApiSecret: string;
-  } = {};
+  } | undefined;
   const blockModelSet = new Set();
   const llmConfigList = await readConfigFile("llm.json");
   while (!textToSend) {
@@ -179,7 +180,7 @@ export const requestNewMessageContent = async (
       throw new Error(`CANNOT_FIND_A_USABLE_MODEL`);
     }
     console.log(llmConfig.providerCompleteApiUrl);
-    Object.assign(llmRequestRecord, {
+    llmRequestRecord = {
       providerCompleteApiUrl: llmConfig.providerCompleteApiUrl,
       model: llmConfig.model,
       providerApiSecret: llmConfig.providerApiSecret,
@@ -192,7 +193,7 @@ export const requestNewMessageContent = async (
       promptTokens: null,
       totalTokens: null,
       requestScene,
-    });
+    };
     try {
       // timeout, retries and thinking mode come from the AI settings page
       const completion = await completes(completionOptions(llmConfig), chatList);
@@ -212,7 +213,7 @@ export const requestNewMessageContent = async (
       blockModelSet.add(llmConfig.id);
       Object.assign(llmRequestRecord, {
         hasError: true,
-        errorMessage: err?.message ?? "",
+        errorMessage: errorMessage(err) ?? "",
       });
     } finally {
       llmRequestRecord.requestEndTime = new Date();

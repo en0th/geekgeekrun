@@ -1,6 +1,23 @@
 // Navigation guards do not relax job/company filters or authorize message sending.
-import { matchesExperience } from './job-filter-config.mjs'
+import { matchesExperience, requiredJobConditionReasons } from './job-filter-config.mjs'
+import { matchesCitySelection } from './city-filter.mjs'
+import { clickTaskElement } from './task-page-input.mjs'
 export const MAX_BATCHES_WITHOUT_CHAT = 5
+export async function activateSourceAndWait(page, activate, { matchesResponse, timeout = 30000 } = {}) {
+  const controller = new AbortController()
+  try {
+    const [response] = await Promise.all([
+      page.waitForResponse(matchesResponse || (response =>
+        response.url().startsWith('https://www.zhipin.com/wapi/zpgeek/pc/recommend/job/list.json') ||
+        response.url().startsWith('https://www.zhipin.com/wapi/zpgeek/search/joblist.json')),
+      { timeout, signal: controller.signal }),
+      Promise.resolve().then(activate)
+    ])
+    return response
+  } finally {
+    controller.abort()
+  }
+}
 export class NoMatchBatchGuard {
   constructor(max = MAX_BATCHES_WITHOUT_CHAT) { this.max = max; this.loaded = 0 }
   beforeLoad() {
@@ -17,7 +34,8 @@ export async function readListSnapshot(page) {
     return { ids: view.jobList.map(row => row.encryptJobId), hasMore: view.hasMore }
   })
 }
-export async function loadNextJobBatch({ page, list, timeoutMs = 15000, pause = ms => new Promise(resolve => setTimeout(resolve, ms)), now = Date.now }) {
+export async function loadNextJobBatch({ page, list, timeoutMs = 15000, pause = ms => new Promise(resolve => setTimeout(resolve, ms)), now = Date.now, checkResponses = async () => {} }) {
+  await checkResponses()
   const before = await readListSnapshot(page)
   if (!before) throw new Error('AUTO_CHAT_LIST_STALLED')
   if (!before.hasMore) return { hasMore: false }
@@ -30,31 +48,45 @@ export async function loadNextJobBatch({ page, list, timeoutMs = 15000, pause = 
   // randomised per batch like the original scroller, so the scrolling isn't uniform
   const increase = 40 + Math.floor(30 * Math.random())
   while (now() < deadline) {
+    await checkResponses()
     await page.mouse.wheel({ deltaY: increase })
     await pause(100)
+    await checkResponses()
     const next = await readListSnapshot(page)
     if (!next) throw new Error('AUTO_CHAT_LIST_STALLED')
     if (next.ids.some(id => id && !known.has(id)) || !next.hasMore) return next
   }
   throw new Error('AUTO_CHAT_LIST_STALLED')
 }
-export async function openJobCardForReview({ page, list, index, jobId, timeoutMs = 12000 }) {
-  const cards = await list.$$('li.job-card-box')
-  if (!jobId || !cards[index]) throw new Error('AUTO_CHAT_DETAIL_NOT_READY')
-  // Click even index zero; BOSS may still be showing a previous source's detail.
-  await cards[index].click()
+export async function openJobCardForReview({ page, list, index, jobId, timeoutMs = 12000, checkResponses = async () => {} }) {
+  await checkResponses()
+  if (!jobId || !Number.isSafeInteger(index) || index < 0) throw new Error('AUTO_CHAT_DETAIL_NOT_READY')
+  // Query one card instead of creating an unreleased handle for every row on every review.
+  const handle = await list.evaluateHandle((element, offset) => element.querySelectorAll('li.job-card-box')[offset] || null, index)
+  try {
+    const card = handle.asElement()
+    if (!card) throw new Error('AUTO_CHAT_DETAIL_NOT_READY')
+    // Click even index zero; BOSS may still be showing a previous source's detail.
+    await clickTaskElement(page, card)
+  } finally {
+    await handle.dispose()
+  }
   try {
     await page.waitForFunction(expectedId => {
       const selected = document.querySelector('.page-jobs-main')?.__vue__?.currentJob
       const detail = document.querySelector('.job-detail-box')?.__vue__?.data
       return String(selected?.encryptJobId || selected?.encryptId || '') === String(expectedId) &&
         String(detail?.jobInfo?.encryptId || '') === String(expectedId)
-    }, { timeout: timeoutMs }, jobId)
-  } catch { throw new Error('AUTO_CHAT_DETAIL_NOT_READY') }
+    }, { timeout: timeoutMs, polling: 100 }, jobId)
+  } catch {
+    await checkResponses()
+    throw new Error('AUTO_CHAT_DETAIL_NOT_READY')
+  }
+  await checkResponses()
 }
 // Apply each NO_OP prefilter only to its own enabled criterion.
 export function listSkipReason(row, { cities = [], cityStrategy, experiences = [], experienceStrategy, salaryEnabled, salaryStrategy, salaryMatches = true, invalidSalary = false }) {
-  if (cities.length && cityStrategy === 3 && !cities.includes(row.cityName)) return '城市不符合'
+  if (cityStrategy === 3 && !matchesCitySelection(cities, row.cityName)) return '城市不符合'
   if (experiences.length && experienceStrategy === 3 && !matchesExperience(experiences, row.jobExperience)) return '经验不符合'
   if (salaryEnabled && (invalidSalary || (salaryStrategy === 3 && !salaryMatches))) return '薪资不符合或信息不足'
   return ''
@@ -75,8 +107,10 @@ export function describeListScope(rows, { allow = [], blocked = () => false, ski
  * The last check before the chat button is clicked: never in collect mode, and only for the
  * job that passed every condition (not whatever job was looked at last).
  */
-export function assertCanGreet({ isCollectMode, targetJobIndex, matchedJobId, targetJobId }) {
+export function assertCanGreet({ isCollectMode, targetJobIndex, matchedJobId, targetJobId, detail, requiredConditions = {} }) {
   if (isCollectMode) throw new Error('AUTO_CHAT_COLLECT_MODE_CHAT_BLOCKED')
   if (targetJobIndex < 0 || !matchedJobId || matchedJobId !== targetJobId)
     throw new Error('AUTO_CHAT_UNMATCHED_JOB_CHAT_BLOCKED')
+  if (requiredJobConditionReasons(detail, requiredConditions).length)
+    throw new Error('AUTO_CHAT_REQUIRED_CONDITION_CHAT_BLOCKED')
 }

@@ -16,6 +16,9 @@ import {
 
 test('configs without the settings get the defaults', () => {
   assert.deepEqual(readRunSettings({}), {
+    runInBackground: true,
+    runBudget: { requests: 500, detailRequests: 200, activeMinutes: 120 },
+    filterCombinationLimit: 100,
     runMode: 'chat',
     collectOnlyMatchingJobs: true,
     skipUnparseableSalaryJob: true,
@@ -38,6 +41,9 @@ test('saved settings are used as they are', () => {
       jobDetailViewWaitSeconds: 3.5
     }),
     {
+      runInBackground: true,
+      filterCombinationLimit: 100,
+      runBudget: { requests: 500, detailRequests: 200, activeMinutes: 120 },
       runMode: 'collect',
       collectOnlyMatchingJobs: false,
       skipUnparseableSalaryJob: false,
@@ -47,6 +53,14 @@ test('saved settings are used as they are', () => {
       jobDetailViewWaitSeconds: 3.5
     }
   )
+})
+
+test('automatic filter combination budgets are finite and cannot be disabled with zero', () => {
+  for (const value of [null, undefined, '', 0, -1, false, true, [], NaN, Infinity, 'abc', 2.5]) {
+    assert.equal(readRunSettings({ autoChatFilterCombinationLimit: value }).filterCombinationLimit, 100)
+  }
+  assert.equal(readRunSettings({ autoChatFilterCombinationLimit: '12' }).filterCombinationLimit, 12)
+  assert.equal(readRunSettings({ autoChatFilterCombinationLimit: 99999 }).filterCombinationLimit, 10000)
 })
 
 test('an unknown run mode falls back to chatting', () => {

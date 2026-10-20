@@ -18,6 +18,7 @@ export class MarkAsNotSuitLog {
   date: Date;
 
   @Column({
+    type: 'integer',
     nullable: true
   })
   markFrom?: ChatStartupFrom;

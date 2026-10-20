@@ -34,7 +34,7 @@
     </el-form-item>
     <el-form-item label="BOSS"
       >{{ jobInfo.bossName
-      }}<template v-if="jobInfo.bossTitle"> - {{ jobInfo.bossTitle }}</template></el-form-item
+      }}<template v-if="'bossTitle' in jobInfo && jobInfo.bossTitle"> - {{ jobInfo.bossTitle }}</template></el-form-item
     >
   </el-form>
 </template>

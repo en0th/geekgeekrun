@@ -10,6 +10,22 @@ const { randomUUID } = require('crypto')
 const AUTO = 'geekAutoStartWithBossMain', FOLLOW = 'readNoReplyAutoReminderMain', POLL = 'jobStatusPollMain'
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
+test('an unreadable persisted task history is preserved when a later task finishes', async t => {
+  const fs = require('node:fs')
+  const dir = fs.mkdtempSync(path.join(tmpdir(), 'ggr-history-invalid-'))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  const file = path.join(dir, 'history.json')
+  fs.writeFileSync(file, '{invalid history')
+  const d = await startDaemon(60000, { GEEKGEEKRUND_TASK_HISTORY_FILE: file })
+  try {
+    await d.start(POLL, { FAKE_KIND: 'finite', FAKE_MS: '100' })
+    await sleep(400)
+    assert.equal((await d.status()).history[0].outcome, 'finished')
+    assert.equal(fs.readFileSync(file, 'utf8'), '{invalid history')
+    assert.deepEqual(fs.readdirSync(dir), ['history.json'])
+  } finally { d.close() }
+})
+
 async function startDaemon(sliceMs = 60000, extraEnv = {}) {
   const pipeName = `ggr-test-${randomUUID()}`
   const child = spawn(process.execPath, [path.join(__dirname, '../daemon.js')], {
@@ -20,6 +36,10 @@ async function startDaemon(sliceMs = 60000, extraEnv = {}) {
   const socket = net.connect(process.platform === 'win32' ? `\\\\.\\pipe\\${pipeName}` : path.join(tmpdir(), `${pipeName}.sock`))
   const pending = new Map()
   const events = []
+  // Retain transitions: a fast task can yield again before the test runner reads
+  // its next status. Assertions must observe the intended turn, not a wall clock.
+  const states = []
+  const stateWaiters = new Set()
   let buffer = ''
   socket.on('data', (d) => {
     buffer += d
@@ -27,7 +47,10 @@ async function startDaemon(sliceMs = 60000, extraEnv = {}) {
     while ((i = buffer.indexOf('\n')) >= 0) {
       const msg = JSON.parse(buffer.slice(0, i)); buffer = buffer.slice(i + 1)
       if (msg._callbackUuid && pending.has(msg._callbackUuid)) { pending.get(msg._callbackUuid)(msg); pending.delete(msg._callbackUuid) }
-      else if (msg.type !== 'status') events.push(msg)
+      else if (msg.type === 'status') {
+        states.push(msg)
+        for (const waiter of stateWaiters) waiter(msg)
+      } else events.push(msg)
     }
   })
   const send = (m) => new Promise((r) => { const id = randomUUID(); pending.set(id, r); socket.write(JSON.stringify({ ...m, _callbackUuid: id }) + '\n') })
@@ -37,8 +60,25 @@ async function startDaemon(sliceMs = 60000, extraEnv = {}) {
   const status = () => send({ type: 'get-status' })
   const running = async () => (await status()).workers.map((w) => w.workerId)
   const queued = async () => (await status()).queue.map((q) => `${q.workerId}:${q.reason}`)
+  const waitForState = (predicate, timeoutMs = 5000) => {
+    const previous = states.find(predicate)
+    if (previous) return Promise.resolve(previous)
+    return new Promise((resolve, reject) => {
+      const observed = state => {
+        if (!predicate(state)) return
+        clearTimeout(timer)
+        stateWaiters.delete(observed)
+        resolve(state)
+      }
+      const timer = setTimeout(() => {
+        stateWaiters.delete(observed)
+        reject(new Error('Timed out waiting for the daemon queue transition'))
+      }, timeoutMs)
+      stateWaiters.add(observed)
+    })
+  }
   const close = () => { socket.destroy(); child.kill() }
-  return { send, start, status, running, queued, events, close }
+  return { send, start, status, running, queued, waitForState, events, close }
 }
 
 test('one BOSS task runs at a time; others wait in order', async () => {
@@ -51,6 +91,29 @@ test('one BOSS task runs at a time; others wait in order', async () => {
     await sleep(300)
     assert.deepEqual(await d.running(), [AUTO])
     assert.deepEqual(await d.queued(), [`${FOLLOW}:waiting`])
+  } finally { d.close() }
+})
+
+test('a stopping worker holds its slot until it exits, including an immediate restart of the same task', async () => {
+  const d = await startDaemon()
+  try {
+    await d.start(AUTO, { FAKE_STOP_DELAY_MS: '500' })
+    await sleep(200)
+    const oldPid = (await d.status()).workers[0].pid
+    const stopping = d.send({ type: 'stop-worker', workerId: AUTO })
+    await sleep(30)
+    const next = await d.start(AUTO)
+    assert.equal(next.queued, true)
+    const state = await d.status()
+    assert.equal(state.workers[0].pid, oldPid)
+    assert.equal(state.workers[0].status, 'stopping')
+    await stopping
+    await sleep(150)
+    const [current] = (await d.status()).workers
+    assert.equal(current.workerId, AUTO)
+    assert.notEqual(current.pid, oldPid)
+    await sleep(300)
+    assert.equal((await d.status()).workers[0].pid, current.pid)
   } finally { d.close() }
 })
 
@@ -81,11 +144,15 @@ test('long tasks take turns once their time slice is used up', async () => {
   try {
     await d.start(AUTO)
     await d.start(FOLLOW)
-    await sleep(900)
-    assert.deepEqual(await d.running(), [FOLLOW])
-    assert.deepEqual(await d.queued(), [`${AUTO}:yielded`])
-    await sleep(700)
-    assert.deepEqual(await d.running(), [AUTO])
+    const followTurn = await d.waitForState(state => state.workers.some(w => w.workerId === FOLLOW))
+    assert.deepEqual(followTurn.workers.map(w => w.workerId), [FOLLOW])
+    assert.deepEqual(followTurn.queue.map(q => `${q.workerId}:${q.reason}`), [`${AUTO}:yielded`])
+    const autoTurn = await d.waitForState(state => state.workers.some(w => w.workerId === AUTO) &&
+      state.history.some(h => h.workerId === FOLLOW && h.outcome === 'yielded'))
+    assert.deepEqual(autoTurn.workers.map(w => w.workerId), [AUTO])
+    assert.deepEqual(autoTurn.queue.map(q => `${q.workerId}:${q.reason}`), [`${FOLLOW}:yielded`])
+    assert.deepEqual(autoTurn.history.slice(0, 2).map(h => `${h.workerId}:${h.outcome}`),
+      [`${FOLLOW}:yielded`, `${AUTO}:yielded`])
   } finally { d.close() }
 })
 
@@ -147,4 +214,26 @@ test('finished runs are kept in the history file across daemon restarts', async 
   try {
     assert.equal((await again.status()).history[0].id, saved[0].id)
   } finally { again.close() }
+})
+
+test('normal source exhaustion (92) finishes without restarting and remains finished after reload', async () => {
+  const fs = require('fs')
+  const dir = fs.mkdtempSync(path.join(tmpdir(), 'ggr-rotated-'))
+  const file = path.join(dir, 'history.json')
+  const d = await startDaemon(60000, { GEEKGEEKRUND_TASK_HISTORY_FILE: file })
+  try {
+    await d.start(AUTO, { FAKE_KIND: 'finite', FAKE_MS: '100', FAKE_EXIT: '92' }, ['--run-record-id=12', '--run-mode=collect'])
+    await sleep(400)
+    assert.deepEqual(await d.running(), [])
+    const [row] = (await d.status()).history
+    assert.equal(row.code, 92)
+    assert.equal(row.outcome, 'finished')
+    assert.ok(d.events.some(e => e.type === 'worker-exited' && e.code === 92 && !e.restarting))
+  } finally { d.close() }
+  const saved = JSON.parse(fs.readFileSync(file, 'utf8'))
+  saved[0].outcome = 'failed' // an existing history written before this fix
+  fs.writeFileSync(file, JSON.stringify(saved))
+  const again = await startDaemon(60000, { GEEKGEEKRUND_TASK_HISTORY_FILE: file })
+  try { assert.equal((await again.status()).history[0].outcome, 'finished') }
+  finally { again.close(); fs.rmSync(dir, { recursive: true, force: true }) }
 })

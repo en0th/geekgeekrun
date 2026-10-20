@@ -3177,3 +3177,18 @@ label > .ux-tip {
   flex-wrap: wrap;
   gap: 4px;
 }
+.ux-budget-input {
+  box-sizing: border-box;
+  width: 150px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 4px;
+  color: var(--el-text-color-primary);
+  background: var(--el-fill-color-blank);
+  font: inherit;
+}
+.ux-budget-input:focus {
+  border-color: var(--el-color-primary);
+  outline: 2px solid var(--el-color-primary-light-8);
+}

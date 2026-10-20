@@ -41,6 +41,7 @@ export class ExpiringBlockSet extends Set {
     return super.has(value)
   }
   delete(value) { this.deadlines.delete(value); return super.delete(value) }
+  clear() { this.deadlines.clear(); return super.clear() }
   *values() { for (const value of super.values()) if (this.has(value)) yield value }
   [Symbol.iterator]() { return this.values() }
 }

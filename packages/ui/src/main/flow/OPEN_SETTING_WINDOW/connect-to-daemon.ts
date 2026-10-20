@@ -4,12 +4,16 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import net from 'node:net'
 import split2 from 'split2'
+import { errorMessage } from '../../../common/utils/error'
 
-let daemonClient = null
+let daemonClient: net.Socket | null = null
 export const daemonEE = new EventEmitter()
-const waitForCallbackTaskMap = new Map()
+const waitForCallbackTaskMap = new Map<string, {
+  resolve: (value: unknown) => void
+  reject: (reason: unknown) => void
+}>()
 
-export function getSocketPath(socketName) {
+export function getSocketPath(socketName: string) {
   const ipcSocketPath =
     process.platform === 'win32'
       ? `\\\\.\\pipe\\${socketName}`
@@ -19,18 +23,23 @@ export function getSocketPath(socketName) {
 
 // 连接到守护进程
 export async function connectToDaemon() {
-  daemonClient = new net.Socket()
+  const client = new net.Socket()
+  daemonClient = client
   let isConnected = false
   await new Promise((resolve, reject) => {
     const ipcSocketName = process.env.GEEKGEEKRUND_PIPE_NAME
+    if (!ipcSocketName) {
+      reject(new Error('守护进程通信地址未配置'))
+      return
+    }
     const ipcSocketPath = getSocketPath(ipcSocketName)
-    daemonClient.connect(ipcSocketPath, 'localhost', () => {
+    client.connect(ipcSocketPath, () => {
       isConnected = true
       console.log('已连接到守护进程')
       daemonEE.emit('connect')
       // 使用 split2 按行分割流式数据，处理 JSONL 格式（每行一个 JSON）
       const splitStream = split2()
-      daemonClient.pipe(splitStream).on('data', (line) => {
+      client.pipe(splitStream).on('data', (line) => {
         const trimmedLine = line.toString().trim()
         if (!trimmedLine) {
           return // 跳过空行
@@ -57,7 +66,7 @@ export async function connectToDaemon() {
           //     mainWindow.webContents.send('daemon-message', message);
           // }
         } catch (parseError) {
-          console.error('解析守护进程消息失败:', parseError.message)
+          console.error('解析守护进程消息失败:', errorMessage(parseError))
           console.error('原始数据:', trimmedLine.substring(0, 100))
         }
       })
@@ -66,7 +75,7 @@ export async function connectToDaemon() {
         console.error('split2 流处理错误:', err)
       })
 
-      daemonClient.on('close', () => {
+      client.on('close', () => {
         if (!isConnected) {
           return
         }
@@ -81,13 +90,13 @@ export async function connectToDaemon() {
       // }
     })
 
-    daemonClient.on('close', () => {
+    client.on('close', () => {
       if (isConnected) {
         return
       }
       reject(new Error('连接到守护进程超时'))
     })
-    daemonClient.on('error', (err) => {
+    client.on('error', (err) => {
       console.error('守护进程连接错误:', err)
       // daemonEE.emit('error', err)
       reject(err)
@@ -96,7 +105,9 @@ export async function connectToDaemon() {
 }
 
 // 向守护进程发送消息
-export function sendToDaemon(message, { needCallback = false, timeout = undefined } = {}) {
+export function sendToDaemon<T = unknown>(message: { type: string; [key: string]: unknown }, {
+  needCallback = false, timeout
+}: { needCallback?: boolean; timeout?: number } = {}): Promise<T> | undefined {
   const _callbackUuid = randomUUID()
   if (daemonClient && !daemonClient.destroyed) {
     daemonClient.write(
@@ -106,23 +117,21 @@ export function sendToDaemon(message, { needCallback = false, timeout = undefine
       }) + '\n'
     )
     if (needCallback) {
-      let resolve, reject
-      const promise = new Promise((_resolve, _reject) => {
-        resolve = _resolve
-        reject = _reject
+      let timeoutTimer: ReturnType<typeof setTimeout> | undefined
+      const promise = new Promise<unknown>((resolve, reject) => {
+        waitForCallbackTaskMap.set(_callbackUuid, { resolve, reject })
+        if (timeout !== undefined && Number.isFinite(timeout)) {
+          timeoutTimer = setTimeout(() => {
+            reject(new Error(`Callback timeout after ${timeout}ms`))
+          }, timeout)
+        }
       })
-      waitForCallbackTaskMap.set(_callbackUuid, { resolve, reject })
-      promise.finally(() => waitForCallbackTaskMap.delete(_callbackUuid))
-      let timeoutTimer
-      if (!isNaN(parseInt(timeout))) {
-        timeoutTimer = setTimeout(() => {
-          reject(new Error(`Callback timeout after ${timeout}ms`))
-        }, timeout)
-      }
-      promise.finally(() => {
+      // Return the cleanup promise: ignored finally() results can become unhandled
+      // rejections even when the caller catches the original request failure.
+      return promise.finally(() => {
+        waitForCallbackTaskMap.delete(_callbackUuid)
         clearTimeout(timeoutTimer)
-      })
-      return promise
+      }) as Promise<T>
     }
   } else {
     console.error('守护进程未连接')

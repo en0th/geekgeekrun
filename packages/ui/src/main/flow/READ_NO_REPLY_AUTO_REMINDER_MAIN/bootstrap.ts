@@ -1,3 +1,4 @@
+import { errorMessage } from '../../../common/utils/error'
 import { Browser } from 'puppeteer'
 import { initPuppeteer } from '@geekgeekrun/geek-auto-start-chat-with-boss/index.mjs'
 import { pageMapByName } from './index'
@@ -42,7 +43,7 @@ export async function launchBoss(browser: Browser) {
       page.waitForNavigation({ timeout: 120 * 1000 })
     ])
   } catch (error) {
-    if (error?.message?.startsWith('net::ERR_INTERNET_DISCONNECTED')) {
+    if (errorMessage(error)?.startsWith('net::ERR_INTERNET_DISCONNECTED')) {
       throw new Error('ERR_INTERNET_DISCONNECTED')
     }
     throw error

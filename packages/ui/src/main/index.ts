@@ -1,10 +1,11 @@
 import overrideConsole from './utils/overrideConsole'
 import minimist from 'minimist'
-import { runCommon } from './features/run-common'
-import { launchDaemon } from './flow/OPEN_SETTING_WINDOW/launch-daemon'
 import { app } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
+import { isJsonStorageError } from '@geekgeekrun/utils/atomic-json.mjs'
+import { AUTO_CHAT_ERROR_EXIT_CODE } from '../common/enums/auto-start-chat'
+import { errorCode } from '../common/utils/error'
 
 const isUiDev = process.env.NODE_ENV === 'development'
 const enableLogToFile = process.env.GEEKGEEKRUN_ENABLE_LOG_TO_FILE === String(1)
@@ -15,7 +16,7 @@ console.log('NODE_ENV:', process.env.NODE_ENV)
 
 // 捕获未处理的 EPIPE 错误
 process.on('uncaughtException', (err) => {
-  if (err?.code === 'EPIPE' || err?.code === 'ERR_STREAM_DESTROYED') {
+  if (errorCode(err) === 'EPIPE' || errorCode(err) === 'ERR_STREAM_DESTROYED') {
     return
   }
   throw err
@@ -53,13 +54,17 @@ if (backgroundModes.has(runMode) || process.env.GEEKGEEKRUN_RUNTIME_DIR) {
 }
 
 ;(async () => {
+  // Load data-directory readers inside the error boundary, including failures in
+  // a queued task's frozen configuration before its worker has initialized.
+  const { runCommon } = await import('./features/run-common')
+  const { launchDaemon } = await import('./flow/OPEN_SETTING_WINDOW/launch-daemon')
   switch (runMode) {
     // #region internal use
     case 'geekAutoStartWithBossMain': {
       const { waitForProcessHandShakeAndRunAutoChat } = await import(
         './flow/GEEK_AUTO_START_CHAT_WITH_BOSS_MAIN/index'
       )
-      waitForProcessHandShakeAndRunAutoChat()
+      await waitForProcessHandShakeAndRunAutoChat()
       break
     }
     case 'downloadDependenciesForInit': {
@@ -71,22 +76,22 @@ if (backgroundModes.has(runMode) || process.env.GEEKGEEKRUN_RUNTIME_DIR) {
       const { launchBossZhipinLoginPageWithPreloadExtension } = await import(
         './flow/LAUNCH_BOSS_ZHIPIN_LOGIN_PAGE_WITH_PRELOAD_EXTENSION'
       )
-      launchBossZhipinLoginPageWithPreloadExtension()
+      await launchBossZhipinLoginPageWithPreloadExtension()
       break
     }
     case 'launchBossSite': {
       const { launchBossSite } = await import('./flow/LAUNCH_BOSS_SITE')
-      launchBossSite()
+      await launchBossSite()
       break
     }
     case 'readNoReplyAutoReminderMain': {
       const { runEntry } = await import('./flow/READ_NO_REPLY_AUTO_REMINDER_MAIN/index')
-      runEntry()
+      await runEntry()
       break
     }
     case 'jobStatusPollMain': {
       const { runEntry } = await import('./flow/JOB_STATUS_POLL_MAIN/index')
-      runEntry()
+      await runEntry()
       break
     }
     case 'launchDaemon': {
@@ -122,9 +127,16 @@ if (backgroundModes.has(runMode) || process.env.GEEKGEEKRUN_RUNTIME_DIR) {
       globalThis.GEEKGEEKRUN_PROCESS_ROLE = 'ui'
       await launchDaemon()
       const { openSettingWindow } = await import('./flow/OPEN_SETTING_WINDOW/index')
-      openSettingWindow()
+      await openSettingWindow()
       break
     }
     // #region
   }
-})()
+})().catch((error) => {
+  if (isJsonStorageError(error)) {
+    console.error(error.message)
+    app.exit(AUTO_CHAT_ERROR_EXIT_CODE.JSON_STORAGE_UNAVAILABLE)
+    return
+  }
+  throw error
+})

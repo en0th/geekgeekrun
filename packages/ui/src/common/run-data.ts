@@ -80,7 +80,7 @@ export interface RunDataQuery {
   keyword?: string
   filters?: RunDataFilter[]
   sort?: RunDataSort | null
-  // what a dataset built outside the database needs (clientRows: { rows })
+  // clientRows: { rows }; jobLibrary: { jobRunId } limits rows to persisted observations
   context?: unknown
 }
 
@@ -185,12 +185,24 @@ const jobFields: RunDataField[] = [
   { key: 'positionName', label: '职位分类', type: 'string', searchable: true },
   { key: 'experienceName', label: '工作经验', type: 'string' },
   { key: 'degreeName', label: '学历', type: 'string' },
+  { key: 'jobNatureName', label: '求职类型', type: 'string' },
+  { key: 'salaryDesc', label: '原始薪资', type: 'string', searchable: true },
+  { key: 'salaryUnit', label: '计薪单位', type: 'string' },
+  { key: 'salaryAmountLow', label: '原始单位最低金额(元)', type: 'number' },
+  { key: 'salaryAmountHigh', label: '原始单位最高金额(元)', type: 'number' },
   { key: 'salaryLow', label: '最低月薪(k)', type: 'number' },
   { key: 'salaryHigh', label: '最高月薪(k)', type: 'number' },
   { key: 'salaryMonth', label: '薪数', type: 'number' },
   { key: 'address', label: '工作地址', type: 'string', searchable: true },
   { key: 'publishDate', label: '发布时间', type: 'date' },
   { key: 'description', label: '职位描述', type: 'string', searchable: true }
+]
+
+const discoveryFields: RunDataField[] = [
+  { key: 'firstSeenAt', label: '首次入库时间', type: 'date' },
+  { key: 'firstSeenRunId', label: '首次入库任务', type: 'number' },
+  { key: 'discoveryOrigin', label: '入库来源', type: 'string' },
+  { key: 'lastSeenAt', label: '最近采集时间', type: 'date' }
 ]
 
 const hireStatusFields: RunDataField[] = [
@@ -258,6 +270,7 @@ export const runDataDatasets: Record<RunDataDatasetKey, RunDataDatasetDef> = {
     hasJob: true,
     fields: [
       ...jobFields,
+      ...discoveryFields,
       { key: 'bossName', label: 'BOSS', type: 'string', searchable: true },
       { key: 'bossTitle', label: 'BOSS身份', type: 'string', searchable: true },
       { key: 'chattedAt', label: '开聊时间', type: 'date' },
@@ -277,6 +290,7 @@ export const runDataDatasets: Record<RunDataDatasetKey, RunDataDatasetDef> = {
       ...hireStatusFields,
       { key: 'closedAt', label: '关闭时间', type: 'date' },
       ...jobFields,
+      ...discoveryFields,
       { key: 'bossName', label: 'BOSS', type: 'string', searchable: true },
       { key: 'bossTitle', label: 'BOSS身份', type: 'string', searchable: true },
       { key: 'favoritedAt', label: '收藏时间', type: 'date' },

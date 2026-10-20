@@ -26,6 +26,8 @@
         @remove-recent="memory.removeRecent"
       />
       <div class="run-data-table__tools">
+        <ElButton v-if="dataset === 'jobLibrary' || dataset === 'favoriteJobs'" size="small"
+          @click="openJobSummary">岗位摘要</ElButton>
         <ElButton size="small" :icon="DataAnalysis" @click="openStats">统计</ElButton>
         <ElButton
           v-if="datasetDef.importable !== false"
@@ -262,6 +264,7 @@
       :preset="statsPreset"
       @drill="handleDrill"
     />
+    <JobSummaryPanel v-model:visible="jobSummaryVisible" :query="jobSummaryQuery" />
     <ImportDialog v-model:visible="importVisible" :dataset="dataset" @imported="fetchData" />
     <FavoriteFolderPicker
       v-model:visible="favoritePickerVisible"
@@ -340,6 +343,7 @@ import FilterBuilder from './FilterBuilder.vue'
 import FilterPresets from './FilterPresets.vue'
 import { type FilterSnapshot, sessionFilters, useFilterMemory } from './filter-memory'
 import StatsPanel from './StatsPanel.vue'
+import JobSummaryPanel from './JobSummaryPanel.vue'
 import ImportDialog from './ImportDialog.vue'
 import FavoriteFolderPicker from './FavoriteFolderPicker.vue'
 import { useRunDataJumpStore } from '../../store'
@@ -823,7 +827,7 @@ async function openSelectedOnline() {
 const deleteWarning: Record<RunDataDatasetKey, string> = {
   chatStartupLog: '删除开聊记录后，程序可能会再次向这些职位发起开聊。',
   markAsNotSuitLog: '删除标记记录后，这些职位可能会被再次处理。',
-  jobLibrary: '引用这些职位的开聊 / 标记记录将无法再显示职位信息。',
+  jobLibrary: '引用这些职位的开聊 / 标记记录将无法再显示职位信息。发现台账仍会保留，用于后续采集去重。',
   bossLibrary: '引用这些 BOSS 的职位将无法再显示 BOSS 信息。',
   companyLibrary: '引用这些公司的职位 / BOSS 将无法再显示公司信息。',
   favoriteJobs: '只从收藏夹中移除，职位本身仍保留在职位库中。',
@@ -929,6 +933,12 @@ async function exportAll(format: ExportFormat) {
 // ---------- dialogs ----------
 const filterDialogVisible = ref(false)
 const statsVisible = ref(false)
+const jobSummaryVisible = ref(false)
+const jobSummaryQuery = ref<RunDataQuery>({ dataset: props.dataset })
+function openJobSummary() {
+  jobSummaryQuery.value = toPlain(query.value)
+  jobSummaryVisible.value = true
+}
 const importVisible = ref(false)
 function openStats() {
   statsVisible.value = true

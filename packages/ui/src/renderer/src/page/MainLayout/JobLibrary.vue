@@ -1,10 +1,18 @@
 <template>
   <div class="flex flex-col of-hidden" :class="embedded ? 'embedded-wrap' : 'page-wrap'">
+    <div v-if="runRecordId" class="mb12px">
+      <ElRadioGroup v-model="runScope" size="small" aria-label="岗位采集范围">
+        <ElRadioButton value="all">本轮采集</ElRadioButton>
+        <ElRadioButton value="new">本轮新增</ElRadioButton>
+      </ElRadioGroup>
+      <p class="text-12px ggr-text-muted">本轮新增指本任务首次采集入库的岗位，按本地资料库去重。恢复任务沿用同一编号；台账启用前的数据不计入本轮采集。</p>
+    </div>
     <RunDataTable
       ref="tableRef"
       dataset="jobLibrary"
       :columns="shownColumns"
-      :base-filters="baseFilters"
+      :base-filters="scopedFilters"
+      :context="runContext"
       :memory-key="memoryKey"
       :ignore-jumps="ignoreJumps"
       :stats-preset="runDataStatsPresets.jobLibrary"
@@ -80,7 +88,7 @@
 <script setup lang="ts">
 import { toast } from '@renderer/features/Toast'
 import { computed, ref } from 'vue'
-import { ElButton, ElDrawer, ElDialog } from 'element-plus'
+import { ElButton, ElDrawer, ElDialog, ElRadioGroup, ElRadioButton } from 'element-plus'
 import { type VChatStartupLog } from '@geekgeekrun/sqlite-plugin/src/entity/VChatStartupLog'
 import { type JobInfoChangeLog } from '@geekgeekrun/sqlite-plugin/src/entity/JobInfoChangeLog'
 import JobInfoSnapshot from '../../features/JobInfoSnapshot/index.vue'
@@ -99,13 +107,25 @@ const props = defineProps<{
   memoryKey?: string
   ignoreJumps?: boolean
   embedded?: boolean
+  runRecordId?: number
   // extra columns to show, e.g. the time the rows were limited by
   extraColumns?: RunDataColumn[]
 }>()
+const runScope = ref('all')
+const runContext = computed(() => props.runRecordId ? { jobRunId: props.runRecordId } : undefined)
+const scopedFilters = computed<RunDataFilter[]>(() => [
+  ...(props.baseFilters ?? []),
+  ...(props.runRecordId && runScope.value === 'new'
+    ? [{ field: 'firstSeenRunId', op: 'eq' as const, value: props.runRecordId }] : [])
+])
 const columns: RunDataColumn[] = [
   { key: 'companyName' },
   { key: 'jobName' },
   { key: 'positionName' },
+  { key: 'firstSeenAt', minWidth: 165 },
+  { key: 'discoveryOrigin' },
+  { key: 'firstSeenRunId', defaultHidden: true },
+  { key: 'lastSeenAt', minWidth: 165, defaultHidden: true },
   { key: 'experienceName' },
   {
     key: 'salary',

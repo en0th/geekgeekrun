@@ -1,3 +1,4 @@
+import { deferred, type Deferred } from '../../../../common/utils/deferred'
 import { sendToast } from '../../../utils/toast'
 import { ipcMain, shell, app, dialog, BrowserWindow } from 'electron'
 import { initUxIpc } from '../../../features/ux-config'
@@ -57,6 +58,7 @@ import {
   queryAllRunData,
   getRunDataDistinctValues,
   getRunDataStats,
+  getJobSummary,
   deleteRunData,
   importRunData,
   listFavoriteFolders,
@@ -69,7 +71,7 @@ import {
 } from '../utils/db/index'
 import { pipeWriteRegardlessError } from '../../utils/pipe'
 import fs, { WriteStream } from 'node:fs'
-import { writeFile } from 'node:fs/promises'
+import { writeFileAtomic } from '@geekgeekrun/utils/atomic-json.mjs'
 import { randomUUID } from 'node:crypto'
 import {
   discardAutoChatResume,
@@ -113,7 +115,7 @@ import { ensureConfigFileExist } from '@geekgeekrun/geek-auto-start-chat-with-bo
 
 export default function initIpc() {
   initUxIpc()
-  ipcMain.handle('save-config-file-from-ui', async (ev, payload) => {
+  ipcMain.handle('save-config-file-from-ui', async (_ev, payload) => {
     payload = JSON.parse(payload)
     ensureConfigFileExist()
 
@@ -307,7 +309,7 @@ export default function initIpc() {
   })
   ipcMain.handle(
     'run-geek-auto-start-chat-with-boss',
-    async (ev, options?: { resume?: boolean }) => {
+    async (_ev, options?: { resume?: boolean }) => {
       const mode = 'geekAutoStartWithBossMain'
       let resumeRunRecordId: number | null = null
       if (options?.resume) {
@@ -584,6 +586,7 @@ export default function initIpc() {
   ipcMain.handle('run-data-stats', async (_, payload) =>
     getRunDataStats(await withTaskContext(payload))
   )
+  ipcMain.handle('run-data-job-summary', (_, payload) => getJobSummary(payload))
   ipcMain.handle('run-data-delete', (_, payload) => deleteRunData(payload))
   ipcMain.handle('run-data-import', (_, payload) => importRunData(payload))
   ipcMain.handle(
@@ -611,13 +614,13 @@ export default function initIpc() {
       if (canceled || !filePath) {
         return { canceled: true }
       }
-      await writeFile(filePath, content)
+      await writeFileAtomic(filePath, content)
       return { canceled: false, filePath }
     }
   )
   ipcMain.handle('show-item-in-folder', (_, filePath: string) => shell.showItemInFolder(filePath))
 
-  let subProcessOfOpenBossSiteDefer: null | PromiseWithResolvers<ChildProcess> = null
+  let subProcessOfOpenBossSiteDefer: null | Deferred<ChildProcess> = null
   let subProcessOfOpenBossSite: null | ChildProcess = null
   // replies of the BOSS site process to GREET_JOB, by request id
   const greetJobResolvers = new Map<string, (result: Record<string, unknown>) => void>()
@@ -628,7 +631,7 @@ export default function initIpc() {
       !subProcessOfOpenBossSite ||
       subProcessOfOpenBossSite.killed
     ) {
-      subProcessOfOpenBossSiteDefer = Promise.withResolvers()
+      subProcessOfOpenBossSiteDefer = deferred<ChildProcess>()
       let puppeteerExecutable = await getLastUsedAndAvailableBrowser()
       if (!puppeteerExecutable) {
         try {
@@ -748,7 +751,7 @@ export default function initIpc() {
       modal: true,
       show: true
     })
-    const defer = Promise.withResolvers()
+    const defer = deferred<void>()
     async function saveLlmConfigHandler(_, configToSave) {
       // the page only sees blanked keys; keep the saved ones it didn't replace
       await writeConfigFile('llm.json', restoreLlmSecrets(configToSave, readConfigFile('llm.json')))
@@ -771,7 +774,7 @@ export default function initIpc() {
       modal: true,
       show: true
     })
-    const defer = Promise.withResolvers()
+    const defer = deferred<void>()
     async function saveResumeHandler(_, resumeContent) {
       await writeConfigFile('resumes.json', [
         {

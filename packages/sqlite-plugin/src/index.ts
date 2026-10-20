@@ -1,4 +1,7 @@
 import { restoreLocalCooldowns } from './local-cooldown'
+import { createDetailWriter } from './detail-writer'
+import { observeJob } from './job-discovery'
+export { ensureJobDiscovery } from './job-discovery'
 import "reflect-metadata";
 import { type DataSource } from "typeorm";
 
@@ -42,6 +45,10 @@ import { AddJobHireStatusTable1766466476822 } from "./migrations/1766466476822-A
 import { AddFavoriteAndJobHireStatusLog1791100000000 } from "./migrations/1791100000000-AddFavoriteAndJobHireStatusLog";
 import { AddConfigSnapshotForRunRecord1791440000000 } from "./migrations/1791440000000-AddConfigSnapshotForRunRecord";
 import { AddJobCompanyBrandName1791740000000 } from "./migrations/1791740000000-AddJobCompanyBrandName";
+import { AddSalaryUnits1792454400000 } from './migrations/1792454400000-AddSalaryUnits'
+import { AddJobDiscovery1792454500000 } from './migrations/1792454500000-AddJobDiscovery'
+import { BackfillJobNatures1792454600000 } from './migrations/1792454600000-BackfillJobNatures'
+import { IndexAccountHistory1792454700000 } from './migrations/1792454700000-IndexAccountHistory'
 import { FavoriteFolder } from "./entity/FavoriteFolder";
 import { FavoriteJob } from "./entity/FavoriteJob";
 import { JobHireStatusLog } from "./entity/JobHireStatusLog";
@@ -89,7 +96,11 @@ export function initDb(dbFilePath) {
       AddJobHireStatusTable1766466476822,
       AddFavoriteAndJobHireStatusLog1791100000000,
       AddConfigSnapshotForRunRecord1791440000000,
-      AddJobCompanyBrandName1791740000000
+      AddJobCompanyBrandName1791740000000,
+      AddSalaryUnits1792454400000,
+      AddJobDiscovery1792454500000,
+      BackfillJobNatures1792454600000,
+      IndexAccountHistory1792454700000
     ],
     migrationsRun: true
   });
@@ -99,30 +110,42 @@ export function initDb(dbFilePath) {
 export default class SqlitePlugin {
   initPromise: Promise<DataSource>;
   runRecordId: number;
+  collectOnlyMatched: boolean;
 
-  constructor(dbFilePath) {
+  constructor(dbFilePath, { collectOnlyMatched = false } = {}) {
     this.initPromise = initDb(dbFilePath);
     this.runRecordId = minimist(process.argv.slice(2))['run-record-id'] ?? 0
+    this.collectOnlyMatched = collectOnlyMatched
   }
 
   userInfo = null
+  historyContext: any = null
 
   apply(hooks) {
+    if (this.collectOnlyMatched && !hooks.jobMatchedForCollection)
+      throw new Error('Matched-only collection requires the post-filter storage hook')
+    const saveDetail = createDetailWriter(async (detail) => {
+      const ds = await this.initPromise
+      await saveJobInfoFromRecommendPage(ds, detail, this.runRecordId)
+      await saveJobHireStatusRecord(ds, {
+        encryptJobId: detail.jobInfo.encryptId,
+        hireStatus: JobHireStatus.HIRING,
+        lastSeenDate: new Date()
+      })
+    }, 256, async (detail) => {
+      const ds = await this.initPromise
+      observeJob((ds.driver as any).databaseConnection, detail.jobInfo.encryptId, this.runRecordId)
+    })
     hooks.pageGotten.tap(
       'SqlitePlugin',
       (page) => {
+        if (this.collectOnlyMatched) return
         page.on('response', async (response) => {
-          const ds = await this.initPromise;
           if (response.url().startsWith('https://www.zhipin.com/wapi/zpgeek/job/detail.json')) {
-            const data = await response.json()
-            if (data.code === 0) {
-              await saveJobInfoFromRecommendPage(await ds, data.zpData)
-              await saveJobHireStatusRecord(await ds, {
-                encryptJobId: data.zpData.jobInfo.encryptId,
-                hireStatus: JobHireStatus.HIRING,
-                lastSeenDate: new Date()
-              })
-            }
+            try {
+              const data = await response.json()
+              if (data.code === 0) await saveDetail(data.zpData)
+            } catch (error) { console.error('保存网络捕获的岗位详情失败', error) }
           }
         })
       }
@@ -130,12 +153,13 @@ export default class SqlitePlugin {
     hooks.userInfoResponse.tapPromise(
       "SqlitePlugin",
       async ({ userInfoResponse }: { userInfoResponse?: any } = {}) => {
-        if (!userInfoResponse || userInfoResponse.code !== 0) {
+        if (!userInfoResponse || ![0, '0'].includes(userInfoResponse.code)) {
           return;
         }
         const { zpData: userInfo } = userInfoResponse;
+        if (typeof userInfo?.encryptUserId !== 'string' || !userInfo.encryptUserId.trim())
+          throw new Error('LOGIN_STATUS_UNKNOWN')
         this.userInfo = userInfo
-        console.log(userInfo);
 
         const ds = await this.initPromise;
         const userInfoRepository = ds.getRepository(UserInfo);
@@ -144,60 +168,34 @@ export default class SqlitePlugin {
         user.encryptUserId = userInfo.encryptUserId;
         user.name = userInfo.name;
 
-        return await userInfoRepository.save(user);
-      }
-    );
-    hooks.mainFlowWillLaunch.tapPromise(
-      "SqlitePlugin",
-      async ({
-        jobNotMatchStrategy,
-        jobNotActiveStrategy,
-        expectCityNotMatchStrategy,
-        expectSalaryNotMatchStrategy,
-        expectWorkExpNotMatchStrategy,
-        blockCompanyNameRegMatchStrategy,
-        posterHrNotMatchStrategy,
-        blockJobNotSuit,
-        blockBossNotActive,
-        blockBossNotNewChat
-      }) => {
-        {
-          const ds = await this.initPromise;
-          const records = (await getNotSuitMarkRecordsInLastSomeDays(ds, 7)) ?? [];
-          restoreLocalCooldowns(records, { jobNotMatchStrategy, jobNotActiveStrategy,
-            expectCityNotMatchStrategy, expectSalaryNotMatchStrategy, expectWorkExpNotMatchStrategy,
-            blockCompanyNameRegMatchStrategy, posterHrNotMatchStrategy }, blockJobNotSuit);
-          const last30DayChatStartupRecords = (await getChatStartupRecordsInLastSomeDays(ds, 30)) ?? [];
-          const chattedJobIds = last30DayChatStartupRecords.map(it => it.encryptJobId)
-          if (chattedJobIds.length === 0) {
-            return
-          }
-          const chattedJobIdChunks = chunk(chattedJobIds, 200)
-          const chattedBossIds = [];
-          for (const chattedJobIdChunk of chattedJobIdChunks) {
-            const chattedBossIdChunk = ((await getBossIdsByJobIds(ds, chattedJobIdChunk)) ?? []).map(it => it.encryptBossId)
-            chattedBossIds.push(...chattedBossIdChunk)
-          }
-          for (const id of chattedBossIds) {
-            blockBossNotNewChat.add(id)
+        await userInfoRepository.save(user);
+        if (!this.historyContext) return
+        const { blockJobNotSuit, blockBossNotNewChat, ...strategies } = this.historyContext
+        const records = await getNotSuitMarkRecordsInLastSomeDays(ds, 7, user.encryptUserId)
+        restoreLocalCooldowns(records, strategies, blockJobNotSuit)
+        const chats = await getChatStartupRecordsInLastSomeDays(ds, 30, user.encryptUserId)
+        const ids = [...new Set(chats.map(record => record.encryptJobId).filter(Boolean))]
+        for (const jobIds of chunk(ids, 200)) {
+          for (const boss of await getBossIdsByJobIds(ds, jobIds)) {
+            if (boss.encryptBossId) blockBossNotNewChat.add(boss.encryptBossId)
           }
         }
       }
     );
+    hooks.mainFlowWillLaunch.tapPromise(
+      "SqlitePlugin",
+      async (context) => {
+        this.userInfo = null
+        this.historyContext = context
+      }
+    );
 
-    hooks.jobDetailIsGetFromRecommendList.tapPromise("SqlitePlugin", async (_jobInfo) => {
-      const ds = await this.initPromise;
-      await saveJobInfoFromRecommendPage(ds, _jobInfo);
-    });
-
-    hooks.jobDetailIsGetFromRecommendList.tapPromise("SqlitePlugin", async ({ jobInfo }) => {
-      const ds = await this.initPromise;
-      return await saveJobHireStatusRecord(ds, {
-        encryptJobId: jobInfo.encryptId,
-        hireStatus: JobHireStatus.HIRING,
-        lastSeenDate: new Date()
-      });
-    });
+    hooks.jobDetailIsGetFromRecommendList.tapPromise('SqlitePlugin',
+      this.collectOnlyMatched ? async () => {} : saveDetail)
+    if (this.collectOnlyMatched) hooks.jobMatchedForCollection.tapPromise('SqlitePlugin', saveDetail)
+    hooks.newChatWillStartup.tapPromise('SqlitePlugin', async () => {
+      if (!this.userInfo?.encryptUserId) throw new Error('LOGIN_STATUS_UNKNOWN')
+    })
 
     hooks.newChatStartup.tapPromise("SqlitePlugin", async (_jobInfo, { chatStartupFrom = ChatStartupFrom.AutoFromRecommendList, jobSource = undefined } = {}) => {
       const ds = await this.initPromise;

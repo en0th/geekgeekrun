@@ -2,26 +2,28 @@ import { JobSource } from "../enums";
 import * as typeorm from 'typeorm';
 const { Entity, Column, PrimaryGeneratedColumn } = typeorm
 
-export enum ChatStartupFrom {
-  AutoFromRecommendList = null,
-  ManuallyFromRecommendList = 1
-}
+export const ChatStartupFrom = {
+  AutoFromRecommendList: null,
+  ManuallyFromRecommendList: 1
+} as const
+export type ChatStartupFrom = typeof ChatStartupFrom[keyof typeof ChatStartupFrom]
 
 @Entity()
 export class ChatStartupLog {
   @PrimaryGeneratedColumn()
-  id: number;
+  id!: number;
 
   @Column()
-  encryptJobId: string;
+  encryptJobId!: string;
 
   @Column()
-  encryptCurrentUserId: string;
+  encryptCurrentUserId!: string;
 
   @Column()
-  date: Date;
+  date!: Date;
 
   @Column({
+    type: 'integer',
     nullable: true
   })
   chatStartupFrom?: ChatStartupFrom;

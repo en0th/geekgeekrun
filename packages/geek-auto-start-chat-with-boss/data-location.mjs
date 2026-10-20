@@ -4,6 +4,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
+import { writeJsonAtomicSync } from '@geekgeekrun/utils/atomic-json.mjs'
 
 export const runtimeFolderPath =
   process.env.GEEKGEEKRUN_RUNTIME_DIR || path.join(os.homedir(), '.geekgeekrun')
@@ -13,10 +14,13 @@ export const dataLocationFilePath = path.join(runtimeFolderPath, 'data-location.
 export function readDataLocation() {
   try {
     const saved = JSON.parse(fs.readFileSync(dataLocationFilePath, 'utf8'))
+    if (!saved || typeof saved !== 'object' || Array.isArray(saved) || typeof saved.storageDir !== 'string' ||
+      (saved.storageDir.trim() && !path.isAbsolute(saved.storageDir.trim()))) throw new Error('Invalid data location')
     const storageDir = typeof saved?.storageDir === 'string' ? saved.storageDir.trim() : ''
     return { storageDir: storageDir && path.isAbsolute(storageDir) ? path.normalize(storageDir) : '' }
-  } catch {
-    return { storageDir: '' }
+  } catch (error) {
+    if (error.code === 'ENOENT') return { storageDir: '' }
+    throw Object.assign(new Error('无法读取 data-location.json；原文件已保留，请修正或从备份恢复，未切换数据目录'), { code: 'GGR_DATA_LOCATION_INVALID' })
   }
 }
 
@@ -37,9 +41,10 @@ export function resolveStorageFolder() {
 }
 
 export function writeDataLocation(storageDir) {
+  if (storageDir && (typeof storageDir !== 'string' || !path.isAbsolute(storageDir))) throw new Error('数据目录必须是完整路径')
   fs.mkdirSync(runtimeFolderPath, { recursive: true })
   const value = !storageDir || path.normalize(storageDir) === defaultStorageFolderPath ? '' : path.normalize(storageDir)
-  fs.writeFileSync(dataLocationFilePath, JSON.stringify({ storageDir: value }))
+  writeJsonAtomicSync(dataLocationFilePath, { storageDir: value })
 }
 
 // files that belong to one run of the app and must not be carried to a new folder
