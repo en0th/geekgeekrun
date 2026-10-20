@@ -17,11 +17,18 @@ import {
   type RunDataStatsRes
 } from '../../../../../../common/run-data'
 import { PagedRes } from '../../../../../../common/types/pagination'
+import { parseSalaryDetails, explicitJobNature } from '@geekgeekrun/utils/job-values.cjs'
+import { ensureJobDiscovery } from '@geekgeekrun/sqlite-plugin'
+import { summarizeJobs } from './job-summary'
+import type { JobSummary } from '../../../../../../common/job-summary'
+import { nowDbDate } from './db-date'
+export { nowDbDate } from './db-date'
 
 // the subset of the better-sqlite3 API used here (no @types package installed)
 interface Statement {
   get(...params: unknown[]): unknown
   all(...params: unknown[]): unknown[]
+  iterate(...params: unknown[]): Iterable<unknown>
   run(...params: unknown[]): { changes: number }
 }
 export interface Db {
@@ -31,6 +38,9 @@ export interface Db {
 type Row = Record<string, unknown>
 
 const jobColumns = `
+    j.salaryDesc, j.salaryUnit, j.salaryAmountLow, j.salaryAmountHigh, j.jobNatureName,
+    c.scaleLow AS companyScaleLow, c.scaleHigh AS companyScaleHigh,
+    c.industryName AS companyIndustryName, c.stageName AS companyStageName,
     j.jobName, j.positionName, j.salaryLow, j.salaryHigh, j.salaryMonth, j.experienceName,
     j.publishDate, j.degreeName, j.address, j.description, j.encryptBossId, j.encryptCompanyId`
 
@@ -56,9 +66,11 @@ const baseSql: Record<RunDataDatasetKey, string> = {
     LEFT JOIN company_info c ON c.encryptCompanyId = j.encryptCompanyId`,
   jobLibrary: `SELECT
     j.rowid AS _rowid, j.encryptJobId, ${jobColumns},
+    d.firstSeenAt, d.firstSeenRunId, d.origin AS discoveryOrigin, d.lastSeenAt,
     b.name AS bossName, b.title AS bossTitle, c.name AS companyName,
     h.hireStatus, h.lastSeenDate AS hireStatusCheckedAt, ch.chattedAt
   FROM job_info j
+    LEFT JOIN job_discovery d ON d.encryptJobId = j.encryptJobId
     LEFT JOIN boss_info b ON b.encryptBossId = j.encryptBossId
     LEFT JOIN company_info c ON c.encryptCompanyId = j.encryptCompanyId
     LEFT JOIN job_hire_status_record h ON h.encryptJobId = j.encryptJobId
@@ -68,6 +80,7 @@ const baseSql: Record<RunDataDatasetKey, string> = {
   favoriteJobs: `SELECT
     f.id, f.folderId, f.encryptJobId, f.createdAt AS favoritedAt, ff.name AS folderName,
     ${jobColumns},
+    d.firstSeenAt, d.firstSeenRunId, d.origin AS discoveryOrigin, d.lastSeenAt,
     b.name AS bossName, b.title AS bossTitle, c.name AS companyName,
     h.hireStatus, h.lastSeenDate AS hireStatusCheckedAt,
     (SELECT MAX(l.checkedAt) FROM job_hire_status_log l
@@ -75,6 +88,7 @@ const baseSql: Record<RunDataDatasetKey, string> = {
   FROM favorite_job f
     JOIN favorite_folder ff ON ff.id = f.folderId
     LEFT JOIN job_info j ON j.encryptJobId = f.encryptJobId
+    LEFT JOIN job_discovery d ON d.encryptJobId = f.encryptJobId
     LEFT JOIN boss_info b ON b.encryptBossId = j.encryptBossId
     LEFT JOIN company_info c ON c.encryptCompanyId = j.encryptCompanyId
     LEFT JOIN job_hire_status_record h ON h.encryptJobId = f.encryptJobId`,
@@ -200,6 +214,14 @@ function buildFilterSql(dataset: RunDataDatasetKey, filter: RunDataFilter, param
 function buildWhere(query: RunDataQuery, params: unknown[], excludeField?: string) {
   const def = getDataset(query.dataset)
   const clauses: string[] = []
+  const jobRunId = (query.context as { jobRunId?: unknown } | undefined)?.jobRunId
+  if (jobRunId !== undefined) {
+    const id = Number(jobRunId)
+    if (query.dataset !== 'jobLibrary' || !Number.isSafeInteger(id) || id <= 0)
+      throw new Error('无效的岗位采集任务编号')
+    clauses.push('EXISTS (SELECT 1 FROM job_run_observation o WHERE o.runRecordId = ? AND o.encryptJobId = t.encryptJobId)')
+    params.push(id)
+  }
   const tokens = (query.keyword ?? '').trim().split(/\s+/).filter(Boolean)
   const searchable = def.fields.filter((it) => it.searchable)
   for (const token of tokens) {
@@ -272,6 +294,25 @@ export function getRunDataDistinctValues(db: Db, req: RunDataDistinctReq): RunDa
        GROUP BY ${c} ORDER BY count DESC LIMIT ?`
     )
     .all(...params, limit) as RunDataDistinctItem[]
+}
+
+// Bound text processing in the worker. Filters run before de-duplication and sampling;
+// favourites in multiple folders still contribute one job to the summary.
+export const JOB_SUMMARY_LIMIT = 5000
+export function getJobSummary(db: Db, query: RunDataQuery): JobSummary {
+  if (!['jobLibrary', 'favoriteJobs'].includes(query.dataset)) throw new Error('此数据表不支持岗位摘要')
+  const params: unknown[] = []
+  const where = buildWhere(query, params)
+  const from = fromSql(query.dataset)
+  return db.transaction(() => {
+    const { total } = db.prepare(`SELECT COUNT(DISTINCT t.encryptJobId) AS total ${from} ${where}`).get(...params) as { total: number }
+    const rows = db.prepare(`SELECT t.encryptJobId,
+      substr(t.description, 1, 50000) AS description, t.firstSeenAt, t.discoveryOrigin,
+      length(t.description) > 50000 AS textTruncated
+      ${from} ${where} GROUP BY t.encryptJobId ORDER BY t.firstSeenAt DESC, t.encryptJobId LIMIT ?`)
+      .iterate(...params, JOB_SUMMARY_LIMIT) as Parameters<typeof summarizeJobs>[0]
+    return summarizeJobs(rows, total, JOB_SUMMARY_LIMIT)
+  })()
 }
 
 function groupExpr(dataset: RunDataDatasetKey, group: RunDataStatsGroup, params: unknown[]) {
@@ -407,7 +448,6 @@ const num = (v: unknown) => {
   const n = Number(v)
   return Number.isFinite(n) ? n : null
 }
-export const nowDbDate = () => new Date().toISOString().replace('T', ' ').replace('Z', '')
 
 // spreadsheet round trips turn \r\n into \n and numbers into strings; neither counts as a change
 function sameValue(a: unknown, b: unknown) {
@@ -475,6 +515,10 @@ function upsertBoss(db: Db, id: unknown, values: Record<string, unknown>, insert
 }
 
 function upsertJobFromRow(db: Db, row: Row, insertOnly = false) {
+  const salary = typeof row.salaryDesc === 'string' && row.salaryDesc.trim() ? parseSalaryDetails(row.salaryDesc) : null
+  const legacyLow = num(row.salaryLow), legacyHigh = num(row.salaryHigh)
+  // Import metadata from another database cannot identify this database's task runs.
+  ensureJobDiscovery(db, key(row.encryptJobId)!, 'import')
   return upsert(
     db,
     'job_info',
@@ -483,9 +527,20 @@ function upsertJobFromRow(db: Db, row: Row, insertOnly = false) {
       encryptJobId: key(row.encryptJobId),
       jobName: str(row.jobName),
       positionName: str(row.positionName),
-      salaryLow: num(row.salaryLow),
-      salaryHigh: num(row.salaryHigh),
-      salaryMonth: num(row.salaryMonth),
+      ...(salary ? {
+        salaryDesc: salary.raw, salaryUnit: salary.unit,
+        salaryAmountLow: salary.low, salaryAmountHigh: salary.high,
+        // Never import daily/hourly values into the legacy monthly columns.
+        salaryLow: salary.unit === 'month' && salary.low != null ? salary.low / 1000 : null,
+        salaryHigh: salary.unit === 'month' && salary.high != null ? salary.high / 1000 : null,
+        salaryMonth: salary.month
+      } : {
+        salaryLow: legacyLow, salaryHigh: legacyHigh, salaryMonth: num(row.salaryMonth),
+        salaryDesc: null, salaryUnit: legacyLow != null || legacyHigh != null ? 'month' : null,
+        salaryAmountLow: legacyLow == null ? null : legacyLow * 1000,
+        salaryAmountHigh: legacyHigh == null ? null : legacyHigh * 1000
+      }),
+      ...(Object.hasOwn(row, 'jobNatureName') ? { jobNatureName: explicitJobNature(row) } : {}),
       experienceName: str(row.experienceName),
       publishDate: key(row.publishDate),
       degreeName: str(row.degreeName),

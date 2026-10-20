@@ -249,7 +249,8 @@ interface LlmConfigItem {
   providerApiSecret: string
   model: string
   serveWeight: number
-  enabled: true
+  enabled: boolean
+  hasProviderApiSecret?: boolean
 }
 
 

@@ -22,7 +22,16 @@ on:
       - master
 
 jobs:
+  verify:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/quality-checks.yml
+    with:
+      ref: ${{ github.sha }}
+      artifact_prefix: pre-release
+
   prepare:
+    needs: verify
     # the version commit pushed below must not start another release
     if: ${{ !startsWith(github.event.head_commit.message, 'ui-v') }}
     runs-on: ubuntu-latest
@@ -42,7 +51,8 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
         with:
-          ref: master
+          # Release the checked commit; a newer master must pass its own checks.
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Setup Node.js

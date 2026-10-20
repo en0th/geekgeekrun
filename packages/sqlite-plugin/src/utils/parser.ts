@@ -1,80 +1,19 @@
-export const parseCompanyScale = (str: string): [number| null, number | null] => {
-  if (!str) {
-    return [null, null]
-  }
+import { parseSalaryDetails, parseCompanySize } from '@geekgeekrun/utils/job-values.cjs'
+export { parseSalaryDetails }
 
-  const betweenRangeMatchResult = str.match(
-    /(\d+)-(\d+)人/
-  );
-  if (betweenRangeMatchResult) {
-    const arr = [...betweenRangeMatchResult];
-    arr.shift();
-    return arr.map(Number) as [number, number]
-  }
-
-  const gtRangeMatchResult = str.match(
-    /(\d+)人以上/
-  );
-  if (gtRangeMatchResult) {
-    const arr = [...gtRangeMatchResult];
-    arr.shift();
-    return [Number(arr[0]), null]
-  }
-
-  return [null, null]
-}
+export const parseCompanyScale = (str: string): [number | null, number | null] => parseCompanySize(str)
 
 export function formatCompanyScale(low, high) {
-  if (low === null && high === null) {
-    return ''
-  }
-  if (low === null && high !== null) {
-    return `${high}人以下`
-  }
-  if (low !== null && high === null) {
-    return `${low}人以上`
-  }
+  if (low === null && high === null) return ''
+  if (low === null && high !== null) return `${high}人以下`
+  if (low !== null && high === null) return `${low}人以上`
   return `${low}-${high}人`
 }
 
-export const parseSalary = (str: string): { low: null | number, high: null | number, month: null | number } => {
-  const result = {
-    high: null,
-    low: null,
-    month: null
-  }
-  if (!str) {
-    return result
-  }
-
-  const baseMatchResult = str.match(
-    /([\.\d]+)-([\.\d]+)k/i
-  );
-  if (baseMatchResult) {
-    const arr = [...baseMatchResult];
-    arr.shift();
-    Object.assign(
-      result,
-      {
-        low: Number(arr[0]),
-        high: Number(arr[1]),
-      }
-    )
-  }
-
-  const month = str.match(
-    /([\.\d]+)薪/
-  )
-  if (month) {
-    const arr = [...month];
-    arr.shift();
-    Object.assign(
-      result,
-      {
-        month: Number(arr[0])
-      }
-    )
-  }
-
-  return result
+// Legacy monthly columns and charts remain K/month; other periods stay out of them.
+export const parseSalary = (str: string): { low: number | null, high: number | null, month: number | null } => {
+  const salary = parseSalaryDetails(str)
+  return salary.status === 'parsed' && salary.unit === 'month' && salary.low !== null && salary.high !== null
+    ? { low: salary.low / 1000, high: salary.high / 1000, month: salary.month }
+    : { low: null, high: null, month: null }
 }

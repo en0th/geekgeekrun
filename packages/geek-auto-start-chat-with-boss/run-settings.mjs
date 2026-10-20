@@ -1,6 +1,6 @@
 // User-adjustable run settings shared by the auto-chat run and the settings UI.
 
-// 兼职、日结、实习 etc. have salaries that can't be parsed; skipped unless the user opts in
+// Negotiable or unrecognized pay is skipped unless the user opts in. Daily/hourly pay is parsed.
 export const DEFAULT_SKIP_UNPARSEABLE_SALARY_JOB = true
 
 // pace between actions; lower values run faster but make BOSS rate limiting more likely
@@ -25,6 +25,31 @@ export const DEFAULT_PER_SOURCE_SUCCESS_LIMIT = 20
 export const DEFAULT_NO_MATCH_STREAK_LIMIT = 30
 const MAX_ROTATION_LIMIT = 9999
 
+export const DEFAULT_RUN_BUDGET = Object.freeze({ requests: 500, detailRequests: 200, activeMinutes: 120 })
+export const MAX_RUN_BUDGET = Object.freeze({ requests: 100000, detailRequests: 100000, activeMinutes: 10080 })
+export function normalizeRunBudget(value = {}) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('运行预算配置无效')
+  const result = {}
+  for (const key of Object.keys(DEFAULT_RUN_BUDGET)) {
+    const raw = value[key]
+    if (raw === undefined || raw === null || raw === '') { result[key] = DEFAULT_RUN_BUDGET[key]; continue }
+    const number = Number(raw)
+    if (!['number', 'string'].includes(typeof raw) || !String(raw).trim() || !Number.isSafeInteger(number) || number < 0 || number > MAX_RUN_BUDGET[key])
+      throw new Error('运行预算须为范围内的非负整数，0 表示不限制')
+    result[key] = number
+  }
+  return result
+}
+
+export const DEFAULT_FILTER_COMBINATION_LIMIT = 100
+export const MAX_FILTER_COMBINATION_LIMIT = 10000
+export function filterCombinationLimit(value) {
+  if (typeof value !== 'number' && typeof value !== 'string') return DEFAULT_FILTER_COMBINATION_LIMIT
+  const number = Number(value)
+  return Number.isSafeInteger(number) && number >= 1
+    ? Math.min(number, MAX_FILTER_COMBINATION_LIMIT) : DEFAULT_FILTER_COMBINATION_LIMIT
+}
+
 function rotationLimit(value, fallback) {
   if (value === null || value === undefined || value === '') return fallback
   const n = Number(value)
@@ -34,6 +59,9 @@ function rotationLimit(value, fallback) {
 
 export function readRunSettings(bossConfig = {}) {
   return {
+    runInBackground: bossConfig.autoChatRunInBackground !== false,
+    runBudget: normalizeRunBudget(bossConfig.autoChatRunBudget),
+    filterCombinationLimit: filterCombinationLimit(bossConfig.autoChatFilterCombinationLimit),
     runMode: RUN_MODES.includes(bossConfig.autoChatRunMode) ? bossConfig.autoChatRunMode : DEFAULT_RUN_MODE,
     collectOnlyMatchingJobs:
       typeof bossConfig.collectOnlyMatchingJobs === 'boolean'

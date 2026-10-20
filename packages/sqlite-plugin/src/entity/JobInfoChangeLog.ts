@@ -4,14 +4,14 @@ const { Entity, PrimaryGeneratedColumn, Column } = typeorm
 @Entity()
 export class JobInfoChangeLog {
   @PrimaryGeneratedColumn()
-  id: number;
+  id!: number;
 
   @Column()
-  encryptJobId: string;
+  encryptJobId!: string;
 
   @Column()
-  updateTime: Date;
+  updateTime!: Date;
 
   @Column()
-  dataAsJson: string;
+  dataAsJson!: string;
 }

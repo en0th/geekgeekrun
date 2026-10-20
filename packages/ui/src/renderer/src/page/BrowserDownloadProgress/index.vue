@@ -24,7 +24,7 @@ import { EXPECT_CHROMIUM_BUILD_ID } from '../../../../common/constant'
 
 
 const browserDownloadPercentage = ref(0)
-const handleBrowserDownloadProgress = (ev, { downloadedBytes, totalBytes }) => {
+const handleBrowserDownloadProgress = (_ev, { downloadedBytes, totalBytes }) => {
   browserDownloadPercentage.value = (downloadedBytes / totalBytes) * 100
 }
 electron.ipcRenderer.on('PUPPETEER_DOWNLOAD_PROGRESS', handleBrowserDownloadProgress)

@@ -74,6 +74,7 @@ const payloadHandler = {
   getRunDataDistinctValues: (payload) =>
     runData.getRunDataDistinctValues(withTaskRuns(payload), payload),
   getRunDataStats: (payload) => runData.getRunDataStats(withTaskRuns(payload), payload),
+  getJobSummary: (payload) => runData.getJobSummary(getRawDb(), payload),
   deleteRunData: (payload) => runData.deleteRunData(getRawDb(), payload),
   importRunData: (payload) => runData.importRunData(getRawDb(), payload),
   listFavoriteFolders: () => favorites.listFavoriteFolders(getRawDb()),

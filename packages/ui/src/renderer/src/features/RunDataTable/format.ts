@@ -44,6 +44,8 @@ export function enumLabel(field: RunDataField, v: unknown) {
 
 export function formatFieldValue(field: RunDataField | undefined, v: unknown) {
   if (!field) return isBlank(v) ? '' : String(v)
+  if (field.key === 'discoveryOrigin') return ({ capture: '采集', import: '导入', legacy: '历史存量' })[String(v)] || (isBlank(v) ? '' : String(v))
+  if (field.key === 'salaryUnit') return ({ month: '月薪', year: '年薪', day: '日薪', hour: '时薪' })[String(v)] || (isBlank(v) ? '' : String(v))
   switch (field.type) {
     case 'date':
       return formatDbDate(v)
@@ -55,6 +57,6 @@ export function formatFieldValue(field: RunDataField | undefined, v: unknown) {
 }
 
 export const formatSalary = (row: Record<string, unknown>) =>
-  isBlank(row.salaryLow) && isBlank(row.salaryHigh)
+  !isBlank(row.salaryDesc) ? String(row.salaryDesc) : isBlank(row.salaryLow) && isBlank(row.salaryHigh)
     ? ''
     : `${row.salaryLow}-${row.salaryHigh}k` + (row.salaryMonth ? ` * ${row.salaryMonth}薪` : '')

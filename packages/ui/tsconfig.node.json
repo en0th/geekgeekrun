@@ -3,6 +3,8 @@
   "include": ["electron.vite.config.*", "src/main/**/*", "src/preload/**/*", "src/common/**/*"],
   "compilerOptions": {
     "composite": true,
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "experimentalDecorators": true,
     "types": ["electron-vite/node"]
   }
 }

@@ -1,4 +1,4 @@
-export const checkCookieListFormat = (cookies: Array<Record<string, string>>) => {
+export const checkCookieListFormat = (cookies: unknown): boolean => {
   const allExpectKeySet = new Set([
     'name',
     'value',
@@ -9,8 +9,9 @@ export const checkCookieListFormat = (cookies: Array<Record<string, string>>) =>
     'httpOnly'
   ])
   return Array.isArray(cookies) &&
-    cookies.length &&
+    cookies.length > 0 &&
     cookies.every((it) => {
+      if (!it || typeof it !== 'object') return false
       const currentOwnedKeySet = new Set(Object.keys(it))
       if (currentOwnedKeySet.size < allExpectKeySet.size) {
         return false

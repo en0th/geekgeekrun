@@ -1,3 +1,4 @@
+import type { BossVueElement, BossConversation, BossChatScroller, BossChatMessage } from '../types/boss-page'
 import { bootstrap, launchBoss } from './bootstrap'
 import { MsgStatus, type ChatListItem } from './types'
 import { Browser, Page } from 'puppeteer'
@@ -18,6 +19,7 @@ import {
 } from '@geekgeekrun/sqlite-plugin/dist/handlers'
 import {
   writeStorageFile,
+  writeBossSession,
   readStorageFile
 } from '@geekgeekrun/geek-auto-start-chat-with-boss/runtime-file-utils.mjs'
 import { BossInfo } from '@geekgeekrun/sqlite-plugin/dist/entity/BossInfo'
@@ -43,6 +45,7 @@ import { configWithBrowserAssistant } from '../../features/config-with-browser-a
 import { DEFAULT_CONSTANT_OPEN_CONTENT_SEGS } from '../../../common/constant'
 import { createTaskProgress } from '../../features/task-progress'
 import { yieldIfRequested } from '../../features/task-queue'
+import { isJsonStorageError } from '@geekgeekrun/utils/atomic-json.mjs'
 const taskProgress = createTaskProgress()
 
 process.on('SIGTERM', () => {
@@ -190,8 +193,8 @@ async function saveCurrentChatRecord(page) {
     mappedItem.text = it.text
     if (it.type === 'image') {
       mappedItem.imageUrl = it.image?.originImage?.url
-      mappedItem.imageHeight = it.image?.originImage?.url?.height
-      mappedItem.imageWidth = it.image?.originImage?.url?.width
+      mappedItem.imageHeight = it.image?.originImage?.height
+      mappedItem.imageWidth = it.image?.originImage?.width
     }
 
     return mappedItem
@@ -202,8 +205,8 @@ async function saveCurrentChatRecord(page) {
 
 async function checkJobIsClosed() {
   const encryptJobId = await pageMapByName.boss!.evaluate(() => {
-    return document.querySelector('.chat-conversation .chat-im.chat-editor')?.__vue__?.conversation$
-      .encryptJobId
+    return document.querySelector<BossVueElement<{ conversation$: BossConversation }>>('.chat-conversation .chat-im.chat-editor')?.__vue__?.conversation$
+      ?.encryptJobId
   })
   if (!encryptJobId) {
     return false
@@ -307,11 +310,6 @@ const mainLoop = async () => {
   let cookieCheckResult = checkCookieListFormat(bossCookies)
   while (!cookieCheckResult) {
     try {
-      browser && (await browser.close())
-    } catch (err) {
-      console.log(`close browser failed`, err)
-    }
-    try {
       try {
         await app.dock?.show()
         await loginWithCookieAssistant()
@@ -355,8 +353,9 @@ const mainLoop = async () => {
     '附件简历还没准备好',
     '设置合适的期望薪资范围'
   ].map((it) => new RegExp(it))
-  browser = await bootstrap()
-  await Promise.all([launchBoss(browser)])
+  const activeBrowser: Browser = await bootstrap()
+  browser = activeBrowser
+  await Promise.all([launchBoss(activeBrowser)])
 
   await sleep(1000)
   pageMapByName.boss!.bringToFront()
@@ -365,7 +364,7 @@ const mainLoop = async () => {
   const currentPageUrl = pageMapByName.boss!.url() ?? ''
   // #region
   if (currentPageUrl.startsWith('https://www.zhipin.com/web/user/')) {
-    writeStorageFile('boss-cookies.json', [])
+    await writeStorageFile('boss-cookies.json', [])
     try {
       browser && (await browser.close())
     } catch (err) {
@@ -488,14 +487,12 @@ const mainLoop = async () => {
       await browser?.close().catch(() => void 0)
     })
     await pageMapByName.boss?.waitForFunction(() => {
-      return Array.isArray(document.querySelector('.main-wrap .chat-user')?.__vue__?.list)
+      return Array.isArray(document.querySelector<BossVueElement<{ list: ChatListItem[] }>>('.main-wrap .chat-user')?.__vue__?.list)
     })
     // find target boss - with unread icon, or recommend system message
-    const friendListData = (await pageMapByName.boss!.evaluate(
-      `
-        document.querySelector('.main-wrap .chat-user')?.__vue__?.list
-      `
-    )) as Array<ChatListItem>
+    const friendListData = await pageMapByName.boss!.evaluate(() =>
+      document.querySelector<BossVueElement<{ list: ChatListItem[] }>>('.main-wrap .chat-user')?.__vue__?.list ?? []
+    )
     const toCheckItemAtIndex = friendListData.findIndex((it, index) => {
       return (
         index >= cursorToContinueFind &&
@@ -527,7 +524,7 @@ const mainLoop = async () => {
         await pageMapByName.boss?.evaluate(() => {
           ;(() => {
             document
-              .querySelector('.chat-content .user-list .user-list-content')
+              .querySelector<BossVueElement<BossChatScroller>>('.chat-content .user-list .user-list-content')
               ?.__vue__.scrollToIndex(0)
           })()
         })
@@ -538,7 +535,7 @@ const mainLoop = async () => {
         await pageMapByName.boss?.evaluate(() => {
           ;(() => {
             document
-              .querySelector('.chat-content .user-list .user-list-content')
+              .querySelector<BossVueElement<BossChatScroller>>('.chat-content .user-list .user-list-content')
               ?.__vue__.scrollToBottom()
           })()
         })
@@ -550,7 +547,7 @@ const mainLoop = async () => {
       await pageMapByName.boss?.evaluate((toCheckItemAtIndex) => {
         ;(() => {
           document
-            .querySelector('.chat-content .user-list .user-list-content')
+            .querySelector<BossVueElement<BossChatScroller>>('.chat-content .user-list .user-list-content')
             ?.__vue__.scrollToIndex(toCheckItemAtIndex)
         })()
       }, toCheckItemAtIndex)
@@ -559,7 +556,7 @@ const mainLoop = async () => {
       const targetElProxy = await (async () => {
         const jsHandle = (
           await pageMapByName.boss?.evaluateHandle((encryptJobId) => {
-            const jobLiEls = document.querySelectorAll(
+            const jobLiEls = document.querySelectorAll<BossVueElement<{ source: { encryptJobId: string } }>>(
               '.main-wrap .chat-user .user-list-content ul[role=group] li[role=listitem]'
             )
             return [...jobLiEls].find((it) => {
@@ -567,7 +564,7 @@ const mainLoop = async () => {
             })
           }, friendListData[toCheckItemAtIndex].encryptJobId)
         )?.asElement()
-        return jsHandle
+        return jsHandle ? await jsHandle.toElement('li') : null
       })()
       await targetElProxy?.click()
       await pageMapByName.boss!.waitForResponse((response) => {
@@ -583,7 +580,7 @@ const mainLoop = async () => {
     if (onlyRemindBossWithExpectJobType) {
       const selectedFriendInfo = await pageMapByName.boss?.evaluate(
         `document.querySelector('.chat-conversation')?.__vue__?.selectedFriend$`
-      )
+      ) as { positionName?: string } | null
       if (!selectedFriendInfo) {
         isExpectJobTypeMatch = false
       } else {
@@ -598,12 +595,12 @@ const mainLoop = async () => {
     }
     const conversationInfo = await pageMapByName.boss?.evaluate(
       `document.querySelector('.chat-conversation .chat-im.chat-editor')?.__vue__?.conversation$`
-    )
+    ) as BossConversation | null
 
     const historyMessageList =
       (
         await pageMapByName.boss?.evaluate(() => {
-          return document.querySelector('.message-content .chat-record')?.__vue__?.list$ ?? []
+          return document.querySelector<BossVueElement<{ list$: BossChatMessage[] }>>('.message-content .chat-record')?.__vue__?.list$ ?? []
         })
       )?.filter(messageForSaveFilter) ?? []
 
@@ -684,8 +681,8 @@ const runRecordId = minimist(process.argv.slice(2))['run-record-id'] ?? null
 export async function runEntry() {
   app.dock?.hide()
   await app.whenReady()
-  app.on('window-all-closed', (e) => {
-    e.preventDefault()
+  app.on('window-all-closed', () => {
+    // Background tasks continue after auxiliary windows close.
   })
   initPublicIpc()
   await connectToDaemon()
@@ -755,6 +752,11 @@ export async function runEntry() {
         await pageMapByName['boss']?.close()
       } catch {
         //
+      }
+      if (isJsonStorageError(err)) {
+        taskProgress.update(undefined, (err as Error).message, 'blocked')
+        app.exit(AUTO_CHAT_ERROR_EXIT_CODE.JSON_STORAGE_UNAVAILABLE)
+        return
       }
       const shouldExit = await checkShouldExit()
       if (shouldExit) {
@@ -827,8 +829,5 @@ async function storeStorage(page) {
       })
       .then((res) => JSON.parse(res))
   ])
-  return Promise.all([
-    writeStorageFile('boss-cookies.json', cookies),
-    writeStorageFile('boss-local-storage.json', localStorage)
-  ])
+  return writeBossSession({ cookies, localStorage })
 }

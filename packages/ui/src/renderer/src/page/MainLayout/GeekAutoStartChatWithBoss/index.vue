@@ -181,11 +181,22 @@
                         v-if="anyCombineBossRecommendFilterHasCondition"
                         v-model="formContent.isSkipEmptyConditionForCombineRecommendJobFilter"
                       >
-                        <span font-size-12px>跳过初始空条件，直接使用设置的条件查找职位</span>
+                        <span font-size-12px>跳过所有筛选都不限的组合</span>
                       </el-checkbox>
                       <el-checkbox v-else :model-value="false" disabled>
-                        <span font-size-12px>跳过初始空条件，直接使用设置的条件查找职位</span>
+                        <span font-size-12px>跳过所有筛选都不限的组合</span>
                       </el-checkbox>
+                    </div>
+                    <div mt8px font-size-12px>
+                      每个来源最多查看
+                      <el-input-number
+                        v-model="formContent.autoChatFilterCombinationLimit"
+                        :min="1"
+                        :max="MAX_FILTER_COMBINATION_LIMIT"
+                        :precision="0"
+                        size="small"
+                      />
+                      种组合；优先已选条件，达到上限后换源。固定组合不受此上限限制。
                     </div>
                   </div>
                 </div>
@@ -1659,12 +1670,7 @@
                   pr50px
                   pb30px
                   class="no-active-definition-text-slider"
-                  :format-tooltip="
-                    (v) =>
-                      typeof noActiveDefinitionMarks[v] === 'string'
-                        ? noActiveDefinitionMarks[v]
-                        : noActiveDefinitionMarks[v]?.label
-                  "
+                  :format-tooltip="formatActiveTimeTooltip"
                 />
               </el-form-item>
               <div
@@ -1753,13 +1759,15 @@
 
 <script setup lang="ts">
 import { toast } from '@renderer/features/Toast'
+import type { CommonJobConditionForm, JobSearchForm, JobSourceForm } from '../../../../../common/types/job-config'
 import { computed, onBeforeUnmount, ref, watch, onUnmounted, onMounted } from 'vue'
-import { ElForm } from 'element-plus'
+import { ElForm, type ElSlider, type FormRules } from 'element-plus'
 import { QuestionFilled, ArrowDown } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import AnyCombineBossRecommendFilter from '@renderer/features/AnyCombineBossRecommendFilter/index.vue'
 import StaticCombineBossRecommendFilter from '@renderer/features/StaticCombineBossRecommendFilter/index.vue'
 import { activeDescList } from '@geekgeekrun/geek-auto-start-chat-with-boss/constant.mjs'
+import { DEFAULT_FILTER_COMBINATION_LIMIT, MAX_FILTER_COMBINATION_LIMIT, filterCombinationLimit } from '@geekgeekrun/geek-auto-start-chat-with-boss/run-settings.mjs'
 import {
   DEFAULT_POSTER_HR_TITLE_REG_EXP_STR,
   resolvePosterHrTitleRegExpStr
@@ -1808,11 +1816,12 @@ const { ipcRenderer } = window.electron
 
 const router = useRouter()
 
-const formContent = ref({
+const formContent = ref<JobSearchForm>({
   dingtalkRobotAccessToken: '',
   expectCompanies: '',
   anyCombineRecommendJobFilter: {},
   combineRecommendJobFilterType: 1,
+  autoChatFilterCombinationLimit: DEFAULT_FILTER_COMBINATION_LIMIT,
   staticCombineRecommendJobFilterConditions: [],
   expectJobNameRegExpStr: '',
   expectJobTypeRegExpStr: '',
@@ -1908,6 +1917,7 @@ electron.ipcRenderer.invoke('fetch-config-file-content').then((res) => {
   )
   formContent.value.combineRecommendJobFilterType =
     res.config['boss.json']?.combineRecommendJobFilterType ?? 1
+  formContent.value.autoChatFilterCombinationLimit = filterCombinationLimit(res.config['boss.json']?.autoChatFilterCombinationLimit)
   formContent.value.staticCombineRecommendJobFilterConditions = res.config['boss.json']
     ?.staticCombineRecommendJobFilterConditions?.length
     ? res.config['boss.json'].staticCombineRecommendJobFilterConditions
@@ -2049,7 +2059,7 @@ const jobSourceFormItemSectionEl = ref()
 const jobDetailRegExpSectionEl = ref()
 const posterHrTitleRegExpSectionEl = ref()
 const blockCompanyNameRegExpSectionEl = ref()
-const formRules = {
+const formRules: FormRules = {
   expectJobNameRegExpStr: {
     trigger: 'blur',
     validator: getRuleOfExpectJobNameRegExpStr({ jobDetailRegExpSectionEl })
@@ -2067,7 +2077,6 @@ const formRules = {
     validator: getRuleOfPosterHrTitleRegExpStr({ posterHrTitleRegExpSectionEl })
   },
   __jobSourceList: {
-    trigger: null,
     validator(_, value, cb) {
       if (!Array.isArray(value)) {
         cb()
@@ -2077,7 +2086,7 @@ const formRules = {
         cb(new Error(`将上方任一来源设置为“启用”后才能继续`))
         return
       }
-      const configMap = {}
+      const configMap: Record<string, JobSourceForm> = {}
       for (const config of value) {
         if (configMap[config.type]) {
           continue
@@ -2130,8 +2139,8 @@ const formRules = {
 }
 
 const formRef = ref<InstanceType<typeof ElForm>>()
-const runRecordId = ref(null)
-const runningOverlayRef = ref(null)
+const runRecordId = ref<number | null | undefined>(null)
+const runningOverlayRef = ref<InstanceType<typeof RunningOverlay> | null>(null)
 const taskManagerStore = useTaskManagerStore()
 const CURRENT_WORKER_ID = 'geekAutoStartWithBossMain'
 
@@ -2253,7 +2262,7 @@ const handleExpectSalaryCalculateWayChanged = getHandlerForExpectSalaryCalculate
 })
 
 const salaryMarkAsNotSuitLabelText = computed(() => {
-  const textSeg = []
+  const textSeg: string[] = []
   const formContentToUse = !formContent.value.fieldsForUseCommonConfig.salary
     ? formContent.value
     : commonJobConditionConfig.value
@@ -2270,7 +2279,7 @@ const isShowSalaryMarkAsNotSuitStrategy = computed(() => {
   const formContentToUse = !formContent.value.fieldsForUseCommonConfig.salary
     ? formContent.value
     : commonJobConditionConfig.value
-  let flag = formContentToUse.expectSalaryHigh || formContentToUse.expectSalaryLow
+  let flag = Boolean(formContentToUse.expectSalaryHigh || formContentToUse.expectSalaryLow)
 
   if (
     formContentToUse.expectSalaryHigh &&
@@ -2283,27 +2292,32 @@ const isShowSalaryMarkAsNotSuitStrategy = computed(() => {
   return flag
 })
 
-const noActiveDefinitionMarks = computed(() => {
-  let arr = [...activeDescList]
+type SliderMarks = NonNullable<InstanceType<typeof ElSlider>['$props']['marks']>
+const noActiveDefinitionMarks = computed<SliderMarks>(() => {
+  const arr: string[] = [...activeDescList]
   arr.shift()
   arr.unshift('不筛选')
-  arr = arr.map((it, index) => {
+  return Object.fromEntries(arr.map((it, index) => {
     if (index <= formContent.value.markAsNotActiveSelectedTimeRange) {
       if (formContent.value.markAsNotActiveSelectedTimeRange > 0 && index === 0) {
-        return it
+        return [index, it]
       }
-      return {
+      return [index, {
         style: {
           color: '#1989FA',
           fontWeight: 700
         },
         label: it
-      }
+      }]
     }
-    return it
-  })
-  return arr
+    return [index, it]
+  }))
 })
+
+function formatActiveTimeTooltip(value: number): string {
+  const mark = noActiveDefinitionMarks.value[value]
+  return typeof mark === 'string' ? mark : typeof mark?.label === 'string' ? mark.label : ''
+}
 
 function handleHowToFillDetailFilterClick() {
   electron.ipcRenderer.send(
@@ -2312,8 +2326,8 @@ function handleHowToFillDetailFilterClick() {
   )
 }
 
-function formatJobSourceConfigToFormValue(config = []) {
-  const typeToNameKey = {
+function formatJobSourceConfigToFormValue(config: JobSourceForm[] = []): JobSourceForm[] {
+  const typeToNameKey: Record<string, string> = {
     recommend: '推荐列表中的职位',
     expect: '根据设置的求职期望推荐的职位',
     search: '通过搜索找到的职位'
@@ -2322,7 +2336,7 @@ function formatJobSourceConfigToFormValue(config = []) {
   config = config.filter((it) => Object.hasOwn(typeToNameKey, it.type))
 
   const addedSet = new Set()
-  const tempArr = []
+  const tempArr: JobSourceForm[] = []
   config.forEach((it) => {
     if (!Object.hasOwn(typeToNameKey, it.type)) {
       return
@@ -2351,7 +2365,7 @@ function formatJobSourceConfigToFormValue(config = []) {
   })
 }
 
-function formatJobSourceFormValueToConfig(formValue = []) {
+function formatJobSourceFormValueToConfig(formValue: JobSourceForm[] = []) {
   return formValue.map((it) => {
     it = { ...it }
     delete it.label
@@ -2397,7 +2411,7 @@ const handleBlockCompanyNameRegExpTemplateClicked =
     formContent
   })
 
-const commonJobConditionConfig = ref({})
+const commonJobConditionConfig = ref<Partial<CommonJobConditionForm>>({})
 const unListenCommonJobConditionConfig = ipcRenderer.on(
   'common-job-condition-config-updated',
   (_, { config }) => {
@@ -2420,7 +2434,7 @@ const handleClickConfigCommonJobCondition = async () => {
 }
 
 const fillCommonConfigField = (field) => {
-  let fieldsToReplace = []
+  let fieldsToReplace: Array<keyof CommonJobConditionForm> = []
   switch (field) {
     case 'salary': {
       fieldsToReplace = ['expectSalaryCalculateWay', 'expectSalaryLow', 'expectSalaryHigh']
@@ -2450,16 +2464,15 @@ const fillCommonConfigField = (field) => {
       break
     }
   }
-  for (const field of fieldsToReplace) {
-    let sourceValue = commonJobConditionConfig.value[field]
-    if (
-      commonJobConditionConfig.value[field] &&
-      typeof commonJobConditionConfig.value[field] === 'object'
-    ) {
-      sourceValue = JSON.parse(JSON.stringify(commonJobConditionConfig.value[field]))
-    }
-    formContent.value[field] = sourceValue
-  }
+  fieldsToReplace.forEach(copyCommonConfigField)
+}
+
+function copyCommonConfigField<K extends keyof CommonJobConditionForm>(field: K) {
+  const sourceValue = commonJobConditionConfig.value[field]
+  if (sourceValue === undefined) return
+  formContent.value[field] = sourceValue !== null && typeof sourceValue === 'object'
+    ? JSON.parse(JSON.stringify(sourceValue))
+    : sourceValue
 }
 </script>
 

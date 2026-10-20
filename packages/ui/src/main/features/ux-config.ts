@@ -4,6 +4,7 @@ import fs from 'node:fs/promises'
 import fsSync from 'node:fs'
 import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
+import { writeFileAtomicSync, writeJsonAtomicSync, writeFilesAtomicSync } from '@geekgeekrun/utils/atomic-json.mjs'
 import {
   configFolderPath,
   storageFilePath,
@@ -39,7 +40,7 @@ function readCloseDraft() {
       stored.encrypted ? safeStorage.decryptString(Buffer.from(stored.data, 'base64')) : stored.data
     )
   } catch (error) {
-    console.warn('无法恢复退出草稿：', (error as Error).message)
+    console.warn('无法恢复 ux-close-draft.json，原文件已保留；请检查草稿文件或备份')
     return null
   }
 }
@@ -57,21 +58,10 @@ function writeCloseDraft(draft) {
     for (const model of captured.models) model.providerApiSecret = ''
   }
   const text = JSON.stringify(captured)
-  const temp = closeDraftFile + '.tmp-' + randomUUID()
-  try {
-    fsSync.writeFileSync(
-      temp,
-      JSON.stringify({
-        version: 1,
-        encrypted,
-        data: encrypted ? safeStorage.encryptString(text).toString('base64') : text
-      }),
-      { mode: 0o600 }
-    )
-    fsSync.renameSync(temp, closeDraftFile)
-  } finally {
-    if (fsSync.existsSync(temp)) fsSync.unlinkSync(temp)
-  }
+  writeJsonAtomicSync(closeDraftFile, {
+    version: 1, encrypted,
+    data: encrypted ? safeStorage.encryptString(text).toString('base64') : text
+  })
 }
 function discardCloseDraft(part: 'state' | 'models', requestedAt: number) {
   try {
@@ -92,12 +82,14 @@ function exclusive<T>(fn: () => Promise<T>): Promise<T> {
 }
 async function readState() {
   try {
-    return JSON.parse(await fs.readFile(stateFile, 'utf8'))
+    const saved = JSON.parse(await fs.readFile(stateFile, 'utf8'))
+    if (!saved || !Number.isSafeInteger(saved.revision) || saved.revision < 0 || !Object.hasOwn(saved, 'state'))
+      throw new SyntaxError('Invalid workspace structure')
+    return saved
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { revision: 0, state: null }
     if (error instanceof SyntaxError) {
-      await fs.copyFile(stateFile, stateFile + '.invalid-' + Date.now())
-      return { revision: 0, state: null }
+      throw Error('ux-workspace.json 的 JSON 格式或结构无效；原文件已保留，请修正或从备份恢复')
     }
     throw error
   }
@@ -112,33 +104,7 @@ function signature(
 }
 // Atomic individual replacement; restore earlier files if a later write fails.
 async function writeBatch(entries: Array<[string, unknown]>) {
-  const backups: Array<[string, Buffer | null]> = []
-  try {
-    for (const [file, data] of entries) {
-      let before: Buffer | null = null
-      try {
-        before = await fs.readFile(file)
-      } catch (e) {
-        if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e
-      }
-      const temp = file + '.tmp-' + randomUUID()
-      try {
-        await fs.writeFile(temp, typeof data === 'string' ? data : JSON.stringify(data), {
-          mode: 0o600
-        })
-        await fs.rename(temp, file)
-        backups.push([file, before])
-      } finally {
-        await fs.unlink(temp).catch(() => {})
-      }
-    }
-  } catch (error) {
-    for (const [file, before] of backups.reverse()) {
-      if (before === null) await fs.unlink(file).catch(() => {})
-      else await fs.writeFile(file, before)
-    }
-    throw error
-  }
+  writeFilesAtomicSync(entries.map(([file, data]) => [file, typeof data === 'string' ? data : JSON.stringify(data)]))
 }
 function promptType(type: string) {
   if (type !== 'open' && type !== 'rechat') throw Error('无效的提示词类型')
@@ -321,11 +287,12 @@ export function initUxIpc() {
       const legacyBackedUp = Array.isArray(previousModels) && previousModels.length > 2
       if (legacyBackedUp) {
         if (!safeStorage.isEncryptionAvailable()) throw Error('无法安全备份旧模型配置，请稍后重试。旧配置未改动。')
-        await fs.writeFile(
+        const backedUp = writeFileAtomicSync(
           path.join(storageFilePath, 'llm-legacy-backup-' + Date.now() + '-' + randomUUID() + '.encrypted'),
           safeStorage.encryptString(JSON.stringify(previousModels)),
-          { mode: 0o600, flag: 'wx' }
+          { createOnly: true }
         )
+        if (!backedUp) throw Error('旧模型配置的安全备份未能创建，原配置未改动')
       }
       await writeBatch([
         [
@@ -450,7 +417,7 @@ export function initUxIpc() {
   ipcMain.handle('ux-download-browser', (ev) =>
     openBrowserDownloadWindow({
       windowOption: {
-        parent: BrowserWindow.fromWebContents(ev.sender),
+        parent: BrowserWindow.fromWebContents(ev.sender) || undefined,
         modal: true,
         show: true
       }

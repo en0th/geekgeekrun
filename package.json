@@ -6,7 +6,12 @@
   "module": "./main/index.mjs",
   "type": "module",
   "scripts": {
-    "start": "node ./packages/run-core-of-geek-auto-start-chat-with-boss/daemon-main.mjs"
+    "start": "node ./packages/run-core-of-geek-auto-start-chat-with-boss/daemon-main.mjs",
+    "build:sqlite": "pnpm --filter @geekgeekrun/sqlite-plugin build",
+    "typecheck": "pnpm --filter geekgeekrun-ui typecheck",
+    "test": "node scripts/ci/run-tests.mjs",
+    "test:ci": "node scripts/ci/run-tests.mjs --require-native",
+    "test:electron": "node scripts/ci/run-tests.mjs --electron"
   },
   "author": "geekgeekrun",
   "license": "AGPL-3.0-only",
@@ -24,7 +29,11 @@
     "tapable": "^2.2.1"
   },
   "devDependencies": {
-    "semver": "^7.6.0"
+    "@vue/compiler-sfc": "3.4.15",
+    "esbuild": "0.19.12",
+    "js-yaml": "4.1.0",
+    "semver": "^7.6.0",
+    "typescript": "5.3.3"
   },
   "volta": {
     "node": "20.16.0"

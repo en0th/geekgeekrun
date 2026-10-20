@@ -4,18 +4,18 @@ const { Entity, Column, PrimaryGeneratedColumn } = typeorm
 @Entity()
 export class ChatMessageRecord {
   @PrimaryGeneratedColumn()
-  mid: number;
+  mid!: number;
 
   @Column()
-  encryptFromUserId: string;
+  encryptFromUserId!: string;
   
   @Column()
-  encryptToUserId: string;
+  encryptToUserId!: string;
 
   @Column({
     nullable: true
   })
-  time: Date | null;
+  time!: Date | null;
   
   @Column({
     nullable: true
@@ -30,7 +30,7 @@ export class ChatMessageRecord {
   @Column({
     nullable: true
   })
-  text: string;
+  text!: string;
 
   @Column({
     nullable: true

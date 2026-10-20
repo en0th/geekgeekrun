@@ -14,7 +14,7 @@ export const downloadDependenciesForInit = async () => {
   app.dock?.hide()
   let pipe: null | fs.WriteStream = null
   try {
-    pipe = fs.createWriteStream(null, { fd: 3 })
+    pipe = fs.createWriteStream('', { fd: 3 })
   } catch {
     console.warn('pipe is not available')
   }
@@ -27,7 +27,7 @@ export const downloadDependenciesForInit = async () => {
   )
 
   try {
-    let timeoutTimer = 0
+    let timeoutTimer: ReturnType<typeof setTimeout> | undefined
     const promiseWithResolver = (() => {
       const o = {} as unknown as {
         promise: Promise<unknown>
@@ -41,7 +41,7 @@ export const downloadDependenciesForInit = async () => {
       return o
     })()
 
-    let throttleProgressTimer: number | null = null
+    let throttleProgressTimer: ReturnType<typeof setTimeout> | undefined
     checkAndDownloadPuppeteerExecutable({
       downloadProgressCallback(downloadedBytes: number, totalBytes: number) {
         clearTimeout(timeoutTimer)
@@ -52,7 +52,7 @@ export const downloadDependenciesForInit = async () => {
           }, 10 * 1000)
         } else {
           clearTimeout(throttleProgressTimer)
-          throttleProgressTimer = null
+          throttleProgressTimer = undefined
         }
 
         if (!throttleProgressTimer) {
@@ -71,7 +71,7 @@ export const downloadDependenciesForInit = async () => {
             }) + '\r\n'
           )
           throttleProgressTimer = setTimeout(() => {
-            throttleProgressTimer = null
+            throttleProgressTimer = undefined
           }, 500)
         }
       }

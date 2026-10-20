@@ -17,6 +17,9 @@ files:
   - '!node_modules/typeorm/browser/*'
 asarUnpack:
   - 'resources/**'
+extraResources:
+  - from: '../geek-auto-start-chat-with-boss/data/position-codes.NOTICE'
+    to: 'third-party/position-codes.NOTICE'
 win:
   executableName: geekgeekrun
 nsis:

@@ -27,6 +27,21 @@ export class JobInfo {
   })
   salaryMonth?: number;
 
+  @Column({ nullable: true })
+  salaryDesc?: string;
+
+  @Column({ nullable: true })
+  salaryUnit?: string;
+
+  @Column({ type: 'real', nullable: true })
+  salaryAmountLow?: number;
+
+  @Column({ type: 'real', nullable: true })
+  salaryAmountHigh?: number;
+
+  @Column({ nullable: true })
+  jobNatureName?: string;
+
   @Column()
   experienceName: string;
 

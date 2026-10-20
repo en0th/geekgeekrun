@@ -1,257 +1,159 @@
 import fs from 'node:fs'
-import fsPromise from 'node:fs/promises'
 import path from 'node:path'
-import os from 'node:os'
-
-import { resolveStorageFolder } from './data-location.mjs'
+import { resolveStorageFolder, runtimeFolderPath } from './data-location.mjs'
 import { readTaskConfigSnapshot } from './task-config-snapshot.mjs'
-import defaultDingtalkConf from './default-config-file/dingtalk.json' assert {type: 'json'}
-import defaultBossConf from './default-config-file/boss.json' assert {type: 'json'}
-import defaultTargetCompanyListConf from './default-config-file/target-company-list.json' assert {type: 'json'}
-import defaultLlmConf from './default-config-file/llm.json' assert { type: 'json' }
+import { writeFileAtomicSync, writeFilesAtomicSync, writeJsonAtomicSync } from '@geekgeekrun/utils/atomic-json.mjs'
+import defaultDingtalkConf from './default-config-file/dingtalk.json' with { type: 'json' }
+import defaultBossConf from './default-config-file/boss.json' with { type: 'json' }
+import defaultTargetCompanyListConf from './default-config-file/target-company-list.json' with { type: 'json' }
+import defaultLlmConf from './default-config-file/llm.json' with { type: 'json' }
+import defaultCommonJobConditionConfig from './default-config-file/common-job-condition-config.json' with { type: 'json' }
+import defaultBossCookieStorage from './default-storage-file/boss-cookies.json' with { type: 'json' }
+import defaultBossLocalStorageStorage from './default-storage-file/boss-local-storage.json' with { type: 'json' }
+import defaultJobNotSuitReasonCodeToTextCacheStorage from './default-storage-file/job-not-suit-reason-code-to-text-cache.json' with { type: 'json' }
 
-import defaultBossCookieStorage from './default-storage-file/boss-cookies.json' assert { type: 'json' }
-import defaultBossLocalStorageStorage from './default-storage-file/boss-local-storage.json' assert { type: 'json' }
-import defaultJobNotSuitReasonCodeToTextCacheStorage from './default-storage-file/job-not-suit-reason-code-to-text-cache.json' assert { type: 'json' }
-import defaultCommonJobConditionConfig from './default-config-file/common-job-condition-config.json' assert { type: 'json' }
-export const configFileNameList = ['boss.json', 'dingtalk.json', 'target-company-list.json', 'llm.json', 'common-job-condition-config.json']
-
-const defaultConfigFileContentMap = {
-  'boss.json': JSON.stringify(defaultBossConf),
-  'dingtalk.json': JSON.stringify(defaultDingtalkConf),
-  'target-company-list.json': JSON.stringify(defaultTargetCompanyListConf),
-  'llm.json': JSON.stringify(defaultLlmConf),
-  'common-job-condition-config.json': JSON.stringify(defaultCommonJobConditionConfig)
-}
-export const runtimeFolderPath = process.env.GEEKGEEKRUN_RUNTIME_DIR || path.join(os.homedir(), '.geekgeekrun')
-const taskConfigSnapshot = process.env.GEEKGEEKRUN_TASK_CONFIG_FILE
-  ? readTaskConfigSnapshot(process.env.GEEKGEEKRUN_TASK_CONFIG_FILE)
-  : null
-export const configFolderPath = path.join(
-  runtimeFolderPath,
-  'config'
-)
-fs.mkdirSync(configFolderPath, { recursive: true })
-export const writeConfigFile = async (fileName, content, { isSync } = {}) => {
-  const filePath = path.join(configFolderPath, fileName)
-  const fileContent = JSON.stringify(content)
-  if (isSync) {
-    fs.writeFileSync(
-      filePath,
-      fileContent
-    )
-  }
-  else {
-    return fsPromise.writeFile(
-      filePath,
-      fileContent
-    )
-  }
-}
-if (
-  !fs.existsSync(
-    path.join(configFolderPath, 'common-job-condition-config.json')
-  )
-) {
-  let bossConfig = null
-  if (
-    fs.existsSync(
-      path.join(configFolderPath, 'boss.json')
-    )
-  ) {
-    fs.existsSync(
-      path.join(configFolderPath, 'boss.json')
-    )
-    try {
-      bossConfig = JSON.parse(
-        fs.readFileSync(
-          path.join(configFolderPath, 'boss.json')
-        )
-      )
-    }
-    catch {}
-  }
-  if (bossConfig) {
-    Object.keys(defaultCommonJobConditionConfig).forEach(
-      key => {
-        if (Object.hasOwn(bossConfig, key)) {
-          defaultCommonJobConditionConfig[key] = bossConfig[key]
-        }
-      }
-    )
-    let {
-      expectJobRegExpStr,
-      expectJobNameRegExpStr,
-      expectJobTypeRegExpStr,
-      expectJobDescRegExpStr,
-    } = bossConfig
-    if (
-      expectJobRegExpStr &&
-      !expectJobNameRegExpStr &&
-      !expectJobTypeRegExpStr &&
-      !expectJobDescRegExpStr
-    ) {
-      expectJobNameRegExpStr = expectJobRegExpStr
-      expectJobTypeRegExpStr = expectJobRegExpStr
-      expectJobDescRegExpStr = expectJobRegExpStr
-    }
-    Object.assign(defaultCommonJobConditionConfig, {
-      expectJobNameRegExpStr,
-      expectJobTypeRegExpStr,
-      expectJobDescRegExpStr
-    })
-  }
-  let targetCompanyList = null
-  if (
-    fs.existsSync(
-      path.join(configFolderPath, 'target-company-list.json')
-    )
-  ) {
-    targetCompanyList = JSON.parse(
-      fs.readFileSync(
-        path.join(configFolderPath, 'target-company-list.json')
-      )
-    )
-  }
-  if (targetCompanyList) {
-    defaultCommonJobConditionConfig.expectCompanies = targetCompanyList ?? []
-  }
-  writeConfigFile('common-job-condition-config.json', defaultCommonJobConditionConfig, { isSync: true })
-  if (bossConfig) {
-    if (!bossConfig.fieldsForUseCommonConfig) {
-      bossConfig.fieldsForUseCommonConfig = {}
-    }
-    writeConfigFile('boss.json', bossConfig, { isSync: true })
-  }
-}
-
-const ensureRuntimeFolderPathExist = () => {
-  if (!fs.existsSync(runtimeFolderPath)) {
-    fs.mkdirSync(runtimeFolderPath)
-  }
-  ;[configFolderPath, storageFilePath].forEach(dirPath => {
-    if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true })
-    }
-  })
-}
-export const ensureConfigFileExist = () => {
-  ensureRuntimeFolderPathExist()
-  ;configFileNameList.forEach(
-    fileName => {
-      if (!fs.existsSync(
-        path.join(configFolderPath, fileName)
-      )) {
-        fs.writeFileSync(
-          path.join(configFolderPath, fileName),
-          defaultConfigFileContentMap[fileName]
-        )
-      }
-    }
-  )
-}
-
-export const readConfigFile = (fileName) => {
-  if (taskConfigSnapshot && Object.hasOwn(taskConfigSnapshot, fileName))
-    return JSON.parse(JSON.stringify(taskConfigSnapshot[fileName]))
-  const joinedPath = path.join(configFolderPath, fileName)
-  if (!fs.existsSync(
-    joinedPath
-  )) {
-    ensureConfigFileExist()
-  }
-
-  let o
-  try {
-    o = JSON.parse(
-      fs.readFileSync(joinedPath)
-    )
-  } catch {
-    fs.existsSync(joinedPath) && fs.unlinkSync(joinedPath)
-    if (defaultConfigFileContentMap[fileName]) {
-      ensureConfigFileExist()
-      o = JSON.parse(defaultConfigFileContentMap[fileName])
-    } else {
-      o = null
-    }
-  }
-
-  return o
-}
-
-// the default <runtime folder>/storage, or the folder chosen in the data location setting
+export { runtimeFolderPath }
+export const configFolderPath = path.join(runtimeFolderPath, 'config')
 export const storageFilePath = resolveStorageFolder().path
-export const storageFileNameList = ['boss-cookies.json', 'boss-local-storage.json', 'job-not-suit-reason-code-to-text-cache.json']
-
-const defaultStorageFileContentMap = {
-  'boss-cookies.json': JSON.stringify(defaultBossCookieStorage),
-  'boss-local-storage.json': JSON.stringify(defaultBossLocalStorageStorage),
-  'job-not-suit-reason-code-to-text-cache.json': JSON.stringify(defaultJobNotSuitReasonCodeToTextCacheStorage)
+const taskConfigSnapshot = process.env.GEEKGEEKRUN_TASK_CONFIG_FILE
+  ? readTaskConfigSnapshot(process.env.GEEKGEEKRUN_TASK_CONFIG_FILE) : null
+const configDefaults = {
+  'boss.json': defaultBossConf, 'dingtalk.json': defaultDingtalkConf,
+  'target-company-list.json': defaultTargetCompanyListConf, 'llm.json': defaultLlmConf,
+  'common-job-condition-config.json': defaultCommonJobConditionConfig
 }
-export const ensureStorageFileExist = () => {
-  ensureRuntimeFolderPathExist()
-  ;storageFileNameList.forEach(
-    fileName => {
-      if (!fs.existsSync(
-        path.join(storageFilePath, fileName)
-      )) {
-        fs.writeFileSync(
-          path.join(storageFilePath, fileName),
-          defaultStorageFileContentMap[fileName]
-        )
-      }
-    }
-  )
+const storageDefaults = {
+  'boss-cookies.json': defaultBossCookieStorage, 'boss-local-storage.json': defaultBossLocalStorageStorage,
+  'job-not-suit-reason-code-to-text-cache.json': defaultJobNotSuitReasonCodeToTextCacheStorage
 }
+export const configFileNameList = Object.keys(configDefaults)
+export const storageFileNameList = Object.keys(storageDefaults)
+const copy = value => JSON.parse(JSON.stringify(value))
+const object = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 
-export const readStorageFile = (fileName, { isJson } = {}) => {
-  isJson = isJson ?? true
-  const joinedPath = path.join(storageFilePath, fileName)
-
-  if (!fs.existsSync(
-    joinedPath
-  )) {
-    ensureStorageFileExist()
+function filePath(folder, name) {
+  if (typeof name !== 'string' || !name.trim() || name === '.' || name === '..' || /[\\/\0]/.test(name) || path.isAbsolute(name) || /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?$/i.test(name))
+    throw new Error('配置或存储文件名无效')
+  return path.join(folder, name)
+}
+function readError(file, code) {
+  // JSON.parse error messages can contain credential text. Never forward them or
+  // attach the original SyntaxError as a cause.
+  return Object.assign(new Error(`无法读取 ${path.basename(file)}（${code === 'JSON_INVALID' ? 'JSON 格式或结构无效' : code || '读取失败'}）；原文件已保留，请修正或从备份恢复`),
+    { code: code === 'JSON_INVALID' ? 'GGR_JSON_INVALID' : 'GGR_FILE_READ_FAILED' })
+}
+function writeError(file, error) {
+  return Object.assign(new Error(`无法保存 ${path.basename(file)}（${error.code || '写入失败'}）；${error.atomicCommitted ? '文件已替换，但刷盘确认失败，请检查后重试' : '未截断覆盖目标文件，请检查数据目录后重试'}`),
+    { code: 'GGR_FILE_WRITE_FAILED', atomicCommitted: Boolean(error.atomicCommitted) })
+}
+function createDefault(file, value) {
+  try { writeJsonAtomicSync(file, value, { createOnly: true }) }
+  catch (error) { throw writeError(file, error) }
+}
+function validateConfig(name, value) {
+  if (['boss.json', 'dingtalk.json', 'common-job-condition-config.json'].includes(name) && !object(value)) throw Error('structure')
+  if (name === 'target-company-list.json' && (!Array.isArray(value) || value.some(v => typeof v !== 'string'))) throw Error('structure')
+  if (name === 'llm.json' && (!Array.isArray(value) || value.some(v => !object(v)))) throw Error('structure')
+}
+function validateStorage(name, value) {
+  if (name === 'boss-cookies.json' && (!Array.isArray(value) || value.some(cookie =>
+    !object(cookie) || typeof cookie.name !== 'string' || typeof cookie.value !== 'string'))) throw Error('structure')
+  if (name === 'boss-local-storage.json' && (!object(value) || Object.values(value).some(v => typeof v !== 'string'))) throw Error('structure')
+}
+function readJson(file, validate, missing = null) {
+  let text
+  try { text = fs.readFileSync(file, 'utf8') }
+  catch (error) { if (error.code === 'ENOENT') return missing; throw readError(file, error.code) }
+  try { const value = JSON.parse(text); validate(value); return value }
+  catch { throw readError(file, 'JSON_INVALID') }
+}
+function encodeJson(name, value, validate) {
+  const text = JSON.stringify(value)
+  if (text === undefined) throw new TypeError(`${name} 的 JSON 内容不能为空`)
+  try { validate(name, JSON.parse(text)) }
+  catch { throw new TypeError(`${name} 的 JSON 结构无效，未写入`) }
+  return text
+}
+function ensureFolders() {
+  for (const folder of [configFolderPath, storageFilePath]) {
+    try { fs.mkdirSync(folder, { recursive: true }) }
+    catch (error) { throw writeError(folder, error) }
   }
-
-  let o
-  try {
-    const content = fs.readFileSync(joinedPath)
-    if (isJson) {
-      o = JSON.parse(content)
-    }
-    else {
-      o = content.toString()
-    }
-  } catch {
-    fs.existsSync(joinedPath) && fs.unlinkSync(joinedPath)
-    ensureStorageFileExist()
-    if (isJson) {
-      o = JSON.parse(defaultStorageFileContentMap[fileName] ?? 'null')
-    }
-    else {
-      o = defaultStorageFileContentMap[fileName] ?? null
-    }
+}
+function migrateCommonConfig() {
+  const file = filePath(configFolderPath, 'common-job-condition-config.json')
+  if (fs.existsSync(file)) return
+  const common = copy(defaultCommonJobConditionConfig)
+  const boss = readJson(filePath(configFolderPath, 'boss.json'), value => validateConfig('boss.json', value))
+  const companies = readJson(filePath(configFolderPath, 'target-company-list.json'), value => validateConfig('target-company-list.json', value))
+  if (boss) {
+    for (const key of Object.keys(common)) if (Object.hasOwn(boss, key)) common[key] = boss[key]
+    const { expectJobRegExpStr, expectJobNameRegExpStr, expectJobTypeRegExpStr, expectJobDescRegExpStr } = boss
+    if (expectJobRegExpStr && !expectJobNameRegExpStr && !expectJobTypeRegExpStr && !expectJobDescRegExpStr)
+      Object.assign(common, { expectJobNameRegExpStr: expectJobRegExpStr, expectJobTypeRegExpStr: expectJobRegExpStr, expectJobDescRegExpStr: expectJobRegExpStr })
   }
-
-  return o
+  if (companies) common.expectCompanies = companies
+  // Initializers from another process may have won the race. Never replace their file.
+  createDefault(file, common)
 }
 
-export const writeStorageFile = async (fileName, content, { isJson } = {}) => {
-  isJson = isJson ?? true
-  const filePath = path.join(storageFilePath, fileName)
-  let fileContent
-  if (isJson) {
-    fileContent = JSON.stringify(content)
-  } else {
-    fileContent = content
+export function ensureConfigFileExist() {
+  ensureFolders()
+  migrateCommonConfig()
+  for (const [name, value] of Object.entries(configDefaults))
+    if (!fs.existsSync(filePath(configFolderPath, name))) createDefault(filePath(configFolderPath, name), value)
+}
+export function ensureStorageFileExist() {
+  ensureFolders()
+  for (const [name, value] of Object.entries(storageDefaults))
+    if (!fs.existsSync(filePath(storageFilePath, name))) createDefault(filePath(storageFilePath, name), value)
+}
+export function readConfigFile(name) {
+  const file = filePath(configFolderPath, name)
+  if (taskConfigSnapshot && Object.hasOwn(taskConfigSnapshot, name)) {
+    const value = copy(taskConfigSnapshot[name])
+    try { validateConfig(name, value) }
+    catch { throw readError(process.env.GEEKGEEKRUN_TASK_CONFIG_FILE, 'JSON_INVALID') }
+    return value
   }
-  return fsPromise.writeFile(
-    filePath,
-    fileContent
-  )
+  if (!fs.existsSync(file) && Object.hasOwn(configDefaults, name)) ensureConfigFileExist()
+  return readJson(file, value => validateConfig(name, value))
 }
+export function readStorageFile(name, { isJson = true } = {}) {
+  const file = filePath(storageFilePath, name)
+  if (!fs.existsSync(file) && Object.hasOwn(storageDefaults, name)) ensureStorageFileExist()
+  if (isJson) return readJson(file, value => validateStorage(name, value))
+  try { return fs.readFileSync(file, 'utf8') }
+  catch (error) { if (error.code === 'ENOENT') return null; throw readError(file, error.code) }
+}
+// These APIs retain Promise compatibility; their short synchronous commit sections
+// also preserve call order when callers mix awaited and exit-time writes.
+export async function writeConfigFile(name, value, _options = {}) {
+  const file = filePath(configFolderPath, name), text = encodeJson(name, value, validateConfig)
+  try { return writeFileAtomicSync(file, text) }
+  catch (error) { throw writeError(file, error) }
+}
+export async function writeStorageFile(name, value, { isJson = true } = {}) {
+  const file = filePath(storageFilePath, name), text = isJson ? encodeJson(name, value, validateStorage) : value
+  try { return writeFileAtomicSync(file, text) }
+  catch (error) { throw writeError(file, error) }
+}
+export async function writeStorageFiles(entries) {
+  const captured = entries.map(([name, value]) => [filePath(storageFilePath, name), encodeJson(name, value, validateStorage)])
+  try { return writeFilesAtomicSync(captured) }
+  catch (error) {
+    if (error instanceof AggregateError) throw Object.assign(new Error('存储文件保存失败，部分回滚未能完成；已保留可用的回滚副本，请检查数据目录后重试'),
+      { code: 'GGR_FILE_WRITE_FAILED', recoveryFiles: error.recoveryFiles })
+    throw writeError('存储文件', error)
+  }
+}
+export async function writeBossSession({ cookies, localStorage }) {
+  if (!Array.isArray(cookies) || !cookies.length) throw new TypeError('浏览器尚未返回登录 Cookie，未覆盖已保存的凭证')
+  return writeStorageFiles([['boss-cookies.json', cookies], ['boss-local-storage.json', localStorage]])
+}
+export function getPublicDbFilePath() { return path.join(storageFilePath, 'public.db') }
 
-export const getPublicDbFilePath = () => {
-  return path.join(storageFilePath, 'public.db')
-}
+// Defer migration until an explicit initialization/read, so callers can report a
+// corrupt legacy file through their normal error path instead of failing at import.
+try { fs.mkdirSync(configFolderPath, { recursive: true }) }
+catch (error) { throw writeError(configFolderPath, error) }

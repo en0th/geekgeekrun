@@ -39,7 +39,12 @@ export const initDbWorker = () => {
   }
 }
 
-const createWorkerPromise = async (data) => {
+interface WorkerReply<T> {
+  data?: T
+  error?: string
+}
+
+const createWorkerPromise = async <T = unknown>(data: { type: string; [key: string]: unknown }): Promise<WorkerReply<T>> => {
   await initDbWorker()
   const uuid = randomUUID()
   worker!.postMessage({
@@ -58,7 +63,7 @@ const createWorkerPromise = async (data) => {
 }
 
 export const getJobHistoryByEncryptId = async (encryptJobId) => {
-  const res = await createWorkerPromise({
+  const res = await createWorkerPromise<unknown[]>({
     type: 'getJobHistoryByEncryptId',
     encryptJobId
   })
@@ -66,9 +71,13 @@ export const getJobHistoryByEncryptId = async (encryptJobId) => {
 }
 
 export const saveAndGetCurrentRunRecord = async () => {
-  const res = await createWorkerPromise({
+  const res = await createWorkerPromise<{ id: number }>({
     type: 'saveAndGetCurrentRunRecord'
   })
+  if (res.error) throw new Error(res.error)
+  if (!res.data || !Number.isSafeInteger(res.data.id) || res.data.id < 1) {
+    throw new Error('未能创建有效的任务记录，任务未启动')
+  }
   return res
 }
 
@@ -104,6 +113,8 @@ export const getRunDataDistinctValues = (payload: RunDataDistinctReq) =>
 
 export const getRunDataStats = (payload: RunDataStatsReq) =>
   runDataWorkerCall('getRunDataStats', payload)
+
+export const getJobSummary = (payload: RunDataQuery) => runDataWorkerCall('getJobSummary', payload)
 
 export const deleteRunData = (payload: RunDataDeleteReq) =>
   runDataWorkerCall('deleteRunData', payload)

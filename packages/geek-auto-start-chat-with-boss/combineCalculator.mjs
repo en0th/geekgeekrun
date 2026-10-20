@@ -1,15 +1,28 @@
-//# region get all combinations
-// 使用迭代生成组合
-function combine(arr, min, max) {
-  const result = []
-  const n = arr.length
+// Keep both the subsets and their Cartesian product lazy. Counting must never build
+// the subsets: a single dimension can already contain 2^n of them.
+const dimensions = [
+  ['cityList', 1], ['salaryList', 1], ['experienceList', Infinity],
+  ['degreeList', Infinity], ['scaleList', Infinity], ['industryList', 3]
+]
 
-  // 生成长度在[min, max]范围内的所有组合
-  for (let r = min; r <= Math.min(max, n); r++) {
+function filterValues(filters, key) {
+  const values = Array.isArray(filters?.[key]) ? filters[key] : []
+  return [...new Set(values.flatMap(value => {
+    if (key === 'cityList') return typeof value === 'string' && value.trim() ? [value.trim()] : []
+    const code = typeof value === 'number' || typeof value === 'string' ? Number(value) : NaN
+    return Number.isSafeInteger(code) && code > 0 ? [code] : []
+  }))]
+}
+
+function* combine(arr, max, preferSelected, min = 0) {
+  const n = arr.length
+  const largest = Math.min(max, n)
+  for (let step = 0; step <= largest - min; step++) {
+    const r = preferSelected ? largest - step : min + step
     const indices = Array(r)
       .fill(0)
-      .map((_, i) => i) // 初始化索引
-    result.push(indices.map((i) => arr[i])) // 保存初始组合
+      .map((_, i) => i)
+    yield indices.map(i => arr[i])
 
     while (true) {
       let i = r - 1
@@ -29,109 +42,69 @@ function combine(arr, min, max) {
         indices[j] = indices[j - 1] + 1
       }
 
-      result.push(indices.map((j) => arr[j]))
+      yield indices.map(j => arr[j])
     }
   }
-
-  return result
 }
 
-// 生成符合"0"限制的组合
-function combineWithZero(arr, min, max) {
-  let combineResult;
-  if (!Array.isArray(arr)) {
-    arr = []
+export function* combineFiltersWithConstraintsGenerator(selectedFilters = {}, { limit = Infinity, skipEmpty = false, preferSelected = false } = {}) {
+  const values = dimensions.map(([key]) => filterValues(selectedFilters, key))
+  const hasConditions = values.some(items => items.length)
+  // Give selected cities/salary bands a turn before relaxing the other dimensions.
+  const order = preferSelected ? [2, 3, 4, 5, 0, 1] : [0, 1, 2, 3, 4, 5]
+  function* product(index, condition, enabledDimensions = null) {
+    if (index === dimensions.length) {
+      if (!skipEmpty || !hasConditions || Object.values(condition).some(items => items.length)) yield condition
+      return
+    }
+    const dimensionIndex = order[index]
+    const [key, max] = dimensions[dimensionIndex]
+    const choices = enabledDimensions === null ? combine(values[dimensionIndex], max, false)
+      : enabledDimensions.has(dimensionIndex) ? combine(values[dimensionIndex], max, true, 1) : [[]]
+    for (const items of choices) {
+      yield* product(index + 1, { ...condition, [key]: items }, enabledDimensions)
+    }
   }
-  if (arr.includes(0)) {
-    // 如果包含 0，0不参与组合
-    combineResult = [].concat(
-      combine(
-        arr.filter((x) => x !== 0),
-        min,
-        max
-      )
-    );
-  } else {
-    // 如果不包含 0，直接生成组合
-    combineResult = [].concat(combine(arr, min, max));
+  function* schedule() {
+    if (!preferSelected) { yield* product(0, {}); return }
+    // Exhaust combinations using all configured dimensions before introducing 不限.
+    const enabled = order.filter(index => values[index].length)
+    for (const mask of combine(enabled, enabled.length, true)) yield* product(0, {}, new Set(mask))
   }
-  return combineResult;
+  if (limit <= 0) return
+  let count = 0
+  for (const condition of schedule()) {
+    yield condition
+    if (++count >= limit) return
+  }
 }
 
-export function* combineFiltersWithConstraintsGenerator(selectedFilters) {
-  const { cityList, salaryList, experienceList, degreeList, scaleList, industryList } =
-    selectedFilters;
-
-  // 生成符合限制条件的组合
-  const cityComb = combineWithZero(cityList, 0, 1) // Salary: 0-1 个
-  const salaryComb = combineWithZero(salaryList, 0, 1) // Salary: 0-1 个
-  const experienceComb = combineWithZero(experienceList, 0, experienceList.length) // Experience: 0 个或更多
-  const degreeComb = combineWithZero(degreeList, 0, degreeList.length) // Degree: 0 个或更多
-  const scaleComb = combineWithZero(scaleList, 0, scaleList.length) // Scale: 0 个或更多
-  const industryComb = combineWithZero(industryList, 0, 3) // Industry: 0-3 个
-
-  // 通过迭代生成所有组合
-  for (const city of cityComb) {
-    for (const salary of salaryComb) {
-      for (const experience of experienceComb) {
-        for (const degree of degreeComb) {
-          for (const scale of scaleComb) {
-            for (const industry of industryComb) {
-              yield {
-                cityList: city,
-                salaryList: salary,
-                experienceList: experience,
-                degreeList: degree,
-                scaleList: scale,
-                industryList: industry
-              }
-            }
-          }
-        }
+export function countFilterCombinations(filters = {}, skipEmpty = false) {
+  let total = 1n, hasConditions = false
+  for (const [key, max] of dimensions) {
+    const n = BigInt(filterValues(filters, key).length)
+    hasConditions ||= n > 0n
+    if (max === Infinity) total *= 2n ** n
+    else {
+      let choices = 1n, term = 1n
+      for (let r = 1n; r <= BigInt(max) && r <= n; r++) {
+        term = term * (n - r + 1n) / r
+        choices += term
       }
+      total *= choices
     }
   }
+  return { total: total - (skipEmpty && hasConditions ? 1n : 0n), hasConditions }
 }
-//#endregion
 
-//#region get count of combinations
-
-// 计算符合限制条件的组合数量
+// Numeric compatibility for the legacy editor; the new editor uses the exact bigint.
 export function calculateTotalCombinations(selectedFilters, includeEmptyCondition) {
-  const {
-    cityList = [],
-    salaryList = [],
-    experienceList = [],
-    degreeList = [],
-    scaleList = [],
-    industryList = []
-  } = selectedFilters
-
-  // 生成符合限制条件的组合
-  const cityComb = combineWithZero(cityList, 0, 1) // City: 0-1 个
-  const salaryComb = combineWithZero(salaryList, 0, 1) // Salary: 0-1 个
-  const experienceComb = combineWithZero(experienceList, 0, experienceList.length) // Experience: 0 个或更多
-  const degreeComb = combineWithZero(degreeList, 0, degreeList.length) // Degree: 0 个或更多
-  const scaleComb = combineWithZero(scaleList, 0, scaleList.length) // Scale: 0 个或更多
-  const industryComb = combineWithZero(industryList, 0, 3) // Industry: 0-3 个
-
-  let result = [cityComb, salaryComb, experienceComb, degreeComb, scaleComb, industryComb].reduce((accu, cur) => {
-    return accu * cur.length
-  }, 1)
-  if (!includeEmptyCondition) {
-    result -= 1
-  }
-  return result
+  const { total } = countFilterCombinations(selectedFilters, !includeEmptyCondition)
+  return Number(total > BigInt(Number.MAX_SAFE_INTEGER) ? BigInt(Number.MAX_SAFE_INTEGER) : total)
 }
-//#endregion
 
 export function checkAnyCombineBossRecommendFilterHasCondition(value) {
-  if (!Object.keys(value ?? {}).length) {
-    return false
-  }
-  return Object.keys(value).some((k) => {
-    return !!value[k]?.length
-  })
+  return dimensions.some(([key]) => filterValues(value, key).length)
 }
 
 export function getStaticCombineFilterKey(condition) {

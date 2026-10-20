@@ -19,6 +19,7 @@
     "electron": "28.2.0"
   },
   "dependencies": {
+    "@geekgeekrun/utils": "workspace:*",
     "JSONStream": "^1.3.5",
     "split2": "^4.2.0"
   }

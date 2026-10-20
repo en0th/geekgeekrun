@@ -36,6 +36,21 @@ export class VJobLibrary {
   salaryMonth: number | null;
 
   @ViewColumn()
+  salaryDesc: string | null;
+
+  @ViewColumn()
+  salaryUnit: string | null;
+
+  @ViewColumn()
+  salaryAmountLow: number | null;
+
+  @ViewColumn()
+  salaryAmountHigh: number | null;
+
+  @ViewColumn()
+  jobNatureName: string | null;
+
+  @ViewColumn()
   experienceName: number | null;
 
   @ViewColumn()

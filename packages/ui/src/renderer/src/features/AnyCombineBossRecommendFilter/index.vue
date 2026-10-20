@@ -133,19 +133,9 @@
 import conditions from '@geekgeekrun/geek-auto-start-chat-with-boss/internal-config/job-filter-conditions-20241002.json'
 import industryFilterExemption from '@geekgeekrun/geek-auto-start-chat-with-boss/internal-config/job-filter-industry-filter-exemption-20241002.json'
 import CityChooser from '@renderer/page/MainLayout/GeekAutoStartChatWithBoss/components/CityChooser.vue'
-import { PropType } from 'vue'
+import type { AnyCombineJobFilter } from '../../../../common/types/job-config'
 
-defineProps({
-  modelValue: {
-    type: Object as PropType<{
-      salaryList: number[]
-      experienceList: number[]
-      degreeList: number[]
-      industryList: number[]
-      scaleList: number[]
-    }>
-  }
-})
+defineProps<{ modelValue: AnyCombineJobFilter }>()
 </script>
 
 <style lang="scss" scoped>

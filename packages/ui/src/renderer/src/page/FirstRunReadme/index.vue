@@ -118,8 +118,8 @@
 
 <script lang="ts" setup>
 import { toast } from '@renderer/features/Toast'
-import { ElCheckbox, ElCheckboxGroup } from 'element-plus'
-import { ref, onMounted, onBeforeMount } from 'vue'
+import { ElCheckbox, ElCheckboxGroup, type CheckboxValueType } from 'element-plus'
+import { ref } from 'vue'
 import { sleep } from '@geekgeekrun/utils/sleep.mjs'
 
 const electron = window.electron
@@ -149,8 +149,9 @@ const handleSubmit = () => {
   }
   electron.ipcRenderer.send('first-launch-notice-approve')
 }
-const handleReadmeItemCheckStatusListChange = (value: number[]) => {
+const handleReadmeItemCheckStatusListChange = (value: CheckboxValueType[]) => {
   value.forEach((it) => {
+    if (typeof it !== 'number') return
     if (unreadItemsAfterClickSubmit.value[it]) {
       delete unreadItemsAfterClickSubmit.value[it]
     }

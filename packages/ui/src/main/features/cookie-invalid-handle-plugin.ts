@@ -1,8 +1,11 @@
+import { errorMessage } from '../../common/utils/error'
+import type { Browser, CookieParam } from 'puppeteer'
 import { sendToDaemon } from '../flow/OPEN_SETTING_WINDOW/connect-to-daemon'
 import minimist from 'minimist'
 import { loginWithCookieAssistant } from './login-with-cookie-assistant'
 import { checkCookieListFormat } from '../../common/utils/cookie'
 import { sleep } from '@geekgeekrun/utils/sleep.mjs'
+import { classifyBossLoginResponse, bossLoginError } from '@geekgeekrun/utils/boss-login.mjs'
 import {
   readStorageFile,
   writeStorageFile
@@ -11,7 +14,7 @@ import {
 const runRecordId = minimist(process.argv.slice(2))['run-record-id'] ?? null
 export class CookieInvalidHandlePlugin {
   apply(hooks) {
-    hooks.cookieWillSet.tapPromise('CookieInvalidHandlePlugin', async ({ cookies, browser } = {}) => {
+    hooks.cookieWillSet.tapPromise('CookieInvalidHandlePlugin', async ({ cookies, browser }: { cookies: CookieParam[]; browser?: Browser }) => {
       let isValid = checkCookieListFormat(cookies)
       while (!isValid) {
         try {
@@ -44,7 +47,7 @@ export class CookieInvalidHandlePlugin {
             }
           }
         } catch (e) {
-          if (e?.message === 'USER_CANCELLED_LOGIN') {
+          if (errorMessage(e) === 'USER_CANCELLED_LOGIN') {
             sendToDaemon({
               type: 'worker-to-gui-message',
               workerId: process.env.GEEKGEEKRUND_WORKER_ID,
@@ -74,8 +77,9 @@ export class CookieInvalidHandlePlugin {
         }
       })
     })
-    hooks.userInfoResponse.tapPromise('CookieInvalidHandlePlugin', async ({ userInfoResponse, browser } = {}) => {
-      if (userInfoResponse.code === 0) {
+    hooks.userInfoResponse.tapPromise('CookieInvalidHandlePlugin', async ({ userInfoResponse, browser, httpStatus = 200 }: { userInfoResponse: unknown; browser?: Browser; httpStatus?: number }) => {
+      const result = classifyBossLoginResponse(httpStatus, userInfoResponse)
+      if (result.status === 'valid') {
         sendToDaemon({
           type: 'worker-to-gui-message',
           workerId: process.env.GEEKGEEKRUND_WORKER_ID,
@@ -90,6 +94,7 @@ export class CookieInvalidHandlePlugin {
         })
         return
       }
+      if (result.status !== 'invalid') throw bossLoginError(result)
       try {
         browser && (await browser.close())
       } catch (err) {
@@ -112,7 +117,7 @@ export class CookieInvalidHandlePlugin {
           await app?.dock?.hide()
         }
       } catch (e) {
-        if (e?.message === 'USER_CANCELLED_LOGIN') {
+        if (errorMessage(e) === 'USER_CANCELLED_LOGIN') {
           sendToDaemon({
             type: 'worker-to-gui-message',
             workerId: process.env.GEEKGEEKRUND_WORKER_ID,

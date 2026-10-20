@@ -2,10 +2,12 @@ import { AUTO_CHAT_ERROR_EXIT_CODE } from '../../common/enums/auto-start-chat'
 import { daemonEE, sendToDaemon } from '../flow/OPEN_SETTING_WINDOW/connect-to-daemon'
 import { saveAndGetCurrentRunRecord } from '../flow/OPEN_SETTING_WINDOW/utils/db'
 import minimist from 'minimist'
-import { readConfigFile, runtimeFolderPath } from '@geekgeekrun/geek-auto-start-chat-with-boss/runtime-file-utils.mjs'
+import { readConfigFile, runtimeFolderPath, storageFilePath } from '@geekgeekrun/geek-auto-start-chat-with-boss/runtime-file-utils.mjs'
+import { createBudgetStore } from '@geekgeekrun/geek-auto-start-chat-with-boss/run-budget-store.mjs'
 import { writeTaskConfigSnapshot } from '@geekgeekrun/geek-auto-start-chat-with-boss/task-config-snapshot.mjs'
 import path from 'node:path'
 import { readRunSettings } from '@geekgeekrun/geek-auto-start-chat-with-boss/run-settings.mjs'
+import { normalizeJobSources } from '@geekgeekrun/geek-auto-start-chat-with-boss/search-source.mjs'
 import { app } from 'electron'
 
 interface DaemonStatus {
@@ -67,6 +69,14 @@ export async function runCommon({
     GEEKGEEKRUND_NO_AUTO_RESTART_EXIT_CODE: [
       AUTO_CHAT_ERROR_EXIT_CODE.PUPPETEER_IS_NOT_EXECUTABLE,
       AUTO_CHAT_ERROR_EXIT_CODE.LOGIN_STATUS_INVALID,
+      AUTO_CHAT_ERROR_EXIT_CODE.LOGIN_STATUS_UNCONFIRMED,
+      AUTO_CHAT_ERROR_EXIT_CODE.ACCOUNT_CHANGED,
+      AUTO_CHAT_ERROR_EXIT_CODE.CITY_FILTER_NOT_APPLIED,
+      AUTO_CHAT_ERROR_EXIT_CODE.RUN_BUDGET_EXCEEDED,
+      AUTO_CHAT_ERROR_EXIT_CODE.RUN_BUDGET_UNAVAILABLE,
+      AUTO_CHAT_ERROR_EXIT_CODE.JSON_STORAGE_UNAVAILABLE,
+      AUTO_CHAT_ERROR_EXIT_CODE.BACKGROUND_WINDOW_UNAVAILABLE,
+      AUTO_CHAT_ERROR_EXIT_CODE.ACCESS_IS_DENIED,
       AUTO_CHAT_ERROR_EXIT_CODE.LLM_UNAVAILABLE,
       AUTO_CHAT_ERROR_EXIT_CODE.MESSAGE_SEND_UNCONFIRMED,
       AUTO_CHAT_ERROR_EXIT_CODE.NO_MATCHING_JOBS,
@@ -78,10 +88,17 @@ export async function runCommon({
   }
   if (mode === 'geekAutoStartWithBossMain') {
     const config = Object.fromEntries(['boss.json', 'common-job-condition-config.json', 'target-company-list.json'].map(name => [name, readConfigFile(name)]))
+    normalizeJobSources(config['boss.json'].jobSourceList)
+    readRunSettings(config['boss.json'])
     subProcessEnv.GEEKGEEKRUN_TASK_CONFIG_FILE = writeTaskConfigSnapshot(
       path.join(runtimeFolderPath, 'task-configs'), currentRunRecord?.id, config,
       { resuming: Boolean(resumeRunRecordId) }
     )
+    // Only an explicitly new logical run starts at zero. In particular, old journal
+    // files may outlive a restored database whose run IDs are assigned again.
+    if (!resumeRunRecordId) createBudgetStore(storageFilePath, currentRunRecord?.id).save({
+      usage: { requests: 0, detailRequests: 0, activeMs: 0 }, baselineUnknown: false
+    })
   }
   const taskArgs = [`--mode=${mode}`, `--run-record-id=${currentRunRecord?.id || 0}`]
   // recorded in the task history so a finished run links to the right data (chats or jobs)

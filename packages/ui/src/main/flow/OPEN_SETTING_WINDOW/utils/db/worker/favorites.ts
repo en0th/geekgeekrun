@@ -1,6 +1,7 @@
 // Favourite folders and the jobs saved in them (tables from the
 // AddFavoriteAndJobHireStatusLog migration in sqlite-plugin).
-import { type Db, nowDbDate } from './run-data'
+import type { Db } from './run-data'
+import { nowDbDate } from './db-date'
 
 const MAX_FOLDER_NAME = 30
 

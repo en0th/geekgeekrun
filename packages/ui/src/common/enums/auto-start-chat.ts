@@ -13,6 +13,13 @@ export enum AUTO_CHAT_ERROR_EXIT_CODE {
   SECURITY_CHECK_NOT_PASSED = 91,
   // every job source was rotated through once: the run finished successfully
   ALL_SOURCES_ROTATED = 92,
+  LOGIN_STATUS_UNCONFIRMED = 93,
+  ACCOUNT_CHANGED = 94,
+  CITY_FILTER_NOT_APPLIED = 95,
+  RUN_BUDGET_EXCEEDED = 96,
+  RUN_BUDGET_UNAVAILABLE = 97,
+  JSON_STORAGE_UNAVAILABLE = 98,
+  BACKGROUND_WINDOW_UNAVAILABLE = 99,
 }
 
 // a long-running task left its turn to a queued one; packages/pm/daemon.js requeues it

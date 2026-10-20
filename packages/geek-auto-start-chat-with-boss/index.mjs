@@ -11,9 +11,9 @@ import JSON5 from 'json5'
 import { EventEmitter } from 'node:events'
 import { setDomainLocalStorage } from '@geekgeekrun/utils/puppeteer/local-storage.mjs'
 
-import { readConfigFile, writeStorageFile, ensureConfigFileExist, readStorageFile, ensureStorageFileExist } from './runtime-file-utils.mjs'
+import { readConfigFile, writeStorageFile, writeBossSession, ensureConfigFileExist, readStorageFile, ensureStorageFileExist, storageFilePath } from './runtime-file-utils.mjs'
 import {
-  calculateTotalCombinations,
+  countFilterCombinations,
   combineFiltersWithConstraintsGenerator,
   checkAnyCombineBossRecommendFilterHasCondition,
   formatStaticCombineFilters,
@@ -36,18 +36,32 @@ import {
   USER_SET_EXPECT_JOB_ENTRIES_SELECTOR,
   SEARCH_BOX_SELECTOR,
 } from './constant.mjs'
-import { parseSalary } from "@geekgeekrun/sqlite-plugin/dist/utils/parser.js"
+import { parseSalaryDetails } from '@geekgeekrun/utils/job-values.cjs'
 import { waitForSageTimeOrJustContinue } from './sage-time.mjs'
 import cityGroupData from './cityGroup.mjs'
 import {
   testIfPosterTitleSuit as testIfPosterTitleSuitByConfig,
   resolvePosterHrTitleRegExpStr,
 } from './poster-title-filter.mjs'
-import { normalizeExperienceSelections, matchesExperience, createJobDetailMatcher, matchesSalary, validateJobFilterConfig } from './job-filter-config.mjs'
+import { normalizeExperienceSelections, matchesExperience, createJobDetailMatcher, matchesSalary, validateJobFilterConfig,
+  normalizeRequiredJobConditions, requiredJobConditionReasons } from './job-filter-config.mjs'
 import { missingJobFields, scopedMarkStrategy, ExpiringBlockSet, COOLDOWN_MS } from './job-safety.mjs'
-import { NoMatchBatchGuard, loadNextJobBatch, openJobCardForReview, listSkipReason, describeListScope, assertCanGreet } from './auto-chat-navigation.mjs'
+import { NoMatchBatchGuard, loadNextJobBatch, openJobCardForReview, listSkipReason, describeListScope, assertCanGreet, activateSourceAndWait } from './auto-chat-navigation.mjs'
 import { readRunSettings } from './run-settings.mjs'
 import { isSecurityCheckUrl, waitForSecurityCheck } from './security-check.mjs'
+import { classifyBossLoginResponse, bossLoginError } from '@geekgeekrun/utils/boss-login.mjs'
+import { bindRunAccount } from './run-account.mjs'
+import { applyJobNatureFilter } from './job-nature-filter.mjs'
+import { watchJobResponses } from './boss-job-responses.mjs'
+import { createRunBudget, budgetStateError } from './run-budget.mjs'
+import { createBudgetStore } from './run-budget-store.mjs'
+import { attachJobRequestBudget } from './job-request-budget.mjs'
+import { isJsonStorageError } from '@geekgeekrun/utils/atomic-json.mjs'
+import { normalizeJobSources, readSearchScope, searchPageMatches, searchRequestMatches,
+  activateSearchSource, sourceFingerprintEntry, describeSearchSource } from './search-source.mjs'
+import { applyCityFilter, normalizeCitySelection } from './city-filter.mjs'
+import { launchTaskBrowser, showTaskBrowser } from './task-browser.mjs'
+import { clickTaskElement } from './task-page-input.mjs'
 const flattedCityList = []
 ;(cityGroupData?.zpData?.cityGroup ?? []).forEach(it => {
   const firstChar = it.firstChar
@@ -93,6 +107,13 @@ export const autoStartChatEventBus = new EventEmitter()
  * @type { import("puppeteer") }
  */
 let puppeteer
+let jobResponseMonitor = null
+let jobRequestBudgetMonitor = null
+const checkJobResponses = () => {
+  runBudget?.assertTime()
+  return jobResponseMonitor?.assertHealthy() ?? Promise.resolve()
+}
+const guardJobResponses = action => jobResponseMonitor ? jobResponseMonitor.guard(action) : action()
 let StealthPlugin
 let LaodengPlugin
 let AnonymizeUaPlugin
@@ -124,6 +145,9 @@ export async function initPuppeteer () {
 const commonJobConditionConfig = readConfigFile('common-job-condition-config.json')
 validateJobFilterConfig(readConfigFile('boss.json'))
 const fieldsForUseCommonConfig = readConfigFile('boss.json').fieldsForUseCommonConfig ?? {}
+const requiredJobConditions = normalizeRequiredJobConditions(
+  (fieldsForUseCommonConfig.requiredConditions ? commonJobConditionConfig : readConfigFile('boss.json')).requiredJobConditions
+)
 
 const targetCompanyList = (
   !fieldsForUseCommonConfig.expectCompanies ?
@@ -143,28 +167,29 @@ const expectJobRegExpStr = readConfigFile('boss.json').expectJobRegExpStr
 const jobNotMatchStrategy = readConfigFile('boss.json').jobNotMatchStrategy ?? MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_BOSS
 
 const expectCityNotMatchStrategy = readConfigFile('boss.json').expectCityNotMatchStrategy ?? MarkAsNotSuitOp.NO_OP
-const expectCityList = (
+const expectCityList = normalizeCitySelection(
   !fieldsForUseCommonConfig.city ?
     readConfigFile('boss.json').expectCityList
     :
     commonJobConditionConfig.expectCityList
-) ?? []
+)
 
 const strategyScopeOptionWhenMarkJobCityNotMatch = readConfigFile('boss.json').strategyScopeOptionWhenMarkJobCityNotMatch ?? StrategyScopeOptionWhenMarkJobNotMatch.ONLY_COMPANY_MATCHED_JOB
 
 // salary
-const expectSalaryLow = parseFloat(
+const salaryAmount = value => value == null || value === '' ? null : Number(value)
+const expectSalaryLow = salaryAmount(
   !fieldsForUseCommonConfig.salary ? 
     readConfigFile('boss.json').expectSalaryLow
     :
     commonJobConditionConfig.expectSalaryLow
-) || null
-const expectSalaryHigh = parseFloat(
+)
+const expectSalaryHigh = salaryAmount(
   !fieldsForUseCommonConfig.salary ? 
     readConfigFile('boss.json').expectSalaryHigh
     :
     commonJobConditionConfig.expectSalaryHigh
-) || null
+)
 const expectSalaryCalculateWay = (
   !fieldsForUseCommonConfig.salary ?
     readConfigFile('boss.json').expectSalaryCalculateWay
@@ -172,7 +197,7 @@ const expectSalaryCalculateWay = (
     commonJobConditionConfig.expectSalaryCalculateWay
 ) ?? SalaryCalculateWay.MONTH_SALARY
 const expectSalaryNotMatchStrategy = readConfigFile('boss.json').expectSalaryNotMatchStrategy ?? MarkAsNotSuitOp.NO_OP
-const isSalaryFilterEnabled = expectSalaryLow || expectSalaryHigh
+const isSalaryFilterEnabled = expectSalaryLow != null || expectSalaryHigh != null
 const strategyScopeOptionWhenMarkSalaryNotMatch = readConfigFile('boss.json').strategyScopeOptionWhenMarkSalaryNotMatch ?? StrategyScopeOptionWhenMarkJobNotMatch.ONLY_COMPANY_MATCHED_JOB
 
 // work exp
@@ -236,10 +261,12 @@ if (
 const posterHrNotMatchStrategy = readConfigFile('boss.json').posterHrNotMatchStrategy ?? MarkAsNotSuitOp.MARK_AS_NOT_SUIT_ON_LOCAL
 const {
   runMode,
+  runInBackground,
   collectOnlyMatchingJobs,
   skipUnparseableSalaryJob,
   perSourceSuccessLimit,
   noMatchStreakLimit,
+  filterCombinationLimit,
   jobListLoadWaitSeconds,
   jobDetailViewWaitSeconds
 } = readRunSettings(readConfigFile('boss.json'))
@@ -251,42 +278,7 @@ const isCollectAll = isCollectMode && !collectOnlyMatchingJobs
 let {
   jobSourceList
 } = readConfigFile('boss.json')
-const normalizedJobSource = []
-const addedSourceSet = new Set()
-for (const source of (jobSourceList ?? [])) {
-  if (addedSourceSet.has(source.type)) {
-    continue
-  }
-  if (!source?.enabled) {
-    continue
-  }
-  if (source.type === 'search') {
-    for (const searchOption of (source.children ?? [])) {
-      if (!searchOption.enabled || !searchOption.keyword?.trim()) {
-        continue
-      }
-      const key = [
-        source.type,
-        searchOption.keyword.trim()
-      ].join('__')
-      if (addedSourceSet.has(key)) {
-        continue
-      }
-      normalizedJobSource.push({
-        type: 'search',
-        keyword: searchOption.keyword.trim()
-      })
-      addedSourceSet.add(key)
-    }
-    addedSourceSet.add(source.type)
-  }
-  else {
-    normalizedJobSource.push({
-      type: source.type,
-    })
-    addedSourceSet.add(source.type)
-  }
-}
+const normalizedJobSource = normalizeJobSources(jobSourceList)
 if (!normalizedJobSource?.length) {
   normalizedJobSource.push({
     type: 'expect'
@@ -332,6 +324,10 @@ const blockJobNotSuit = new ExpiringBlockSet()
 // where the run is among its sources and BOSS page filter combinations; a run restarted after a
 // security check, or continued by the user, picks up here instead of starting over
 let runPosition = { sourceIndex: 0, filterConditionIndex: 0, fingerprint: '' }
+let runBudget = null
+let pendingBudgetSeed = null
+let legacyBudgetSeed = false
+let runAccountId = null
 let pendingResume = null
 // source rotation counters, reset whenever the run moves to the next source
 let sourceSuccessCount = 0
@@ -347,7 +343,7 @@ function hasReachedSourceRotationLimit () {
     (noMatchStreakLimit > 0 && noMatchStreak >= noMatchStreakLimit)
 }
 function sourceLabel (source) {
-  if (source?.type === 'search') return `搜索“${source.keyword}”`
+  if (source?.type === 'search') return `搜索${describeSearchSource(source)}`
   if (source?.type === 'recommend') return '推荐职位'
   if (source?.type === 'expect') return '求职期望推荐'
   return '当前来源'
@@ -374,7 +370,11 @@ const blockEntries = (set) =>
 /** what a later run needs to go on from here */
 export function exportRunState () {
   return {
-    position: { ...runPosition, sourceSuccessCount, noMatchStreak },
+    accountId: runAccountId,
+    budget: runBudget?.snapshot() ?? pendingBudgetSeed,
+    // A depleted budget can stop a resumed worker before it reaches the source loop.
+    // Keep its imported cursor until that loop has actually consumed it.
+    position: pendingResume ? { ...pendingResume } : { ...runPosition, sourceSuccessCount, noMatchStreak },
     blockedJobs: blockEntries(blockJobNotSuit),
     blockedBossesNotActive: blockEntries(blockBossNotActive),
     blockedBossesNotNewChat: [...blockBossNotNewChat]
@@ -386,15 +386,24 @@ export function exportRunState () {
  */
 export function importRunState (state, { skipCurrentFilter = false } = {}) {
   if (!state) return
+  pendingBudgetSeed = state.budget ?? null
+  legacyBudgetSeed = !state.budget
+  runAccountId = typeof state.accountId === 'string' && state.accountId.trim() ? state.accountId.trim() : null
+  blockJobNotSuit.clear()
+  blockBossNotActive.clear()
+  blockBossNotNewChat.clear()
   const restore = (set, entries) => {
     for (const [value, deadline] of entries ?? []) {
       if (deadline) set.setExpiry(value, deadline)
       else set.add(value)
     }
   }
-  restore(blockJobNotSuit, state.blockedJobs)
-  restore(blockBossNotActive, state.blockedBossesNotActive)
-  for (const value of state.blockedBossesNotNewChat ?? []) blockBossNotNewChat.add(value)
+  // Old snapshots did not record an account: their block lists cannot safely be reused.
+  if (runAccountId) {
+    restore(blockJobNotSuit, state.blockedJobs)
+    restore(blockBossNotActive, state.blockedBossesNotActive)
+    for (const value of state.blockedBossesNotNewChat ?? []) blockBossNotNewChat.add(value)
+  }
   if (state.position) {
     pendingResume = {
       ...state.position,
@@ -407,7 +416,29 @@ export function resumeFromCurrentPosition () {
   pendingResume = { ...runPosition, sourceSuccessCount, noMatchStreak }
 }
 
+function ensureRunBudget () {
+  if (runBudget) return runBudget
+  const args = process.argv.slice(2)
+  const inlineId = args.find(arg => arg.startsWith('--run-record-id='))
+  const separateId = args.indexOf('--run-record-id')
+  const rawId = inlineId ? inlineId.slice('--run-record-id='.length) : separateId >= 0 ? args[separateId + 1] : 0
+  const store = createBudgetStore(storageFilePath, rawId)
+  const saved = store.load()
+  if (Number(rawId) > 0 && pendingBudgetSeed && !saved)
+    throw budgetStateError('该任务的预算台账缺失，请恢复完整的数据目录；为避免少算用量，任务已暂停')
+  runBudget = createRunBudget({ limits: readRunSettings(readConfigFile('boss.json')).runBudget,
+    saved, seed: pendingBudgetSeed, legacy: legacyBudgetSeed, persist: state => store.save(state),
+    onUpdate: budget => autoStartChatEventBus.emit('RUN_BUDGET', budget) })
+  process.once('exit', () => { try { runBudget.pause() } catch { /* failed state is already reported */ } })
+  return runBudget
+}
+
+export function pauseRunBudget () { runBudget?.pause() }
+export function resumeRunBudget () { runBudget?.resume() }
+export function runBudgetStatus () { return runBudget?.snapshot() ?? pendingBudgetSeed }
+
 async function markJobAsNotSuitInRecommendPage (reasonCode) {
+  await checkJobResponses()
   /**
    * @type {{chosenReasonInUi?: { code: number, text: string}}}
    */
@@ -420,7 +451,7 @@ async function markJobAsNotSuitInRecommendPage (reasonCode) {
       })
     })
     await sleep(200)
-    await notSuitableFeedbackButtonProxy.click()
+    await clickTaskElement(page, notSuitableFeedbackButtonProxy)
     const rawReasonResData = (await (await page.waitForResponse(
       response => {
         if (
@@ -451,7 +482,7 @@ async function markJobAsNotSuitInRecommendPage (reasonCode) {
             ?? (await chooseReasonDialogProxy.$(`.zp-type-item[title*="距离"]`))
             ?? (await chooseReasonDialogProxy.$(`.zp-type-item[title*="薪资"]`))
           if (opProxy) {
-            await opProxy.click()
+            await clickTaskElement(page, opProxy)
             isOptionChosen = true
           }
           break
@@ -462,7 +493,7 @@ async function markJobAsNotSuitInRecommendPage (reasonCode) {
             ?? (await chooseReasonDialogProxy.$(`.zp-type-item[title="面试过/入职过"]`))
             ?? (await chooseReasonDialogProxy.$(`.zp-type-item[title="重复推荐"]`))
           if (opProxy) {
-            await opProxy.click()
+            await clickTaskElement(page, opProxy)
             isOptionChosen = true
           }
           break
@@ -475,7 +506,7 @@ async function markJobAsNotSuitInRecommendPage (reasonCode) {
             ?? (await chooseReasonDialogProxy.$(`.zp-type-item[title="面试过/入职过"]`))
             ?? (await chooseReasonDialogProxy.$(`.zp-type-item[title="重复推荐"]`))
           if (opProxy) {
-            await opProxy.click()
+            await clickTaskElement(page, opProxy)
             isOptionChosen = true
           }
           break
@@ -488,7 +519,7 @@ async function markJobAsNotSuitInRecommendPage (reasonCode) {
             ?? (await chooseReasonDialogProxy.$(`.zp-type-item[title="面试过/入职过"]`))
             ?? (await chooseReasonDialogProxy.$(`.zp-type-item[title="重复推荐"]`))
           if (opProxy) {
-            await opProxy.click()
+            await clickTaskElement(page, opProxy)
             isOptionChosen = true
           }
           break
@@ -499,7 +530,7 @@ async function markJobAsNotSuitInRecommendPage (reasonCode) {
             ?? (await chooseReasonDialogProxy.$(`.zp-type-item[title="面试过/入职过"]`))
             ?? (await chooseReasonDialogProxy.$(`.zp-type-item[title="重复推荐"]`))
           if (opProxy) {
-            await opProxy.click()
+            await clickTaskElement(page, opProxy)
             isOptionChosen = true
           }
           break
@@ -509,7 +540,7 @@ async function markJobAsNotSuitInRecommendPage (reasonCode) {
       if (isOptionChosen) {
         await sleepWithRandomDelay(1500)
         const confirmButtonProxy = await chooseReasonDialogProxy.$(`.zp-dialog-footer .zp-btn.zp-btn-sure`)
-        await confirmButtonProxy.click()
+        await clickTaskElement(page, confirmButtonProxy)
         const response = await page.waitForResponse(
           response => {
             if (
@@ -533,7 +564,7 @@ async function markJobAsNotSuitInRecommendPage (reasonCode) {
         }
       } else {
         const cancelButtonProxy = await chooseReasonDialogProxy.$(`.zp-close`)
-        await cancelButtonProxy.click()
+        await clickTaskElement(page, cancelButtonProxy)
       }
 
       await sleepWithRandomDelay(2500)
@@ -582,16 +613,15 @@ async function setFilterCondition (selectedFilters) {
   console.log('----------------------------')
   for(let i = 0; i < placeholderTexts.length; i++) {
     const placeholderText = placeholderTexts[i]
+    if (placeholderText === '城市') {
+      await applyCityFilter(page, cityList, { cityCatalog: flattedCityList })
+      continue
+    }
     const filterDropdownProxy = await (async () => {
       const jsHandle = (await page.evaluateHandle((placeholderText) => {
-        if (placeholderText === '城市') {
-          return document.querySelector('.page-jobs-main .filter-condition-inner [ka="switch_city_dialog_open"]')
-        }
-        else {
-          const filterBar = document.querySelector('.page-jobs-main .filter-condition-inner')
-          const dropdownEntry = filterBar.__vue__.$children.find(it => it.placeholder === placeholderText)
-          return dropdownEntry?.$el
-        }
+        const filterBar = document.querySelector('.page-jobs-main .filter-condition-inner')
+        const dropdownEntry = filterBar.__vue__.$children.find(it => it.placeholder === placeholderText)
+        return dropdownEntry?.$el
       }, placeholderText))?.asElement();
       return jsHandle
     })()
@@ -601,52 +631,7 @@ async function setFilterCondition (selectedFilters) {
 
     const currentFilterConditions = conditionArr[i];
     const filterDropdownCssList = await filterDropdownProxy.evaluate(el => Array.from(el.classList));
-    if (placeholderText === '城市') {
-      const onPageSelectedCity = filterDropdownCssList.includes('active') ? (await filterDropdownProxy.evaluate(el => el.textContent.trim())) : null
-      if (!onPageSelectedCity && !currentFilterConditions.length) {
-        continue
-      } else if (onPageSelectedCity === (currentFilterConditions[0] ?? null)) {
-        continue
-      } else {
-        if (!currentFilterConditions.length) {
-          const clearButtonHandle = await page.$(`.page-jobs-main .filter-condition-inner [ka="empty-filter"]`)
-          await clearButtonHandle.click()
-        }
-        else {
-          await filterDropdownProxy?.click()
-          await page.waitForFunction(() => {
-            const dialogEl = document.querySelector('.city-select-dialog')
-            return dialogEl && window.getComputedStyle(dialogEl).display !== 'none'
-          })
-          const citySelectWrapperProxy = await page.waitForSelector('.city-select-wrapper')
-          let targetCityElJsHandle = (await page.evaluateHandle((cityName) => {
-            const targetCityEl = [...document.querySelectorAll('.city-select-dialog .city-select-wrapper ul.city-list-hot li')].find(it => it.textContent.trim() === cityName) ?? null
-            return targetCityEl
-          }, currentFilterConditions[0]))?.asElement()
-          if (!targetCityElJsHandle) {
-            const targetCityItem = flattedCityList.find(it => it.name === currentFilterConditions[0])
-            if (!targetCityItem) {
-              // unexpected condition
-              continue
-            }
-            const firstChar = targetCityItem.firstChar
-            const targetCityCharListEntryHandle = await page.$(`xpath///*[contains(@class, "city-select-dialog")]//*[contains(@class, "city-select-wrapper")]//ul[contains(@class, "city-char-list")]//li[contains(text(), '${firstChar.toUpperCase()}')]`)
-            await targetCityCharListEntryHandle.click()
-            targetCityElJsHandle = (await page.evaluateHandle((cityName) => {
-              const targetCityEl = [...document.querySelectorAll('.city-select-dialog .city-select-wrapper .list-select-list a')].find(it => it.textContent.trim() === cityName) ?? null
-              return targetCityEl
-            }, currentFilterConditions[0]))?.asElement()
-          }
-          if (!targetCityElJsHandle) {
-            // unexpected condition
-            continue
-          }
-          await targetCityElJsHandle.click()
-          await sleep(1000)
-        }
-      }
-    }
-    else {
+    {
       if (!filterDropdownCssList.includes('is-select') && !currentFilterConditions.length) {
         continue
       } else {
@@ -663,12 +648,12 @@ async function setFilterCondition (selectedFilters) {
           if (placeholderText === '公司行业') {
             const activeOptionElAtCurrentFilterProxyList = await page.$$(`.page-jobs-main .filter-condition-inner .active[ka^="${optionKaPrefix}"]`)
             for (const it of activeOptionElAtCurrentFilterProxyList) {
-              await it.click()
+              await clickTaskElement(page, it)
             }
           } else {
             // select 不限 immediately
             const buxianOptionElProxy = await page.$(`.page-jobs-main .filter-condition-inner [ka="${optionKaPrefix}${0}"]`)
-            await buxianOptionElProxy.click()
+            await clickTaskElement(page, buxianOptionElProxy)
           }
         } else {
           //#region uncheck options perviously checked but not existed in current filter.
@@ -690,7 +675,7 @@ async function setFilterCondition (selectedFilters) {
               }
               const activeOptionElProxy = activeOptionElAtCurrentFilterProxyList[i]
               if (!currentFilterConditions.includes(activeValue)) {
-                await activeOptionElProxy.click()
+                await clickTaskElement(page, activeOptionElProxy)
               }
             }
           }
@@ -722,7 +707,7 @@ async function setFilterCondition (selectedFilters) {
             if (!optionElProxy) {
               continue;
             }
-            await optionElProxy.click()
+            await clickTaskElement(page, optionElProxy)
           }
           //#endregion
           //#region move out dropdown entry to make dropdown hidden
@@ -740,6 +725,9 @@ async function setFilterCondition (selectedFilters) {
       }
     }
   }
+  if (!isCollectAll && !await applyJobNatureFilter(page, requiredJobConditions.jobNatures))
+    autoStartChatEventBus.emit('TASK_PROGRESS', { detail: '网页求职类型筛选未能确认，将按岗位明确给出的类型逐条核验' })
+
 }
 
 async function toRecommendPage (hooks) {
@@ -748,14 +736,16 @@ async function toRecommendPage (hooks) {
         return true
       }
       return false
-    }, { timeout: 120 * 1000 }).then((res) => {
-      return res.json()
-    })
+    }, { timeout: 30 * 1000 }).then(async (res) => ({
+      body: await res.json().catch(() => null), httpStatus: res.status()
+    })).catch(() => ({ body: null, httpStatus: 0 }))
   page.goto(recommendJobPageUrl, { timeout: 1 * 1000 }).catch(e => { void e })
   await sleep(3000)
   await page.waitForFunction(() => {
     return document.readyState === 'complete'
-  }, { timeout: 120 * 1000 })
+  }, { timeout: 30 * 1000, polling: 100 }).catch(() => {
+    throw bossLoginError({ status: 'unknown', detail: 'BOSS页面未能完成加载，凭证已保留；请检查网络或在浏览器中完成验证' })
+  })
   if (isSecurityCheckUrl(page.url())) {
     throw new Error('AUTO_CHAT_SECURITY_CHECK')
   }
@@ -766,25 +756,37 @@ async function toRecommendPage (hooks) {
     throw new Error("ACCESS_IS_DENIED")
   }
 
-  await page.waitForFunction(({ recommendJobPageUrl }) => {
-    return location.href.startsWith(recommendJobPageUrl) && document.readyState === 'complete'
-  }, undefined, { recommendJobPageUrl })
-
+  // A login redirect cannot become a job page until authentication succeeds.
+  // Classify it before waiting for the job-page URL, otherwise it stalls and restarts.
+  const loginRedirect = /^https:\/\/www\.zhipin\.com\/web\/user\/(?:[?#]|$)/.test(page.url())
+  const { body: userInfoResponse, httpStatus } = loginRedirect
+    ? { body: { code: 7, message: 'BOSS要求重新登录' }, httpStatus: 401 }
+    : await userInfoPromise
+  const loginResult = classifyBossLoginResponse(httpStatus, userInfoResponse)
+  if (loginResult.status !== 'valid' && loginResult.status !== 'invalid')
+    throw bossLoginError(loginResult)
+  if (loginResult.status === 'valid') {
+    await page.waitForFunction(({ recommendJobPageUrl }) => {
+      return location.href.startsWith(recommendJobPageUrl) && document.readyState === 'complete'
+    }, { timeout: 30 * 1000, polling: 100 }, { recommendJobPageUrl }).catch(() => {
+      throw bossLoginError({ status: 'unknown', detail: '登录后未能确认岗位页面，凭证已保留；请在BOSS检查页面后恢复任务' })
+    })
+    runAccountId = bindRunAccount(runAccountId, userInfoResponse.zpData.encryptUserId)
+  }
   hooks.pageLoaded?.call()
-
-  let userInfoResponse = await userInfoPromise
-  await hooks.userInfoResponse?.promise({ userInfoResponse, browser })
-  if (userInfoResponse?.code !== 0) {
+  await hooks.userInfoResponse?.promise({ userInfoResponse, browser, httpStatus })
+  if (loginResult.status !== 'valid') {
     autoStartChatEventBus.emit('LOGIN_STATUS_INVALID', {
       userInfoResponse
     })
-    writeStorageFile('boss-cookies.json', [])
+    await writeStorageFile('boss-cookies.json', [])
     throw new Error("LOGIN_STATUS_INVALID")
   } else {
-    await storeStorage(page).catch(() => void 0)
+    await storeStorage(page)
   }
 
   const computedSourceList = []
+  await checkJobResponses()
   for (const source of normalizedJobSource) {
     switch (source.type) {
       case 'recommend': {
@@ -794,7 +796,7 @@ async function toRecommendPage (hooks) {
           async getIsCurrentActiveSource () {
             return await page.evaluate(
               ({ RECOMMEND_JOB_ENTRY_SELECTOR }) => {
-                return document.querySelector(RECOMMEND_JOB_ENTRY_SELECTOR).classList.contains('active')
+                return !!document.querySelector(RECOMMEND_JOB_ENTRY_SELECTOR)?.classList.contains('active')
               }, {
                 RECOMMEND_JOB_ENTRY_SELECTOR
               }
@@ -804,7 +806,7 @@ async function toRecommendPage (hooks) {
             // not first navigation and should choose a job (except job)
             // click first expect job
             const expectJobTabHandler = await page.$(RECOMMEND_JOB_ENTRY_SELECTOR)
-            await expectJobTabHandler.click() // switch to first condition
+            await clickTaskElement(page, expectJobTabHandler) // switch to first condition
           }
         })
         continue
@@ -830,7 +832,7 @@ async function toRecommendPage (hooks) {
                   USER_SET_EXPECT_JOB_ENTRIES_SELECTOR,
                   index
                 }) => {
-                  return document.querySelector(`${USER_SET_EXPECT_JOB_ENTRIES_SELECTOR}:nth-child(${index + 1})`).classList.contains('active')
+                  return !!document.querySelector(`${USER_SET_EXPECT_JOB_ENTRIES_SELECTOR}:nth-child(${index + 1})`)?.classList.contains('active')
                 }, {
                   USER_SET_EXPECT_JOB_ENTRIES_SELECTOR,
                   index
@@ -841,7 +843,7 @@ async function toRecommendPage (hooks) {
               // not first navigation and should choose a job (except job)
               // click first expect job
               const expectJobTabHandler = await page.$(`${USER_SET_EXPECT_JOB_ENTRIES_SELECTOR}:nth-child(${index + 1})`)
-              await expectJobTabHandler.click() // switch to first condition
+              await clickTaskElement(page, expectJobTabHandler) // switch to first condition
             }
           })
         })
@@ -851,29 +853,14 @@ async function toRecommendPage (hooks) {
         computedSourceList.push({
           type: source.type,
           keyword: source.keyword,
+          positionCodes: source.positionCodes,
+          confirmed: false,
           async getIsCurrentActiveSource () {
-            const elHandle = await page.$(`.page-jobs-main`)
-            const currentKeyWord = await elHandle?.evaluate((el) => {
-              return el?.__vue__?.formData?.query
-            })
-            if (!currentKeyWord) {
-              return false
-            }
-            return currentKeyWord === source.keyword
+            const scope = await readSearchScope(page)
+            return this.confirmed && scope ? searchPageMatches(scope, source) : false
           },
           async setToActiveSource() {
-            await page.waitForSelector(SEARCH_BOX_SELECTOR)
-            const inputHandle = await page.$(`${SEARCH_BOX_SELECTOR} input`)
-            await inputHandle.focus()
-            await sleep(100)
-            let currentValue = await inputHandle.evaluate(el => el.value)
-            while (currentValue) {
-              await inputHandle.press('Backspace')
-              currentValue = await inputHandle.evaluate(el => el.value)
-            }
-            await inputHandle.type(source.keyword?.trim() || '', { delay: 100 })
-            await sleep(500)
-            await inputHandle.press('Enter')
+            await activateSearchSource(page, source, SEARCH_BOX_SELECTOR)
           }
         })
       }
@@ -887,15 +874,17 @@ async function toRecommendPage (hooks) {
 
   // the same sources and filter settings as the saved position, or it means nothing
   const positionFingerprint = JSON.stringify([
-    computedSourceList.map((it) => [it.type, it.selector ?? null, it.keyword ?? null]),
+    computedSourceList.map(sourceFingerprintEntry),
     combineRecommendJobFilterType,
     staticCombineRecommendJobFilterConditions,
-    anyCombineRecommendJobFilter
+    anyCombineRecommendJobFilter,
+    ...(combineRecommendJobFilterType === CombineRecommendJobFilterType.ANY_COMBINE
+      ? [{ scheduleVersion: 2, filterCombinationLimit, skipEmpty: isSkipEmptyConditionForCombineRecommendJobFilter }]
+      : [])
   ])
   const resumeFrom = pendingResume?.fingerprint === positionFingerprint &&
     Number.isInteger(pendingResume.sourceIndex) && pendingResume.sourceIndex >= 0 &&
     pendingResume.sourceIndex < computedSourceList.length ? pendingResume : null
-  pendingResume = null
   const savedCount = value => Number.isSafeInteger(value) && value >= 0 ? value : 0
   sourceSuccessCount = savedCount(resumeFrom?.sourceSuccessCount)
   noMatchStreak = savedCount(resumeFrom?.noMatchStreak)
@@ -904,6 +893,10 @@ async function toRecommendPage (hooks) {
   // filter combinations of the first source to pass over; past the last one, the next source
   let skipFilterConditions =
     resumeFrom && resumeFrom.sourceIndex === currentSourceIndex ? resumeFrom.filterConditionIndex : 0
+  // Publish the validated cursor before the first browser wait. A stop in the
+  // security-dialog/source setup window must retain its fingerprint as well as counts.
+  runPosition = { sourceIndex: currentSourceIndex, filterConditionIndex: skipFilterConditions, fingerprint: positionFingerprint }
+  pendingResume = null
   if (resumeFrom) {
     autoStartChatEventBus.emit('TASK_PROGRESS', { detail: '从上次的职位来源和筛选组合继续' })
   }
@@ -924,14 +917,21 @@ async function toRecommendPage (hooks) {
       const closeButtonProxy = await setSecurityQuestionTipModelProxy?.$('.close')
 
       if (setSecurityQuestionTipModelProxy && closeButtonProxy) {
-        await closeButtonProxy.click()
+        await clickTaskElement(page, closeButtonProxy)
       }
     }
 
     const filterConditions =
       combineRecommendJobFilterType === CombineRecommendJobFilterType.STATIC_COMBINE
         ? formatStaticCombineFilters(staticCombineRecommendJobFilterConditions)
-          : combineFiltersWithConstraintsGenerator(anyCombineRecommendJobFilter)
+          : combineFiltersWithConstraintsGenerator(anyCombineRecommendJobFilter, {
+            limit: filterCombinationLimit, skipEmpty: isSkipEmptyConditionForCombineRecommendJobFilter, preferSelected: true
+          })
+    const budgetApplies = combineRecommendJobFilterType === CombineRecommendJobFilterType.ANY_COMBINE &&
+      countFilterCombinations(anyCombineRecommendJobFilter, isSkipEmptyConditionForCombineRecommendJobFilter).total > BigInt(filterCombinationLimit)
+    if (budgetApplies) autoStartChatEventBus.emit('TASK_PROGRESS', {
+      detail: `自动组合每个来源最多查看${filterCombinationLimit}种，优先已选条件；达到预算后换源`, state: 'searching'
+    })
     let expectJobList
     let filterConditionIndex = -1
     iterateFilterCondition: for (
@@ -969,38 +969,33 @@ async function toRecommendPage (hooks) {
             break
           }
         }
-        if (
-          (
-            combineRecommendJobFilterType === CombineRecommendJobFilterType.STATIC_COMBINE && filterCondition === null
-          )
-          ||
-          (
-            combineRecommendJobFilterType === CombineRecommendJobFilterType.ANY_COMBINE &&
-            isSkipEmptyConditionForCombineRecommendJobFilter &&
-            Object.keys(filterCondition).length &&
-            Object.keys(filterCondition).every(k => !filterCondition[k]?.length)
-          )
-        ) {
-          sleep(4000)
-          continue iterateFilterCondition
-        }
         expectJobList = await page.evaluate(`document.querySelector('.c-expect-select')?.__vue__?.expectList`)
         if (onPageCurrentSourceIndex === currentSourceIndex) {
           // first navigation and can immediately start chat (recommend job)
         } else {
-          await computedSourceList[currentSourceIndex].setToActiveSource()
-          await page.waitForResponse(
-            response => {
-              if (
-                response.url().startsWith('https://www.zhipin.com/wapi/zpgeek/pc/recommend/job/list.json') ||
-                response.url().startsWith('https://www.zhipin.com/wapi/zpgeek/search/joblist.json')
-              ) {
-                return true
-              }
-              return false
+          const source = computedSourceList[currentSourceIndex]
+          jobResponseMonitor?.expectSearch()
+          try {
+            await guardJobResponses(() => activateSourceAndWait(page, () => source.setToActiveSource(), {
+              matchesResponse: response => source.type === 'search'
+                ? searchRequestMatches(response.request(), source)
+                : response.url().startsWith('https://www.zhipin.com/wapi/zpgeek/pc/recommend/job/list.json')
+            }))
+            if (source.type === 'search') {
+              source.confirmed = true
+              jobResponseMonitor?.expectSearch(request => searchRequestMatches(request, source))
             }
-          );
-          await storeStorage(page).catch(() => void 0)
+          } catch (error) {
+            await checkJobResponses()
+            if (source.type === 'search' && error?.name === 'TimeoutError') {
+              const failure = new Error('AUTO_CHAT_SEARCH_FILTER_NOT_APPLIED')
+              failure.detail = '未能确认BOSS已应用搜索内容和平台职位类目，任务已暂停；请检查页面后恢复'
+              throw failure
+            }
+            throw error
+          }
+          await checkJobResponses()
+          await storeStorage(page)
           await sleepWithRandomDelay(2000)
           await waitForSageTimeOrJustContinue({
             tag: 'afterJobSourceChosen',
@@ -1012,7 +1007,8 @@ async function toRecommendPage (hooks) {
         await sleep(1500) // TODO: accurately check if job list request sent and response received after set condition
         await page.waitForFunction(() => {
           return !document.querySelector('.job-recommend-result .job-rec-loading')
-        })
+        }, { polling: 100 })
+        await checkJobResponses()
         try {
           // the greeting went out and the per-source success limit is reached: rotate below
           let chatSourceRotationDone = false
@@ -1037,11 +1033,9 @@ async function toRecommendPage (hooks) {
                 if (!Array.isArray(jobListData)) throw new Error('AUTO_CHAT_LIST_STALLED')
                 for (const row of jobListData) {
                   if (isCollectAll) break
-                  const salary = parseSalary(row.salaryDesc || '')
-                  // unparseable salaries are 兼职、日结、实习 etc.; skipped by default whether or not the
-                  // salary filter is on (when it is on, listSkipReason still skips them)
-                  const unparseableSalary = salary.low == null || salary.high == null
-                  const reason = (skipUnparseableSalaryJob && unparseableSalary ? '薪资无法识别（兼职、日结、实习等）' : '') || listSkipReason(row, {
+                  const salary = parseSalaryDetails(row.salaryDesc || '')
+                  const unparseableSalary = salary.status !== 'parsed'
+                  const reason = (skipUnparseableSalaryJob && unparseableSalary ? '薪资无法识别或面议' : '') || listSkipReason(row, {
                     cities: expectCityList, cityStrategy: expectCityNotMatchStrategy,
                     experiences: expectWorkExpList, experienceStrategy: expectWorkExpNotMatchStrategy,
                     salaryEnabled: !!isSalaryFilterEnabled, salaryStrategy: expectSalaryNotMatchStrategy,
@@ -1065,7 +1059,7 @@ async function toRecommendPage (hooks) {
               let matchedJobId = null
               let targetJobData, selectedJobData // they show be same; one is from list, another is from detail
               function checkIfSalarySuit(salaryDesc) {
-                return matchesSalary(parseSalary(salaryDesc), { low: expectSalaryLow, high: expectSalaryHigh, unit: expectSalaryCalculateWay })
+                return matchesSalary(parseSalaryDetails(salaryDesc), { low: expectSalaryLow, high: expectSalaryHigh, unit: Number(expectSalaryCalculateWay) })
               }
               function getTempTargetJobIndexToCheckDetail () {
                 // collecting everything: any job not handled yet this run or cooling down
@@ -1128,13 +1122,14 @@ async function toRecommendPage (hooks) {
               }
               continueFind: while (targetJobIndex < 0 && !hasReachLastPage) {
                 // between jobs: the task queue may ask this run to make way for a queued task
+                runBudget?.checkpoint()
                 await hooks.checkpoint?.promise()
                 // when disable company allow list, we will believe that the first one in the list is your expect job.
                 let tempTargetJobIndexToCheckDetail = getTempTargetJobIndexToCheckDetail()
                 while (tempTargetJobIndexToCheckDetail < 0 && !hasReachLastPage) {
                   searchGuard.beforeLoad()
                   autoStartChatEventBus.emit('TASK_PROGRESS', { detail: `当前列表没有${isCollectMode ? '待收集' : '可沟通'}岗位，正在检查下一批；连续5批没有可处理的会换下一个来源`, state: 'searching' })
-                  const nextBatch = await loadNextJobBatch({ page, list: recommendJobListElProxy })
+                  const nextBatch = await guardJobResponses(() => loadNextJobBatch({ page, list: recommendJobListElProxy, checkResponses: checkJobResponses }))
                   hasReachLastPage = !nextBatch.hasMore
                   searchGuard.loadedBatch()
                   await waitForSageTimeOrJustContinue({ tag: 'afterJobListPageFetched', hooks })
@@ -1165,7 +1160,8 @@ async function toRecommendPage (hooks) {
                   await sleep(500)
                   await openJobCardForReview({
                     page, list: recommendJobListElProxy, index: tempTargetJobIndexToCheckDetail,
-                    jobId: jobListData[tempTargetJobIndexToCheckDetail]?.encryptJobId
+                    jobId: jobListData[tempTargetJobIndexToCheckDetail]?.encryptJobId,
+                    checkResponses: checkJobResponses
                   })
                   // sleepWithRandomDelay adds up to 1s on top, so the wait never looks fixed
                   await sleepWithRandomDelay(jobDetailViewWaitSeconds * 1000)
@@ -1173,6 +1169,7 @@ async function toRecommendPage (hooks) {
                     tag: 'afterJobDetailFetched',
                     hooks
                   })
+                  await checkJobResponses()
                   targetJobData = await page.evaluate('document.querySelector(".job-detail-box").__vue__.data')
                   selectedJobData = await page.evaluate('document.querySelector(".page-jobs-main").__vue__.currentJob')
                   // save the job detail info
@@ -1189,7 +1186,7 @@ async function toRecommendPage (hooks) {
                     }
                     continue continueFind
                   }
-                  const parsedSalary = parseSalary(selectedJobData.salaryDesc || '')
+                  const parsedSalary = parseSalaryDetails(selectedJobData.salaryDesc || '')
                   const missing = missingJobFields({
                     jobName: targetJobData.jobInfo?.jobName,
                     jobTypeName: targetJobData.jobInfo?.positionName,
@@ -1202,6 +1199,7 @@ async function toRecommendPage (hooks) {
                     description: !!expectJobDescRegExpStr?.trim(), city: !!expectCityList.length,
                     company: enableCompanyAllowList || !!blockCompanyNameRegExp, experience: !!expectWorkExpList.length,
                     hr: isPosterHrFilterEnabled, salary: !!isSalaryFilterEnabled })
+                  missing.push(...requiredJobConditionReasons(targetJobData, requiredJobConditions))
                   if (missing.length) {
                     blockJobNotSuit.add(targetJobData.jobInfo.encryptId)
                     autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'skipped', detail: missing.join('；') + '，不发送、不标记' })
@@ -1625,10 +1623,8 @@ async function toRecommendPage (hooks) {
                       name => selectedJobData.brandName?.toLowerCase?.()?.includes(name.toLowerCase())
                     ) ||
                     // check if job has been marked as not suit or not active
-                    [
-                      ...blockJobNotSuit,
-                      ...blockBossNotActive
-                    ].includes(targetJobData.jobInfo.encryptId)
+                    blockJobNotSuit.has(targetJobData.jobInfo.encryptId) ||
+                    blockBossNotActive.has(targetJobData.jobInfo.encryptUserId)
                   ) {
                     // just skip
                     blockJobNotSuit.add(targetJobData.jobInfo.encryptId)
@@ -1641,6 +1637,7 @@ async function toRecommendPage (hooks) {
                     continue continueFind
                   }
                   if (isCollectMode) {
+                    await hooks.jobMatchedForCollection?.promise(targetJobData)
                     blockJobNotSuit.add(targetJobData.jobInfo.encryptId)
                     autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'collected', detail: '已保存符合条件的岗位' })
                     searchGuard.reset()
@@ -1693,7 +1690,8 @@ async function toRecommendPage (hooks) {
             }
           })
           // last line of defence before a message goes out
-          assertCanGreet({ isCollectMode, targetJobIndex, matchedJobId, targetJobId: targetJobData?.jobInfo?.encryptId })
+          assertCanGreet({ isCollectMode, targetJobIndex, matchedJobId, targetJobId: targetJobData?.jobInfo?.encryptId,
+            detail: targetJobData, requiredConditions: requiredJobConditions })
           await waitForSageTimeOrJustContinue({
             tag: 'beforeJobChatStartup',
             hooks
@@ -1705,7 +1703,9 @@ async function toRecommendPage (hooks) {
           const startChatButtonProxy = await page.$('.job-detail-box .op-btn.op-btn-chat')
           await sleep(500)
           //#region click the chat button
-          await startChatButtonProxy.click()
+          await checkJobResponses()
+          runBudget?.checkpoint()
+          await clickTaskElement(page, startChatButtonProxy)
 
           const waitAddFriendResponse = async () => {
             const addFriendResponse = await page.waitForResponse(
@@ -1745,7 +1745,7 @@ async function toRecommendPage (hooks) {
             blockBossNotNewChat.add(targetJobData.jobInfo.encryptUserId)
             const rotateSource = countSourceSuccess()
             autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'sent', detail: 'BOSS已确认开聊成功' })
-            await storeStorage(page).catch(() => void 0)
+            await storeStorage(page)
             if (rotateSource) {
               autoStartChatEventBus.emit('TASK_PROGRESS', { detail: `本来源已开聊 ${sourceSuccessCount} 个岗位，达到换源数量（${perSourceSuccessLimit}），切换下一个来源`, state: 'searching' })
               chatSourceRotationDone = true
@@ -1756,16 +1756,18 @@ async function toRecommendPage (hooks) {
               await page.goBack()
               await page.waitForFunction(() => {
                 return location.href.startsWith(`https://www.zhipin.com/web/geek/jobs`) && document.readyState === 'complete'
-              })
+              }, { polling: 100 })
               await sleepWithRandomDelay(2000)
             }
             const closeDialogButtonProxy = await page.$('.greet-boss-dialog .greet-boss-footer .cancel-btn')
             if (closeDialogButtonProxy) {
-              await closeDialogButtonProxy.click()
+              await clickTaskElement(page, closeDialogButtonProxy)
               await sleepWithRandomDelay(2000)
             }
           }
           const handleAddFriendResponse = async (res, { hasGoToChatPage = false } = {}) => {
+            const access = classifyBossLoginResponse(200, res)
+            if (access.status === 'restricted' || access.status === 'invalid') throw bossLoginError(access)
             if (res.code === 0) {
               await waitAndHandleChatSuccess({ hasGoToChatPage })
             }
@@ -1779,7 +1781,8 @@ async function toRecommendPage (hooks) {
                 hooks
               })
               const confirmButton = await page.waitForSelector('.chat-block-dialog .chat-block-footer .sure-btn')
-              await confirmButton.click()
+              await checkJobResponses()
+              await clickTaskElement(page, confirmButton)
               const nextRes = await waitAddFriendResponse()
               await handleAddFriendResponse(nextRes)
             }
@@ -1792,7 +1795,8 @@ async function toRecommendPage (hooks) {
                 hooks
               })
               const confirmButton = await page.waitForSelector(`xpath///*[contains(@class, "chat-block-dialog")]//*[contains(@class, "chat-block-footer")]//*[contains(text(), "继续")]`)
-              await confirmButton.click()
+              await checkJobResponses()
+              await clickTaskElement(page, confirmButton)
               const nextRes = await waitAddFriendResponse()
               await handleAddFriendResponse(nextRes)
             }
@@ -1805,7 +1809,7 @@ async function toRecommendPage (hooks) {
               )
             ) {
               // startup chat error, may the chance of today has used out
-              await storeStorage(page).catch(() => void 0)
+              await storeStorage(page)
               throw new Error('STARTUP_CHAT_ERROR_DUE_TO_TODAY_CHANCE_HAS_USED_OUT')
             }
             else {
@@ -1874,6 +1878,11 @@ async function toRecommendPage (hooks) {
         }
       }
     }
+    if (budgetApplies && filterConditionIndex + 1 >= filterCombinationLimit && !hasReachedSourceRotationLimit()) {
+      autoStartChatEventBus.emit('TASK_PROGRESS', {
+        detail: `已达到当前来源的${filterCombinationLimit}种组合预算，结束该来源`, state: 'searching'
+      })
+    }
     skipFilterConditions = 0
     // for of reach terminal
     if (
@@ -1896,20 +1905,28 @@ async function toRecommendPage (hooks) {
 }
 
 export async function mainLoop (hooks) {
+  const budget = ensureRunBudget()
+  budget.resume()
+  try { return await budget.guard(() => runBrowserLoop(hooks)) }
+  finally { budget.pause() }
+}
+
+async function runBrowserLoop (hooks) {
   if (!puppeteer) {
     await initPuppeteer()
   }
   try {
-    browser = await puppeteer.launch({
-      headless: false,
-      ignoreHTTPSErrors: true,
-      defaultViewport: {
-        width: 1440,
-        height: 900 - 140,
-      }
-    })
+    const launched = await launchTaskBrowser(puppeteer, { background: runInBackground })
+    browser = launched.browser
     hooks.puppeteerLaunched?.call(browser)
-    page = (await browser.pages())[0]
+    page = launched.page
+    jobRequestBudgetMonitor?.dispose()
+    jobRequestBudgetMonitor = await attachJobRequestBudget(page, runBudget)
+    jobResponseMonitor?.dispose()
+    jobResponseMonitor = watchJobResponses(page, {
+      onBlocked: error => autoStartChatEventBus.emit('TASK_PROGRESS', { detail: error.detail, state: 'blocked' }),
+      onListResponse: summary => console.debug('BOSS_LIST_RESPONSE', JSON.stringify(summary))
+    })
     hooks.pageGotten?.call(page)
     const ownPage = page
     // tell the task as soon as BOSS shows a verification page, and when the user has passed it
@@ -1917,22 +1934,26 @@ export async function mainLoop (hooks) {
     ownPage.on('framenavigated', (frame) => {
       if (frame !== ownPage.mainFrame()) return
       const checking = isSecurityCheckUrl(frame.url())
-      if (checking && !onSecurityCheck) autoStartChatEventBus.emit('SECURITY_CHECK', { url: frame.url() })
+      if (checking && !onSecurityCheck) {
+        try { runBudget?.pause() } catch { /* guard() reports the failed budget */ }
+        autoStartChatEventBus.emit('SECURITY_CHECK', { url: frame.url() })
+      }
       if (!checking && onSecurityCheck) autoStartChatEventBus.emit('SECURITY_CHECK_PASSED')
       onSecurityCheck = checking
     })
     //set cookies
     const bossCookies = readStorageFile('boss-cookies.json')
-    const bossLocalStorage = readStorageFile('boss-local-storage.json')
     await hooks.cookieWillSet?.promise({ cookies: bossCookies, browser })
+    const bossLocalStorage = readStorageFile('boss-local-storage.json')
     for(let i = 0; i < bossCookies.length; i++){
       if (Object.hasOwn(bossCookies[i], 'sameSite')) {
         bossCookies[i].sameSite = 'unspecified'
       }
       await page.setCookie(bossCookies[i]);
     }
-    await setDomainLocalStorage(browser, localStoragePageUrl, bossLocalStorage)
-    await page.bringToFront()
+    await setDomainLocalStorage(browser, localStoragePageUrl, bossLocalStorage, { page })
+    if (!runInBackground) await page.bringToFront()
+    autoStartChatEventBus.emit('TASK_PROGRESS', { detail: runInBackground ? 'BOSS浏览器在后台最小化运行' : 'BOSS浏览器使用普通窗口' })
     // __GGR_INJECT_ANTI_ANTI_DEBUGGER__
     await hooks.mainFlowWillLaunch?.promise({
       jobNotMatchStrategy,
@@ -1972,9 +1993,13 @@ export async function mainLoop (hooks) {
  * Resolves 'passed' (the new site cookies are saved) or 'closed'.
  */
 export async function waitUntilSecurityCheckPassed () {
+  return runBudget ? runBudget.guard(waitForVerification) : waitForVerification()
+}
+
+async function waitForVerification () {
   const ownPage = page
   if (!ownPage) return 'closed'
-  await ownPage.bringToFront().catch(() => void 0)
+  await showTaskBrowser(ownPage).catch(() => ownPage.bringToFront().catch(() => void 0))
   const result = await waitForSecurityCheck({
     currentUrl: async () => ownPage.url(),
     isClosed: () => ownPage.isClosed() || !browser?.connected,
@@ -1983,12 +2008,17 @@ export async function waitUntilSecurityCheckPassed () {
   if (result === 'passed') {
     // the page goes back to where it was and gets the new site cookies
     await sleep(3000)
-    await storeStorage(ownPage).catch(() => void 0)
+    await storeStorage(ownPage)
   }
   return result
 }
 
 export async function closeBrowserWindow () {
+  try { runBudget?.pause() } catch { /* The stopped budget is saved independently. */ }
+  jobRequestBudgetMonitor?.dispose()
+  jobRequestBudgetMonitor = null
+  jobResponseMonitor?.dispose()
+  jobResponseMonitor = null
   browser?.close()
   const browserProcess = browser?.process()
   if (browserProcess) {
@@ -2002,18 +2032,15 @@ export async function closeBrowserWindow () {
 }
 
 async function storeStorage (page) {
-  const [
-    cookies, localStorage
-  ] = await Promise.all([
-    page.cookies(),
-    page.evaluate(() => {
-      return JSON.stringify(window.localStorage)
-    }).then(res => JSON.parse(res))
-  ])
-  return Promise.all(
-    [
-      writeStorageFile('boss-cookies.json', cookies),
-      writeStorageFile('boss-local-storage.json', localStorage),
-    ]
-  )
+  try {
+    const [cookies, localStorage] = await Promise.all([
+      page.cookies(),
+      page.evaluate(() => JSON.stringify(window.localStorage)).then(res => JSON.parse(res))
+    ])
+    await writeBossSession({ cookies, localStorage })
+  } catch (error) {
+    if (isJsonStorageError(error)) throw error
+    // A transient navigation/capture failure must not erase the saved session.
+    console.warn('暂时未能捕获BOSS登录状态，已保留原文件')
+  }
 }

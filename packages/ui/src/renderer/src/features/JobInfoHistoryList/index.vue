@@ -54,7 +54,7 @@ const props = defineProps({
     required: true
   },
   jobInfoHistoryList: {
-    type: Array as PropType<JobInfoChangeLog[]>,
+    type: Array as PropType<Array<JobInfoChangeLog & { __ggr_updateTime?: string | Date }>>,
     default: () => []
   }
 })
@@ -62,8 +62,8 @@ const props = defineProps({
 const tableProps = computed(() =>
   props.jobInfoHistoryList.map((it) => {
     return {
-      label: it.__ggr_updateTime,
-      value: it.__ggr_updateTime
+      label: String(it.__ggr_updateTime ?? it.updateTime),
+      value: String(it.__ggr_updateTime ?? it.updateTime)
     }
   })
 )
@@ -82,7 +82,7 @@ const mapObj = {
 }
 
 const dataForRender = computed(() => {
-  const newArr = []
+  const newArr: Array<{ title: string; [key: string]: unknown }> = []
   const keys = Object.keys(mapObj)
   keys.forEach((key, keyIndex) => {
     const obj = {

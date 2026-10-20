@@ -1,5 +1,4 @@
-// Interpreting a BOSS login check. Pure so it can be unit tested; the request lives in
-// src/main/features/boss-login-check.ts.
+import { classifyBossLoginResponse } from '@geekgeekrun/utils/boss-login.mjs'
 
 export const BOSS_USER_INFO_URL = 'https://www.zhipin.com/wapi/zpuser/wap/getUserInfo.json'
 
@@ -17,24 +16,18 @@ export function cookieHeaderFor(cookies, host = 'www.zhipin.com', now = Date.now
 }
 
 /**
- * status: valid (logged in), invalid (BOSS says not logged in) or unknown (the answer
- * couldn't be read: verification page, server error).
+ * Only an explicit authentication failure invalidates credentials.
  */
 export function interpretUserInfoResponse(httpStatus, bodyText) {
   let body
   try {
     body = JSON.parse(bodyText)
   } catch {
+    if ([401, 403, 429].includes(httpStatus)) return classifyBossLoginResponse(httpStatus, null)
     return {
       status: 'unknown',
       detail: `BOSS返回了无法识别的内容（HTTP ${httpStatus}），可能需要在浏览器中完成安全验证`
     }
   }
-  if (body?.code === 0) return { status: 'valid', detail: '' }
-  if (httpStatus >= 500)
-    return { status: 'unknown', detail: `BOSS服务暂时不可用（HTTP ${httpStatus}）` }
-  return {
-    status: 'invalid',
-    detail: String(body?.message || `登录状态无效（代码 ${body?.code ?? httpStatus}）`)
-  }
+  return classifyBossLoginResponse(httpStatus, body)
 }

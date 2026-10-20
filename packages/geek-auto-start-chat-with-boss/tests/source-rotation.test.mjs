@@ -30,6 +30,16 @@ function resume(saved, successLimit = 20, noMatchLimit = 30, fingerprint = '') {
   return current
 }
 
+test('stopping a resumed worker before navigation preserves its pending cursor and rotation counts', () => {
+  const current = context()
+  current.run("runPosition = { sourceIndex: 1, filterConditionIndex: 7, fingerprint: 'saved-scope' }; countSourceSuccess()")
+  const saved = current.saved()
+  const restarted = context()
+  restarted.ctx.saved = saved
+  restarted.run('importRunState(saved)')
+  assert.deepEqual(restarted.saved().position, saved.position)
+})
+
 test('pausing/yielding retains the per-source success limit across worker processes', () => {
   const first = context(3)
   assert.equal(first.run('countSourceSuccess()'), false)
@@ -47,11 +57,38 @@ test('the no-match streak survives restart and a success resets it', () => {
   assert.equal(next.saved().position.noMatchStreak, 0)
   assert.equal(next.run('hasReachedSourceRotationLimit()'), false)
 })
+test('resume block lists are bound to a confirmed account, including legacy snapshots', () => {
+  const current = context()
+  current.run("runAccountId = 'account-a'; blockJobNotSuit.add('job-a'); blockBossNotNewChat.add('boss-a')")
+  const saved = current.saved()
+  assert.equal(saved.accountId, 'account-a')
+  assert.deepEqual(resume(saved).saved().blockedJobs, [['job-a', null]])
+  const { accountId, ...legacy } = saved
+  const old = resume(legacy).saved()
+  assert.equal(old.accountId, null)
+  assert.deepEqual(old.blockedJobs, [])
+  assert.deepEqual(old.blockedBossesNotNewChat, [])
+})
 test('an in-process security-check restart retains rotation counters', () => {
   const current = context(2)
   current.run('countSourceSuccess(); resumeFromCurrentPosition()')
   current.run('(function () {' + resumeCode + '})()')
   assert.equal(current.run('countSourceSuccess()'), true)
+})
+
+test('pausing after validating a resumed cursor but before entering its filter loop retains the fingerprint', () => {
+  const first = context(6)
+  first.run("runPosition = { sourceIndex: 1, filterConditionIndex: 1, fingerprint: 'same-settings' }; countSourceSuccess(); countSourceSuccess()")
+  const restarted = resume(first.saved(), 6, 30, 'same-settings')
+  const earlyStop = restarted.saved()
+  assert.equal(earlyStop.position.fingerprint, 'same-settings')
+  assert.equal(earlyStop.position.sourceIndex, 1)
+  assert.equal(earlyStop.position.filterConditionIndex, 1)
+  assert.equal(earlyStop.position.sourceSuccessCount, 2)
+  const again = resume(earlyStop, 6, 30, 'same-settings')
+  assert.equal(again.saved().position.sourceSuccessCount, 2)
+  assert.equal(again.run('countSourceSuccess()'), false)
+  assert.equal(again.saved().position.sourceSuccessCount, 3)
 })
 test('legacy states and a changed source fingerprint start fresh counters', () => {
   const legacy = { position: { sourceIndex: 0, filterConditionIndex: 0, fingerprint: '' } }
@@ -72,21 +109,27 @@ test('resuming at an already reached threshold does not process another job', ()
   assert.deepEqual(next.ctx.attempted, [])
 })
 
-test('both collection checkpoints count the threshold job once', () => {
+test('both collection checkpoints count the threshold job once, after accepted storage completes', async () => {
   for (const [startText, endText] of [
     ['                  if (isCollectAll) {', '                  const parsedSalary ='],
     ['                  if (isCollectMode) {', '                  const startChatButtonInnerHTML =']
   ]) {
     const current = context(1)
+    let matchedWrites = 0
     Object.assign(current.ctx, {
       isCollectAll: true, isCollectMode: true,
-      targetJobData: { jobInfo: { encryptId: 'job-1' } }, searchGuard: { reset() {} }, reject() {}
+      targetJobData: { jobInfo: { encryptId: 'job-1' } }, searchGuard: { reset() {} }, reject() {},
+      hooks: { jobMatchedForCollection: { promise: async () => {
+        assert.equal(current.events.filter(event => event.kind === 'collected').length, 0)
+        matchedWrites++
+      } } }
     })
     const start = source.indexOf(startText)
     const body = source.slice(start, source.indexOf(endText, start)).replace('continue continueFind', 'return')
-    current.run('(function () {' + body + '})()')
+    await current.run('(async function () {' + body + '})()')
     assert.equal(current.events.filter(event => event.kind === 'collected').length, 1)
     assert.equal(current.events.at(-1).state, 'searching')
+    assert.equal(matchedWrites, startText.includes('isCollectAll') ? 0 : 1)
   }
 })
 test('greeting at the threshold emits one success and saves browser state', async () => {

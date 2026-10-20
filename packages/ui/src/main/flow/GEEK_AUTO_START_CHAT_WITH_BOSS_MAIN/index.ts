@@ -20,8 +20,10 @@ import initPublicIpc from '../../utils/initPublicIpc'
 import { createTaskProgress } from '../../features/task-progress'
 import { readAutoChatResume, writeAutoChatResume, discardAutoChatResume } from '../../features/task-resume'
 import { yieldIfRequested } from '../../features/task-queue'
+import { isJsonStorageError } from '@geekgeekrun/utils/atomic-json.mjs'
 import { getLastUsedAndAvailableBrowser } from '../DOWNLOAD_DEPENDENCIES/utils/browser-history'
 import { configWithBrowserAssistant } from '../../features/config-with-browser-assistant'
+import { attachCollectAcceptance } from '../../features/collect-acceptance'
 const { default: SqlitePlugin } = SqlitePluginModule
 
 process.on('SIGTERM', () => {
@@ -41,8 +43,11 @@ const rerunInterval = (() => {
 const { groupRobotAccessToken: dingTalkAccessToken } = readConfigFile('dingtalk.json')
 
 const initPlugins = (hooks) => {
-  new DingtalkPlugin(dingTalkAccessToken).apply(hooks)
-  new SqlitePlugin(getPublicDbFilePath()).apply(hooks)
+  if (!process.env.GEEKGEEKRUN_COLLECT_AUDIT_DIR) new DingtalkPlugin(dingTalkAccessToken).apply(hooks)
+  const settings = readRunSettings(readConfigFile('boss.json'))
+  new SqlitePlugin(getPublicDbFilePath(), {
+    collectOnlyMatched: settings.runMode === 'collect' && settings.collectOnlyMatchingJobs
+  }).apply(hooks)
   // new PeriodPushCurrentPageScreenshotPlugin().apply(hooks)
   new CookieInvalidHandlePlugin().apply(hooks)
 }
@@ -96,6 +101,7 @@ const runAutoChat = async () => {
     exportRunState,
     importRunState,
     resumeFromCurrentPosition,
+    runBudgetStatus,
     waitUntilSecurityCheckPassed
   } = await import('@geekgeekrun/geek-auto-start-chat-with-boss/index.mjs')
   // the same run started again (继续任务, or restarted after making way for another task):
@@ -104,6 +110,7 @@ const runAutoChat = async () => {
   const resumed = !!runRecordId && Number(saved?.runRecordId) === Number(runRecordId)
   if (resumed) importRunState(saved!.runState, { skipCurrentFilter: saved!.skipCurrentFilter })
   const taskProgress = createTaskProgress(resumed ? saved!.progress : null)
+  autoStartChatEventBus.on('RUN_BUDGET', (budget) => taskProgress.setBudget(budget))
   const runMode = readRunSettings(readConfigFile('boss.json')).runMode
   let skipCurrentFilterNextTime = false
   // the run rotated through every source and finished: nothing left to resume
@@ -178,7 +185,7 @@ const runAutoChat = async () => {
     const named = (prefix) => (currentJob ? `${prefix}：${currentJob}` : '')
     const logText =
       kind === 'viewed'
-        ? named('查看并入库')
+        ? named('查看岗位')
         : kind === 'collected'
           ? named('收集')
           : kind === 'sent'
@@ -203,9 +210,10 @@ const runAutoChat = async () => {
     userInfoResponse: new AsyncSeriesHook(['userInfo']),
     mainFlowWillLaunch: new AsyncSeriesHook(['args']),
     jobDetailIsGetFromRecommendList: new AsyncSeriesHook(['userInfo']),
+    jobMatchedForCollection: new AsyncSeriesHook(['detail']),
     newChatWillStartup: new AsyncSeriesHook(['positionInfoDetail']),
-    newChatStartup: new AsyncSeriesHook(['positionInfoDetail', 'chatRunningContext']),
-    jobMarkedAsNotSuit: new AsyncSeriesHook(['positionInfoDetail', 'markDetail']),
+    newChatStartup: new AsyncSeriesHook<[unknown, unknown]>(['positionInfoDetail', 'chatRunningContext']),
+    jobMarkedAsNotSuit: new AsyncSeriesHook<[unknown, { markOp?: number } | undefined]>(['positionInfoDetail', 'markDetail']),
     noPositionFoundForCurrentJob: new SyncHook(),
     noPositionFoundAfterTraverseAllJob: new SyncHook(),
     errorEncounter: new SyncHook(['errorInfo']),
@@ -213,15 +221,14 @@ const runAutoChat = async () => {
     sageTimeEnter: new AsyncSeriesHook(['args']),
     sageTimeExit: new AsyncSeriesHook(['args']),
     // between jobs; see yieldIfRequested
-    checkpoint: new AsyncSeriesHook([])
+    checkpoint: new AsyncSeriesHook<[]>([])
   }
   initPlugins(hooks)
+  attachCollectAcceptance({ hooks, events: autoStartChatEventBus, runMode, runRecordId })
   hooks.jobDetailIsGetFromRecommendList.tapPromise('TaskProgress', async (data) => {
     currentJob = jobLabel(data)
   })
-  // the hook passes (jobData, { markOp, ... }); its declared typing only knows one argument
-  hooks.jobMarkedAsNotSuit.tapPromise('TaskProgress', async (...args: unknown[]) => {
-    const [data, markDetail] = args as [unknown, { markOp?: number } | undefined]
+  hooks.jobMarkedAsNotSuit.tapPromise('TaskProgress', async (data, markDetail) => {
     taskProgress.log(
       'marked',
       `${markDetail?.markOp === 1 ? '在BOSS标记不合适' : '本地标记不合适'}：${jobLabel(data)}`,
@@ -250,13 +257,35 @@ const runAutoChat = async () => {
 
   autoStartChatEventBus.once('LOGIN_STATUS_INVALID', () => {})
 
+  async function stopForStorage(error: unknown) {
+    if (!isJsonStorageError(error)) return false
+    taskProgress.update(undefined, (error as Error).message, 'blocked')
+    saveResume()
+    await closeBrowserWindow?.()
+    process.exit(AUTO_CHAT_ERROR_EXIT_CODE.JSON_STORAGE_UNAVAILABLE)
+    return true
+  }
+  async function stopForBudget(error: unknown) {
+    if (!(error instanceof Error) || !/AUTO_CHAT_RUN_BUDGET_(EXCEEDED|UNAVAILABLE)/.test(error.message)) return false
+    taskProgress.setBudget(runBudgetStatus())
+    taskProgress.update(undefined, (error as Error & { detail?: string }).detail || error.message, 'blocked')
+    saveResume()
+    await closeBrowserWindow?.()
+    process.exit(error.message.includes('EXCEEDED') ? AUTO_CHAT_ERROR_EXIT_CODE.RUN_BUDGET_EXCEEDED : AUTO_CHAT_ERROR_EXIT_CODE.RUN_BUDGET_UNAVAILABLE)
+    return true
+  }
+
   while (true) {
     try {
       await mainLoop(hooks)
     } catch (err) {
+      if (await stopForStorage(err)) return
+      if (await stopForBudget(err)) return
       if (err instanceof Error && err.message.includes('AUTO_CHAT_SECURITY_CHECK')) {
         pauseForSecurityCheck()
-        const result = await waitUntilSecurityCheckPassed()
+        let result
+        try { result = await waitUntilSecurityCheckPassed() }
+        catch (error) { if (await stopForStorage(error) || await stopForBudget(error)) return; throw error }
         if (result === 'passed') {
           securityCheckPassed()
           // a fresh browser with the new cookies, from where the run was
@@ -276,6 +305,29 @@ const runAutoChat = async () => {
         return
       }
       if (err instanceof Error) {
+        if (err.message.includes('AUTO_CHAT_BACKGROUND_WINDOW_UNAVAILABLE')) {
+          taskProgress.update(undefined, (err as Error & { detail?: string }).detail || '浏览器后台窗口无法确认，任务已暂停', 'blocked')
+          saveResume()
+          await closeBrowserWindow?.()
+          process.exit(AUTO_CHAT_ERROR_EXIT_CODE.BACKGROUND_WINDOW_UNAVAILABLE)
+          return
+        }
+        if (err.message.includes('AUTO_CHAT_CITY_FILTER_NOT_APPLIED')) {
+          taskProgress.update(undefined, (err as Error & { detail?: string }).detail || '城市筛选未能确认，请检查BOSS城市选择器后恢复任务', 'blocked')
+          await closeBrowserWindow?.()
+          process.exit(AUTO_CHAT_ERROR_EXIT_CODE.CITY_FILTER_NOT_APPLIED)
+          return
+        }
+        if (/LOGIN_STATUS_(RESTRICTED|UNKNOWN)|AUTO_CHAT_ACCOUNT_CHANGED|AUTO_CHAT_SEARCH_FILTER_NOT_APPLIED|AUTO_CHAT_JOB_PAGE_CLOSED/.test(err.message)) {
+          const accountChanged = err.message.includes('ACCOUNT_CHANGED')
+          const detail = (err as Error & { detail?: string }).detail
+          taskProgress.update(undefined, accountChanged
+            ? 'BOSS账号已切换，请切回原账号恢复，或为新账号新建任务'
+            : (detail || '暂时无法确认BOSS访问状态，登录凭证已保留；请检查BOSS页面和网络后恢复'), 'blocked')
+          await closeBrowserWindow?.()
+          process.exit(accountChanged ? AUTO_CHAT_ERROR_EXIT_CODE.ACCOUNT_CHANGED : AUTO_CHAT_ERROR_EXIT_CODE.LOGIN_STATUS_UNCONFIRMED)
+          return
+        }
         if (err.message.includes('AUTO_CHAT_ALL_SOURCES_ROTATED')) {
           // source rotation walked every source once: a successful finish, not a failure
           runCompleted = true
@@ -286,7 +338,7 @@ const runAutoChat = async () => {
           return
         }
         if (
-          /AUTO_CHAT_(NO_MATCH_BATCH_LIMIT|LIST_STALLED|DETAIL_NOT_READY|NO_USABLE_SOURCE|COLLECT_MODE_CHAT_BLOCKED|UNMATCHED_JOB_CHAT_BLOCKED)/.test(
+          /AUTO_CHAT_(NO_MATCH_BATCH_LIMIT|LIST_STALLED|DETAIL_NOT_READY|NO_USABLE_SOURCE|COLLECT_MODE_CHAT_BLOCKED|UNMATCHED_JOB_CHAT_BLOCKED|REQUIRED_CONDITION_CHAT_BLOCKED)/.test(
             err.message
           )
         ) {
@@ -350,8 +402,8 @@ const runAutoChat = async () => {
 
 export const waitForProcessHandShakeAndRunAutoChat = async () => {
   await app.whenReady()
-  app.on('window-all-closed', (e) => {
-    e.preventDefault()
+  app.on('window-all-closed', () => {
+    // Background tasks continue after auxiliary windows close.
   })
   initPublicIpc()
   await connectToDaemon()
@@ -375,7 +427,7 @@ export const waitForProcessHandShakeAndRunAutoChat = async () => {
       runRecordId
     }
   })
-  runAutoChat()
+  await runAutoChat()
 }
 
 attachListenerForKillSelfOnParentExited()

@@ -24,6 +24,8 @@ export enum StrategyScopeOptionWhenMarkJobNotMatch {
 export enum SalaryCalculateWay {
   MONTH_SALARY = 1,
   ANNUAL_PACKAGE = 2,
+  DAY_SALARY = 3,
+  HOUR_SALARY = 4,
 }
 
 export enum JobDetailRegExpMatchLogic {

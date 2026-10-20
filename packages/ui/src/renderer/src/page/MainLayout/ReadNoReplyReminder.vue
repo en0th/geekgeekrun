@@ -347,6 +347,8 @@
 </template>
 
 <script setup lang="ts">
+import { errorMessage } from '../../../../common/utils/error'
+import type { CommonConfigSelection, CommonJobConditionForm } from '../../../../common/types/job-config'
 import { toast } from '@renderer/features/Toast'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { dayjs, ElForm, ElMessageBox, ElSelect, ElOption } from 'element-plus'
@@ -415,7 +417,7 @@ electron.ipcRenderer.invoke('fetch-config-file-content').then((res) => {
 
 const expectJobTypeRegExpStr = ref('')
 const blockCompanyNameRegExpStr = ref('')
-const fieldsForUseCommonConfig = ref({})
+const fieldsForUseCommonConfig = ref<CommonConfigSelection>({})
 async function fetchAutoStartChatConfig() {
   await electron.ipcRenderer.invoke('fetch-config-file-content').then((res) => {
     expectJobTypeRegExpStr.value = res.config['boss.json']?.expectJobTypeRegExpStr
@@ -429,7 +431,7 @@ mittBus.on('auto-start-chat-with-boss-config-saved', fetchAutoStartChatConfig)
 onUnmounted(() => {
   mittBus.off('auto-start-chat-with-boss-config-saved', fetchAutoStartChatConfig)
 })
-const commonJobConditionConfig = ref({})
+const commonJobConditionConfig = ref<Partial<CommonJobConditionForm>>({})
 const unListenCommonJobConditionConfig = electron.ipcRenderer.on(
   'common-job-condition-config-updated',
   (_, { config }) => {
@@ -454,7 +456,7 @@ const blockCompanyNameRegExpStrForRender = computed(() => {
     : commonJobConditionConfig.value.blockCompanyNameRegExpStr
 })
 
-const resumeContent = ref(null)
+const resumeContent = ref<{ expectJob?: string } | null>(null)
 async function fetchResumeContent() {
   await electron.ipcRenderer.invoke('fetch-resume-content').then((res) => {
     resumeContent.value = res
@@ -518,7 +520,7 @@ async function checkIsCanRun() {
   try {
     await electron.ipcRenderer.invoke('check-if-llm-config-list-valid')
   } catch (err) {
-    if (err?.message?.includes(`CANNOT_FIND_VALID_CONFIG`)) {
+    if (errorMessage(err)?.includes(`CANNOT_FIND_VALID_CONFIG`)) {
       console.log(`大模型配置无效`, err)
       ElMessageBox.confirm(
         '大模型配置不存在或者包含无效配置<br />您是否希望查看并修正当前大模型配置？',
@@ -552,7 +554,7 @@ async function checkIsCanRun() {
     await electron.ipcRenderer.invoke('check-if-auto-remind-prompt-valid', { type: 'rechat' })
   } catch (err) {
     console.log(err)
-    if (err?.message?.includes(`RESUME_PLACEHOLDER_NOT_EXIST`)) {
+    if (errorMessage(err)?.includes(`RESUME_PLACEHOLDER_NOT_EXIST`)) {
       console.log(`提示词模板无效`, err)
       ElMessageBox.confirm(
         '提示词模板缺少简历内容占位符：<br /><b>__REPLACE_REAL_RESUME_HERE__</b><br /><br />您是否希望还原默认的提示词模板？',
@@ -583,8 +585,8 @@ async function checkIsCanRun() {
 
   return true
 }
-const runRecordId = ref(null)
-const runningOverlayRef = ref(null)
+const runRecordId = ref<number | null | undefined>(null)
+const runningOverlayRef = ref<InstanceType<typeof RunningOverlay> | null>(null)
 const taskManagerStore = useTaskManagerStore()
 const CURRENT_WORKER_ID = 'readNoReplyAutoReminderMain'
 

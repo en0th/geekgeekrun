@@ -1,0 +1,26 @@
+name: Set up quality checks
+description: Install the locked workspace without running desktop or browser install hooks
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js 24
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+      with:
+        node-version: '24'
+        package-manager-cache: false
+    - name: Install pnpm 8.15.9
+      shell: bash
+      run: npm install --global pnpm@8.15.9 --ignore-scripts
+    - name: Locate pnpm store
+      id: store
+      shell: bash
+      run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+    - name: Cache dependency downloads
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      with:
+        path: ${{ steps.store.outputs.path }}
+        key: quality-${{ runner.os }}-${{ runner.arch }}-pnpm8-${{ hashFiles('pnpm-lock.yaml', 'patches/**') }}
+        restore-keys: quality-${{ runner.os }}-${{ runner.arch }}-pnpm8-
+    - name: Install locked dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile --ignore-scripts

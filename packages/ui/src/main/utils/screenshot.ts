@@ -1,3 +1,4 @@
+import { errorMessage } from '../../common/utils/error'
 import { sendToDaemon } from "../flow/OPEN_SETTING_WINDOW/connect-to-daemon"
 import { checkShouldExit } from "./worker"
 
@@ -26,7 +27,7 @@ export async function pushCurrentPageScreenshot (page) {
       }
     })
   } catch (err) {
-    if (err?.message?.includes('Session closed')) {
+    if (errorMessage(err)?.includes('Session closed')) {
       throw new Error(`PAGE_CLOSED`)
     }
     // 截图失败不应影响主流程
@@ -52,7 +53,7 @@ export class PeriodPushCurrentPageScreenshotPlugin {
               await pushCurrentPageScreenshot(page)
             }
             catch (err) {
-              if (err?.message?.includes(`PAGE_CLOSED`)) {
+              if (errorMessage(err)?.includes(`PAGE_CLOSED`)) {
                 return
               }
             }

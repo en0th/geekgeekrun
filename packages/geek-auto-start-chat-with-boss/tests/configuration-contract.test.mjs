@@ -5,14 +5,15 @@ import vm from 'node:vm'
 import { experienceSelectionLabels, experienceSelectionCodes, normalizeExperienceSelections, matchesExperience,
   escapeKeyword, keywordPattern, allKeywordPattern, createJobDetailMatcher, validateJobFilterConfig, mergeJobFilterConfig, companySelections, matchesSalary } from '../job-filter-config.mjs'
 import { listSkipReason, assertCanGreet } from '../auto-chat-navigation.mjs'
-import { waitSeconds } from '../run-settings.mjs'
+import { waitSeconds, filterCombinationLimit, normalizeRunBudget } from '../run-settings.mjs'
+import { normalizeCitySelection } from '../city-filter.mjs'
 
 // Exercise the actual renderer serializer, not a copy of it. Native saving persists this patch.
 const renderer = fs.readFileSync(new URL('../../ui/src/renderer/src/page/Ux/index.js', import.meta.url), 'utf8')
 const serializer = renderer.slice(renderer.indexOf('    function runConfig(d)'), renderer.indexOf('    function configForDraft(d)'))
 const context = vm.createContext({ globalPace: { value: null }, isCollectAll: d => d.runMode === 'collect' && !d.collectOnlyMatchingJobs,
   clone: value => JSON.parse(JSON.stringify(value)),
-  original: { fieldsForUseCommonConfig: {} }, common: {}, waitSeconds, DEFAULT_JOB_LIST_LOAD_WAIT_SECONDS: 5,
+  original: { fieldsForUseCommonConfig: {} }, common: {}, waitSeconds, filterCombinationLimit, normalizeRunBudget, normalizeCitySelection, DEFAULT_JOB_LIST_LOAD_WAIT_SECONDS: 5,
   DEFAULT_JOB_DETAIL_VIEW_WAIT_SECONDS: 2, experienceSelectionCodes, escape: escapeKeyword, regex: keywordPattern,
   allKeywordPattern, activeLabels: ['', '半年前活跃', '近半年活跃', '5月内活跃', '4月内活跃', '3月内活跃', '2月内活跃', '本月活跃', '2周内活跃', '本周活跃', '3日内活跃', '昨日活跃', '今日活跃', '刚刚活跃'] })
 vm.runInContext(serializer, context)
@@ -20,6 +21,23 @@ const draft = extra => ({ titles: ['产品'], categories: [], description: [], c
   experience: ['应届生', '1年以内', '1-3年', '经验不限'], low: 5000, high: 10000, unit: 'month', runMode: 'chat',
   regexMode: false, regexLogic: 1, hr: false, activity: '不限', overrides: {}, scopes: {}, strategy: 3, ...extra })
 const save = d => JSON.parse(JSON.stringify(context.basicToConfig(d)))
+
+test('execution budgets survive the actual form serializer, including unlimited values', () => {
+  const config = save(draft({ runInBackground: false, runBudget: { requests: 22, detailRequests: 0, activeMinutes: 30 } }))
+  assert.equal(config.autoChatRunInBackground, false)
+  assert.deepEqual(config.autoChatRunBudget, { requests: 22, detailRequests: 0, activeMinutes: 30 })
+  assert.doesNotThrow(() => validateJobFilterConfig(config))
+  assert.throws(() => save(draft({ runBudget: { requests: -1 } })), /预算/)
+})
+
+test('the real form serializer retains literal exclusion words separately from positive ANY rules', () => {
+  const config = save(draft({ runMode: 'collect', collectOnlyMatchingJobs: true, regexLogic: 2,
+    requiredConditions: { excludedWords: ['外包', 'C++', 'ＡＩ'] } }))
+  assert.deepEqual(config.requiredJobConditions.excludedWords, ['外包', 'C++', 'ＡＩ'])
+  assert.equal(config.jobDetailRegExpMatchLogic, 2)
+  assert.equal(config.autoChatRunMode, 'collect')
+  assert.doesNotThrow(() => validateJobFilterConfig(config))
+})
 
 test('actual UI serializer + list prefilter reproduces and fixes the user experience bug', () => {
   const config = save(draft())
@@ -102,6 +120,9 @@ test('city and per-condition treatment options remain independent', () => {
   assert.equal(config.strategyScopeOptionWhenMarkJobWorkExpNotMatch, 1)
   assert.equal(listSkipReason({ cityName: '广州', jobExperience: '1-3年' }, { cities: config.expectCityList, cityStrategy: 3, experiences: config.expectWorkExpList, experienceStrategy: 1 }), '城市不符合')
 })
+test('nationwide is serialized as an unrestricted local city condition', () => {
+  assert.deepEqual(save(draft({ cities: ['全国', '深圳'] })).expectCityList, [])
+})
 test('monthly salary converts yuan to K and matches overlap including endpoints', () => {
   const config = save(draft())
   const expected = { low: config.expectSalaryLow, high: config.expectSalaryHigh, unit: config.expectSalaryCalculateWay }
@@ -120,13 +141,23 @@ test('annual salary stays in 万/year and respects 薪数/default 12; open bound
   assert.equal(matchesSalary({ low: null, high: null }, { low: 5 }), false)
   assert.equal(matchesSalary({ low: null, high: null }), true)
 })
+test('the actual UI serializer keeps daily/hourly amounts and hard conditions in the execution contract', () => {
+  for (const [unit, code] of [['day', 3], ['hour', 4]]) {
+    const requiredConditions = { companyScaleMin: 100, jobNatures: ['实习'] }
+    const config = save(draft({ unit, low: 150, high: 300, requiredConditions }))
+    assert.equal(config.expectSalaryCalculateWay, code)
+    assert.equal(config.expectSalaryLow, 150)
+    assert.deepEqual(config.requiredJobConditions, requiredConditions)
+  }
+})
 test('HR/activity, collect mode, rotation and global pace are serialized correctly', () => {
-  const config = save(draft({ hr: true, hrRule: 'HR|人事', activity: '今日活跃', perSourceSuccessLimit: 0, noMatchStreakLimit: 7, jobListLoadWaitSeconds: 8, jobDetailViewWaitSeconds: 3 }))
+  const config = save(draft({ hr: true, hrRule: 'HR|人事', activity: '今日活跃', perSourceSuccessLimit: 0, noMatchStreakLimit: 7, filterCombinationLimit: 23, jobListLoadWaitSeconds: 8, jobDetailViewWaitSeconds: 3 }))
   assert.equal(config.isPosterHrFilterEnabled, true)
   assert.equal(config.posterHrTitleRegExpStr, 'HR|人事')
   assert.equal(config.markAsNotActiveSelectedTimeRange, 11)
   assert.equal(config.autoChatPerSourceSuccessLimit, 0)
   assert.equal(config.autoChatNoMatchStreakLimit, 7)
+  assert.equal(config.autoChatFilterCombinationLimit, 23)
   assert.equal(config.jobListLoadWaitSeconds, 8)
   assert.equal(config.jobDetailViewWaitSeconds, 3)
   const collect = save(draft({ runMode: 'collect', collectOnlyMatchingJobs: false }))

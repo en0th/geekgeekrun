@@ -1,6 +1,10 @@
 node_modules
 database.sqlite
 .env.local
+.ci-reports/
+.cache/
+.local/
+.runtime/
 
 # macOS AppleDouble metadata files
 ._*

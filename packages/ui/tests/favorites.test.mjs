@@ -31,7 +31,8 @@ const bundle = async (entry, name) => {
     outfile,
     logLevel: 'silent',
     // keep typeorm & co. out: only the plain SQL is under test
-    packages: 'external'
+    packages: 'external',
+    alias: { '@geekgeekrun/utils': path.resolve(here, '../../utils') }
   })
   return import(pathToFileURL(outfile).href)
 }

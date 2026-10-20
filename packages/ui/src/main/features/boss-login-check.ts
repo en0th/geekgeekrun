@@ -8,7 +8,7 @@ import {
   interpretUserInfoResponse
 } from '../../common/boss-login.mjs'
 
-export type BossLoginStatus = 'missing' | 'valid' | 'invalid' | 'unknown'
+export type BossLoginStatus = 'missing' | 'valid' | 'invalid' | 'restricted' | 'unknown'
 
 const TIMEOUT_MS = 10 * 1000
 

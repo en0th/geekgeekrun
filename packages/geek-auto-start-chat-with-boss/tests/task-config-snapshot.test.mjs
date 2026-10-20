@@ -7,7 +7,8 @@ import { jobConfigSnapshot, readTaskConfigSnapshot, writeTaskConfigSnapshot } fr
 
 const config = (extra = {}) => ({ 'boss.json': { autoChatRunMode: 'collect', expectCityList: ['深圳'], expectWorkExpList: [104],
   expectJobNameRegExpStr: '产品', jobSourceList: [{ type: 'recommend', enabled: true }],
-  autoReminder: { geminiApiKey: 'DO_NOT_CAPTURE' }, groupRobotAccessToken: 'DO_NOT_CAPTURE', ...extra },
+  autoReminder: { geminiApiKey: 'DO_NOT_CAPTURE' }, groupRobotAccessToken: 'DO_NOT_CAPTURE', autoChatFilterCombinationLimit: 23,
+  autoChatRunBudget: { requests: 25, detailRequests: 12, activeMinutes: 20 }, ...extra },
   'common-job-condition-config.json': { expectSalaryLow: 5, expectSalaryHigh: 10 },
   'target-company-list.json': ['ACME,Inc'] })
 test('queued task retains submitted mode, sources and every condition after the live config changes', t => {
@@ -19,9 +20,12 @@ test('queued task retains submitted mode, sources and every condition after the 
   live['boss.json'].expectCityList = ['北京']
   live['boss.json'].expectJobNameRegExpStr = '工程师'
   live['boss.json'].expectWorkExpList = [106]
+  live['boss.json'].autoChatRunBudget.requests = 999
   live['boss.json'].jobSourceList = [{ type: 'search', keyword: '工程师' }]
   const saved = readTaskConfigSnapshot(file)
   assert.equal(saved['boss.json'].autoChatRunMode, 'collect')
+  assert.equal(saved['boss.json'].autoChatFilterCombinationLimit, 23)
+  assert.deepEqual(saved['boss.json'].autoChatRunBudget, { requests: 25, detailRequests: 12, activeMinutes: 20 })
   assert.deepEqual(saved['boss.json'].expectCityList, ['深圳'])
   assert.equal(saved['boss.json'].expectJobNameRegExpStr, '产品')
   assert.deepEqual(saved['boss.json'].expectWorkExpList, [104])
@@ -44,5 +48,13 @@ test('no accidental credential capture and malformed snapshots fail closed', t =
   const file = path.join(folder, 'invalid.json')
   fs.writeFileSync(file, '{}')
   assert.throws(() => readTaskConfigSnapshot(file), /快照无效/)
+  for (const broken of [
+    { 'boss.json': [], 'common-job-condition-config.json': {}, 'target-company-list.json': [] },
+    { 'boss.json': {}, 'common-job-condition-config.json': 'invalid', 'target-company-list.json': [] },
+    { 'boss.json': {}, 'common-job-condition-config.json': {}, 'target-company-list.json': [null] }
+  ]) {
+    fs.writeFileSync(file, JSON.stringify({ version: 1, config: broken }))
+    assert.throws(() => readTaskConfigSnapshot(file), error => error.code === 'GGR_JSON_INVALID')
+  }
   assert.throws(() => writeTaskConfigSnapshot(folder, '../bad', config()), /编号无效/)
 })
