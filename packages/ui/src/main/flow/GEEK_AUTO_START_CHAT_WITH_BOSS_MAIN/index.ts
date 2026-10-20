@@ -24,12 +24,12 @@ import { isJsonStorageError } from '@geekgeekrun/utils/atomic-json.mjs'
 import { getLastUsedAndAvailableBrowser } from '../DOWNLOAD_DEPENDENCIES/utils/browser-history'
 import { configWithBrowserAssistant } from '../../features/config-with-browser-assistant'
 import { attachCollectAcceptance } from '../../features/collect-acceptance'
+import { installWorkerShutdown } from '@geekgeekrun/utils/worker-shutdown.mjs'
 const { default: SqlitePlugin } = SqlitePluginModule
 
-process.on('SIGTERM', () => {
-  console.log('收到SIGTERM信号，正在退出')
-  process.exit(0)
-})
+let closeForShutdown: () => Promise<void> = async () => {}
+let saveForShutdown: () => void = () => {}
+const shutdown = installWorkerShutdown({ close: () => closeForShutdown(), save: () => saveForShutdown() })
 
 const rerunInterval = (() => {
   let v = Number(process.env.MAIN_BOSSGEEKGO_RERUN_INTERVAL)
@@ -104,6 +104,7 @@ const runAutoChat = async () => {
     runBudgetStatus,
     waitUntilSecurityCheckPassed
   } = await import('@geekgeekrun/geek-auto-start-chat-with-boss/index.mjs')
+  closeForShutdown = closeBrowserWindow
   // the same run started again (继续任务, or restarted after making way for another task):
   // go on with its position, skipped jobs and counters
   const saved = readAutoChatResume()
@@ -132,6 +133,7 @@ const runAutoChat = async () => {
     })
   }
   const resumeSaver = setInterval(saveResume, 5 * 1000)
+  saveForShutdown = saveResume
   // the stop notice names what the last list was filtered by, not a fixed guess
   const listSummaryHint = () => {
     const summary = String(taskProgress.progress.listSummary || '')
@@ -196,10 +198,6 @@ const runAutoChat = async () => {
     taskProgress.update(kind, detail, state || 'running', { listSummary }, logText || undefined)
   })
   taskProgress.update(undefined, resumed ? '继续上次的任务' : '准备查找岗位')
-  process.on('disconnect', () => {
-    closeBrowserWindow()
-    app.exit()
-  })
   await initPuppeteer()
 
   const hooks = {
@@ -279,6 +277,7 @@ const runAutoChat = async () => {
     try {
       await mainLoop(hooks)
     } catch (err) {
+      if (shutdown.isStopping()) return
       if (await stopForStorage(err)) return
       if (await stopForBudget(err)) return
       if (err instanceof Error && err.message.includes('AUTO_CHAT_SECURITY_CHECK')) {
@@ -384,7 +383,7 @@ const runAutoChat = async () => {
           break
         }
       }
-      closeBrowserWindow?.()
+      await closeBrowserWindow?.()
       console.error(err)
       taskProgress.update(undefined, '遇到异常，等待重新检查任务', 'retrying')
       const shouldExit = await checkShouldExit()
@@ -430,4 +429,4 @@ export const waitForProcessHandShakeAndRunAutoChat = async () => {
   await runAutoChat()
 }
 
-attachListenerForKillSelfOnParentExited()
+attachListenerForKillSelfOnParentExited(shutdown.stop)

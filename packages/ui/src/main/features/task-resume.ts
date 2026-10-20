@@ -13,9 +13,9 @@ const TERMINATED_FILE_NAME = 'auto-chat-terminated.json'
 const terminatedFilePath = () => path.join(storageFilePath, TERMINATED_FILE_NAME)
 const TERMINATED_KEEP = 200
 
-function terminatedRunIds(): number[] {
+function terminatedRunIds(folder = storageFilePath): number[] {
   try {
-    const list = JSON.parse(fs.readFileSync(terminatedFilePath(), 'utf8'))
+    const list = JSON.parse(fs.readFileSync(path.join(folder, TERMINATED_FILE_NAME), 'utf8'))
     return Array.isArray(list) ? list.map(Number).filter((n) => n > 0) : []
   } catch {
     return []
@@ -49,6 +49,23 @@ export interface AutoChatResumeState {
   // from exportRunState() of the worker core
   runState: unknown
   progress: Record<string, unknown>
+}
+
+// Freeze a zero-progress checkpoint before dispatch, including tasks that only queue or
+// whose worker has not imported its browser code yet. Resume never calls this initializer.
+export function initializeAutoChatResume(runRecordId: number, runMode: string, folder = storageFilePath) {
+  if (!Number.isSafeInteger(runRecordId) || runRecordId <= 0 || !['chat', 'collect'].includes(runMode))
+    throw new Error('无法初始化任务检查点：运行编号或方式无效')
+  const now = Date.now()
+  writeJsonAtomicSync(path.join(folder, FILE_NAME), {
+    runRecordId, runMode, savedAt: now, runState: {},
+    progress: { startedAt: now, viewed: 0, collected: 0, sent: 0, skipped: 0, marked: 0,
+      state: 'queued', detail: '等待任务启动', runRecordId }
+  })
+  // A database restore can reuse an ID. Only an explicitly new run replaces its old
+  // termination marker, after the fresh checkpoint has been safely written.
+  const ids = terminatedRunIds(folder)
+  if (ids.includes(runRecordId)) writeJsonAtomicSync(path.join(folder, TERMINATED_FILE_NAME), ids.filter(id => id !== runRecordId))
 }
 
 export function readAutoChatResume(): AutoChatResumeState | null {

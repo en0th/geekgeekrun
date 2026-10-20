@@ -125,6 +125,8 @@ if (backgroundModes.has(runMode) || process.env.GEEKGEEKRUN_RUNTIME_DIR) {
     }
     default: {
       globalThis.GEEKGEEKRUN_PROCESS_ROLE = 'ui'
+      // Claim the GUI before starting a daemon; a second GUI must not create another queue.
+      if (!app.requestSingleInstanceLock()) { app.exit(0); return }
       await launchDaemon()
       const { openSettingWindow } = await import('./flow/OPEN_SETTING_WINDOW/index')
       await openSettingWindow()

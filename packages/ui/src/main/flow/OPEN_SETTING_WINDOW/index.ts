@@ -1,19 +1,16 @@
-import { app, BrowserWindow, ipcMain, globalShortcut, nativeTheme } from 'electron'
+import { app, ipcMain, globalShortcut, nativeTheme } from 'electron'
 import { startJobStatusPollScheduler } from '../../features/job-status-poll'
 import { applyPendingDbRestore, startDbBackupScheduler } from '../../features/db-backup'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
-import { createMainWindow } from '../../window/mainWindow'
+import { createMainWindow, mainWindow } from '../../window/mainWindow'
 import './app-menu'
 import initIpc from './ipc'
 import initPublicIpc from '../../utils/initPublicIpc'
-import { sendToDaemon, closeDaemonClient } from './connect-to-daemon'
+import { sendToDaemon, closeDaemonClient, stopOwnedWorkers } from './connect-to-daemon'
+import { installGuiShutdown } from '@geekgeekrun/utils/gui-shutdown.mjs'
 
 export function openSettingWindow() {
-  // TODO: singleton lock; how can we check if there is another process should run as singleton with arguments?
-  if (!app.requestSingleInstanceLock()) {
-    // TODO: log
-    app.exit(0)
-  }
+  installGuiShutdown({ app, stopOwned: stopOwnedWorkers, disconnect: closeDaemonClient })
   // a restore chosen in the backup settings is applied before anything opens the database
   applyPendingDbRestore()
 
@@ -46,11 +43,16 @@ export function openSettingWindow() {
     // database backups on the configured interval (off unless enabled)
     startDbBackupScheduler()
 
-    app.on('activate', function () {
+    const showMainWindow = () => {
       // On macOS it's common to re-create a window in the app when the
       // dock icon is clicked and there are no other windows open.
-      if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
-    })
+      if (!mainWindow) { createMainWindow(); return }
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+    }
+    app.on('activate', showMainWindow)
+    app.on('second-instance', showMainWindow)
 
   })
 
@@ -69,7 +71,7 @@ export function openSettingWindow() {
     // Register a 'Command+Option+Shift+/' shortcut listener.
     globalShortcut.register('Command+Option+Shift+/', () => {
       console.log('Command+Option+Shift+/ is pressed')
-      app.exit(0)
+      app.quit()
     })
     app.once('quit', () => {
       globalShortcut.unregister('Command+Option+Shift+/')
@@ -94,6 +96,4 @@ export function openSettingWindow() {
       }
     )
   })
-  app.on('window-all-closed', closeDaemonClient)
-  app.on('before-quit', closeDaemonClient)
 }

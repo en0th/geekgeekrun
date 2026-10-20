@@ -7,6 +7,7 @@ import split2 from 'split2'
 import { errorMessage } from '../../../common/utils/error'
 
 let daemonClient: net.Socket | null = null
+let clientShuttingDown = false
 export const daemonEE = new EventEmitter()
 const waitForCallbackTaskMap = new Map<string, {
   resolve: (value: unknown) => void
@@ -23,6 +24,7 @@ export function getSocketPath(socketName: string) {
 
 // 连接到守护进程
 export async function connectToDaemon() {
+  clientShuttingDown = false
   const client = new net.Socket()
   daemonClient = client
   let isConnected = false
@@ -80,6 +82,7 @@ export async function connectToDaemon() {
           return
         }
         console.log('守护进程连接已关闭')
+        rejectPendingCallbacks(new Error('守护进程连接已关闭'))
         daemonEE.emit('close')
       })
 
@@ -108,11 +111,14 @@ export async function connectToDaemon() {
 export function sendToDaemon<T = unknown>(message: { type: string; [key: string]: unknown }, {
   needCallback = false, timeout
 }: { needCallback?: boolean; timeout?: number } = {}): Promise<T> | undefined {
+  if (clientShuttingDown && message.type === 'start-worker') return Promise.reject(new Error('应用正在退出，未启动新任务'))
   const _callbackUuid = randomUUID()
   if (daemonClient && !daemonClient.destroyed) {
     daemonClient.write(
       JSON.stringify({
         ...message,
+        ...(process.env.GEEKGEEKRUND_WORKER_INSTANCE
+          ? { workerInstance: process.env.GEEKGEEKRUND_WORKER_INSTANCE } : {}),
         _callbackUuid
       }) + '\n'
     )
@@ -150,5 +156,17 @@ export function sendToDaemon<T = unknown>(message: { type: string; [key: string]
 // });
 
 export function closeDaemonClient() {
+  rejectPendingCallbacks(new Error('守护进程连接已关闭'))
   daemonClient?.destroy()
+  daemonClient = null
+}
+
+function rejectPendingCallbacks(error: Error) {
+  for (const callback of waitForCallbackTaskMap.values()) callback.reject(error)
+  waitForCallbackTaskMap.clear()
+}
+
+export async function stopOwnedWorkers() {
+  clientShuttingDown = true
+  await sendToDaemon({ type: 'stop-owned-workers' }, { needCallback: true, timeout: 10000 })
 }

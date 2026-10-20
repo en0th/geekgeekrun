@@ -63,7 +63,7 @@ test('newly queued workers freeze budgets and declare both budget exits non-rest
   const file = fs.readFileSync(new URL('../src/main/features/run-common.ts', import.meta.url), 'utf8')
   const { code } = await transform(file.slice(file.indexOf('export async function runCommon(')).replace('export async', 'async'), { loader: 'ts' })
   let dispatched = null, frozen = null
-  const initializations = []
+  const initializations = [], checkpoints = []
   const config = { 'boss.json': { autoChatRunBudget: { requests: 7, detailRequests: 3, activeMinutes: 15 } }, 'common-job-condition-config.json': {}, 'target-company-list.json': [] }
   const context = vm.createContext({ AUTO_CHAT_ERROR_EXIT_CODE,
     sendToDaemon: async message => { if (message.type === 'get-status') return {}; if (message.type === 'start-worker') dispatched = message; return {} },
@@ -72,6 +72,7 @@ test('newly queued workers freeze budgets and declare both budget exits non-rest
     readConfigFile: name => config[name], readRunSettings, normalizeJobSources,
     runtimeFolderPath: '/isolated-fixture', storageFilePath: '/isolated-fixture/storage', path: { join: (...parts) => parts.join('/') },
     createBudgetStore: (_folder, id) => ({ save: state => initializations.push({ id, state }) }),
+    initializeAutoChatResume: (id, mode) => checkpoints.push({ id, mode }),
     writeTaskConfigSnapshot: (_folder, _id, captured) => { frozen = captured; return '/isolated-fixture/42.json' } })
   vm.runInContext(code, context)
   await vm.runInContext("runCommon({mode:'geekAutoStartWithBossMain'})", context)
@@ -81,7 +82,9 @@ test('newly queued workers freeze budgets and declare both budget exits non-rest
   assert.ok(codes.includes(98))
   assert.ok(codes.includes(99), 'unconfirmed background windows must not trigger browser restart loops')
   assert.equal(initializations.length, 1)
+  assert.equal(checkpoints.length, 1)
   assert.deepEqual(JSON.parse(JSON.stringify(initializations[0].state.usage)), { requests: 0, detailRequests: 0, activeMs: 0 })
   await vm.runInContext("runCommon({mode:'geekAutoStartWithBossMain',resumeRunRecordId:42})", context)
   assert.equal(initializations.length, 1, 'resume never reinitializes the journal')
+  assert.equal(checkpoints.length, 1, 'resume never overwrites the saved checkpoint')
 })

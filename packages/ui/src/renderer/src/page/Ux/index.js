@@ -3850,7 +3850,7 @@ export default Vue.defineComponent({
       const last = taskStore.taskHistory.find(
         (t) => t.workerId === workerIds.auto && String(t.runRecordId) === String(r?.runRecordId),
       );
-      if (!last || last.code === 0) return "已手动暂停";
+      if (!last || last.outcome === "stopped" || last.code === 0) return "已手动暂停";
       return exitCodeLabels[last.code] || "运行中断（退出码 " + last.code + "）";
     }
     async function resumeTask() {
@@ -4206,12 +4206,18 @@ export default Vue.defineComponent({
             })
             .catch(() => void 0);
         }
+        const savedProgress = resume && task === "auto" && String(autoResume.value?.runRecordId) === String(result.runRecordId)
+          ? clone(autoResume.value.progress) : null;
+        const liveProgress = String(taskProgress.value[task]?.runRecordId) === String(result.runRecordId)
+          ? taskProgress.value[task] : null;
         taskProgress.value[task] = {
           startedAt: Date.now(),
           viewed: 0,
           sent: 0,
           skipped: 0,
           collected: 0,
+          ...savedProgress,
+          ...liveProgress,
           state: result.queued ? "queued" : "running",
           detail: result.queued
             ? queueDetail(result.queuePosition)

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { useBackgroundTaskInput } from './task-page-input.mjs'
+import { closeOwnedBrowser } from './browser-cleanup.mjs'
 
 export const BACKGROUND_WINDOW_ERROR = 'AUTO_CHAT_BACKGROUND_WINDOW_UNAVAILABLE'
 const viewport = { width: 1440, height: 760 }
@@ -9,6 +10,9 @@ const viewport = { width: 1440, height: 760 }
 export async function launchTaskBrowser(puppeteer, { background = true } = {}) {
   const browser = await puppeteer.launch({
     headless: false,
+    handleSIGTERM: false,
+    handleSIGINT: false,
+    handleSIGHUP: false,
     ignoreHTTPSErrors: true,
     defaultViewport: viewport,
     ...(background ? { waitForInitialPage: false, args: ['--no-startup-window'] } : {}),
@@ -36,7 +40,7 @@ export async function launchTaskBrowser(puppeteer, { background = true } = {}) {
     useBackgroundTaskInput(page)
     return { browser, page }
   } catch (cause) {
-    await browser.close().catch(() => {})
+    await closeOwnedBrowser(browser)
     if (!background) throw cause
     throw Object.assign(new Error(BACKGROUND_WINDOW_ERROR, { cause }), {
       detail: '无法确认BOSS浏览器已在后台最小化，任务已暂停；请检查浏览器，或关闭“后台运行浏览器”后恢复。',

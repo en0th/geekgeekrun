@@ -1,6 +1,6 @@
 import { sleep } from '@geekgeekrun/utils/sleep.mjs'
 
-export default function attachListenerForKillSelfOnParentExited() {
+export default function attachListenerForKillSelfOnParentExited(onParentExit: () => void | Promise<void> = () => {}) {
   // #region period check is parent process existed
   // Store the parent process ID
   const parentPID = process.ppid
@@ -13,7 +13,7 @@ export default function attachListenerForKillSelfOnParentExited() {
         process.kill(parentPID, 0)
       } catch (err) {
         // If an error is thrown, the parent process doesn't exist anymore
-        process.exit(0)
+        try { await onParentExit() } finally { process.exit(0) }
       }
       await sleep(1000)
     }

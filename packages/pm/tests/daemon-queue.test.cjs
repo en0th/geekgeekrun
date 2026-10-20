@@ -78,7 +78,18 @@ async function startDaemon(sliceMs = 60000, extraEnv = {}) {
     })
   }
   const close = () => { socket.destroy(); child.kill() }
-  return { send, start, status, running, queued, waitForState, events, close }
+  const waitForStatus = async (predicate, timeoutMs = 5000) => {
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      const state = await status()
+      if (predicate(state)) return state
+      await sleep(20)
+    }
+    throw Error('Timed out waiting for the daemon worker state')
+  }
+  const ready = workerId => waitForStatus(state => state.workers.some(worker => worker.workerId === workerId &&
+    worker.runtimeStorage?.taskProgress?.progress?.ready))
+  return { send, start, status, running, queued, waitForState, ready, waitForStatus, events, close, socket, child, pipeName }
 }
 
 test('one BOSS task runs at a time; others wait in order', async () => {
@@ -98,7 +109,7 @@ test('a stopping worker holds its slot until it exits, including an immediate re
   const d = await startDaemon()
   try {
     await d.start(AUTO, { FAKE_STOP_DELAY_MS: '500' })
-    await sleep(200)
+    await d.ready(AUTO)
     const oldPid = (await d.status()).workers[0].pid
     const stopping = d.send({ type: 'stop-worker', workerId: AUTO })
     await sleep(30)
@@ -108,12 +119,80 @@ test('a stopping worker holds its slot until it exits, including an immediate re
     assert.equal(state.workers[0].pid, oldPid)
     assert.equal(state.workers[0].status, 'stopping')
     await stopping
-    await sleep(150)
+    await d.ready(AUTO)
     const [current] = (await d.status()).workers
     assert.equal(current.workerId, AUTO)
     assert.notEqual(current.pid, oldPid)
     await sleep(300)
     assert.equal((await d.status()).workers[0].pid, current.pid)
+  } finally { d.close() }
+})
+
+test('GUI shutdown awaits owned workers and cancels its queued and restarting tasks', async () => {
+  const d = await startDaemon()
+  try {
+    await d.start(AUTO, { FAKE_STOP_DELAY_MS: '300' })
+    await d.start(FOLLOW)
+    await d.ready(AUTO)
+    const started = Date.now()
+    await d.send({ type: 'stop-owned-workers' })
+    assert.ok(Date.now() - started >= 200)
+    assert.deepEqual(await d.running(), [])
+    assert.deepEqual(await d.queued(), [])
+    await d.start(POLL, { FAKE_KIND: 'finite', FAKE_MS: '80', FAKE_EXIT: '1' })
+    await d.waitForStatus(state => !state.workers.length && state.history.some(h => h.workerId === POLL && h.outcome === 'restarting'))
+    await d.send({ type: 'stop-owned-workers' })
+    await sleep(2100)
+    assert.deepEqual(await d.running(), [])
+  } finally { d.close() }
+})
+
+test('daemon termination closes sockets and waits for workers instead of leaving an invisible server', async () => {
+  const d = await startDaemon()
+  await d.start(AUTO, { FAKE_STOP_DELAY_MS: '250' })
+  await d.ready(AUTO)
+  const exited = new Promise(resolve => d.child.once('exit', resolve))
+  d.child.kill('SIGTERM')
+  await Promise.race([exited, sleep(2500).then(() => { throw Error('daemon did not exit') })])
+  assert.equal(d.socket.destroyed, true)
+})
+
+test('losing the last GUI connection reaps its task and the now-idle daemon', async () => {
+  const d = await startDaemon()
+  await d.start(AUTO, { FAKE_STOP_DELAY_MS: '200' })
+  await d.ready(AUTO)
+  const workerPid = (await d.status()).workers[0].pid
+  const exited = new Promise(resolve => d.child.once('exit', resolve))
+  d.socket.destroy()
+  await Promise.race([exited, sleep(3500).then(() => { throw Error('idle daemon remained after GUI disconnected') })])
+  assert.throws(() => process.kill(workerPid, 0))
+})
+
+test('stale worker messages cannot overwrite the active instance progress', async () => {
+  const d = await startDaemon()
+  try {
+    await d.start(AUTO, { FAKE_PROGRESS: '5' })
+    await d.ready(AUTO)
+    await d.send({ type: 'worker-to-gui-message', workerId: AUTO, workerInstance: 'previous-instance',
+      data: { type: 'task-progress', progress: { collected: 99 } } })
+    assert.equal((await d.status()).workers[0].runtimeStorage.taskProgress.progress.collected, 5)
+  } finally { d.close() }
+})
+
+test('a worker that ignores termination cannot leave its independent child browser group behind', async () => {
+  const d = await startDaemon(60000, { GEEKGEEKRUND_STOP_TIMEOUT_MS: '150' })
+  try {
+    await d.start(AUTO, { FAKE_CHILD: '1', FAKE_STOP_DELAY_MS: '10000' })
+    await d.ready(AUTO)
+    const childPid = (await d.status()).workers[0].runtimeStorage.taskProgress.progress.childPid
+    assert.ok(Number.isSafeInteger(childPid) && childPid > 0)
+    await d.send({ type: 'stop-owned-workers' })
+    let alive = true
+    for (let i = 0; i < 20 && alive; i++) {
+      try { process.kill(childPid, 0); await sleep(50) } catch { alive = false }
+    }
+    assert.equal(alive, false)
+    assert.deepEqual(await d.running(), [])
   } finally { d.close() }
 })
 
@@ -179,7 +258,8 @@ test('stopping a queued task removes it, and it can be started again later', asy
     await sleep(300)
     assert.deepEqual(await d.running(), [FOLLOW])
     // an earlier stop request doesn't make the new run exit
-    assert.equal((await d.send({ type: 'check-should-exit', workerId: FOLLOW })).shouldExit, false)
+    assert.equal((await d.send({ type: 'check-should-exit', workerId: FOLLOW,
+      workerInstance: (await d.status()).workers[0].instance })).shouldExit, false)
   } finally { d.close() }
 })
 

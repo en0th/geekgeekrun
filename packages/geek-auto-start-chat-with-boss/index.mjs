@@ -62,6 +62,7 @@ import { normalizeJobSources, readSearchScope, searchPageMatches, searchRequestM
 import { applyCityFilter, normalizeCitySelection } from './city-filter.mjs'
 import { launchTaskBrowser, showTaskBrowser } from './task-browser.mjs'
 import { clickTaskElement } from './task-page-input.mjs'
+import { closeOwnedBrowser } from './browser-cleanup.mjs'
 const flattedCityList = []
 ;(cityGroupData?.zpData?.cityGroup ?? []).forEach(it => {
   const firstChar = it.firstChar
@@ -316,6 +317,8 @@ let browser
  * @type { import('puppeteer').Page }
  */
 let page
+let browserClosing = null
+let browserOpening = null
 
 const blockBossNotNewChat = new Set()
 const blockBossNotActive = new ExpiringBlockSet()
@@ -1916,7 +1919,15 @@ async function runBrowserLoop (hooks) {
     await initPuppeteer()
   }
   try {
-    const launched = await launchTaskBrowser(puppeteer, { background: runInBackground })
+    const opening = launchTaskBrowser(puppeteer, { background: runInBackground })
+    browserOpening = opening
+    let launched
+    try { launched = await opening }
+    finally { if (browserOpening === opening) browserOpening = null }
+    if (browserClosing) {
+      await browserClosing
+      throw new Error('AUTO_CHAT_TASK_STOPPING')
+    }
     browser = launched.browser
     hooks.puppeteerLaunched?.call(browser)
     page = launched.page
@@ -1983,7 +1994,7 @@ async function runBrowserLoop (hooks) {
       console.error(err)
       throw new Error('AUTO_CHAT_SECURITY_CHECK', { cause: err })
     }
-    closeBrowserWindow()
+    await closeBrowserWindow()
     throw err
   }
 }
@@ -2013,22 +2024,27 @@ async function waitForVerification () {
   return result
 }
 
-export async function closeBrowserWindow () {
+export function closeBrowserWindow () {
+  if (browserClosing) return browserClosing
   try { runBudget?.pause() } catch { /* The stopped budget is saved independently. */ }
   jobRequestBudgetMonitor?.dispose()
   jobRequestBudgetMonitor = null
   jobResponseMonitor?.dispose()
   jobResponseMonitor = null
-  browser?.close()
-  const browserProcess = browser?.process()
-  if (browserProcess) {
-    try {
-      process.kill(browserProcess.pid)
-    }
-    catch {}
-  }
+  const ownBrowser = browser
+  const opening = browserOpening
   browser = null
   page = null
+  browserClosing = (async () => {
+    // A stop may arrive after Chrome is spawned but before Puppeteer returns it.
+    // Keep the worker alive until that owned browser can be closed as well.
+    let pendingBrowser
+    if (opening) {
+      try { pendingBrowser = (await opening).browser } catch { /* launch cleans up its failed browser */ }
+    }
+    await Promise.all([...new Set([ownBrowser, pendingBrowser].filter(Boolean))].map(browser => closeOwnedBrowser(browser)))
+  })().finally(() => { browserClosing = null })
+  return browserClosing
 }
 
 async function storeStorage (page) {
