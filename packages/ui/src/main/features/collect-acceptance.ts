@@ -26,6 +26,9 @@ export function attachCollectAcceptance({ hooks, events, runMode, runRecordId,
   const pick = (data, keys) => Object.fromEntries(keys.filter(key => data?.[key] !== undefined).map(key => [key, data[key]]))
   let page: any, current: AcceptanceObservation | null = null, sequence = 0
   record({ kind: 'start', runMode })
+  events.on('PAGE_FILTERS_APPLIED', data => record({ kind: 'filters-applied', ...data }))
+  events.on('PAGE_FILTER_NOT_APPLIED', data => record({ kind: 'filter-not-applied', ...data }))
+  events.on('BOSS_LIST_RESPONSE', data => record({ kind: 'list-response', ...data }))
   hooks.pageGotten.tap('CollectAcceptance', (value) => { page = value })
   hooks.jobDetailIsGetFromRecommendList.tapPromise('CollectAcceptance', async (detail) => {
     let windowState: string | null = null

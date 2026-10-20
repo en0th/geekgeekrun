@@ -68,14 +68,19 @@ test('ordinary windows remain opt-in, while a security handoff restores and acti
 test('minimized controls do not wait for IntersectionObserver or stale painted hit-test data', async () => {
   const f = fixture(), input = []
   f.page.mouse = { click: async (x, y) => input.push(['click', x, y]), move: async (x, y) => input.push(['hover', x, y]) }
+  let visibility = 'visible'
   const domNode = { isConnected: true, getClientRects: () => [{}], getAttribute: () => null, click: () => input.push('dom-click') }
-  const element = { evaluate: async fn => vm.runInNewContext('(' + fn.toString() + ')(node)', {
-    node: domNode, getComputedStyle: () => ({ display: 'block', visibility: 'visible' }) }),
+  const element = { evaluate: async (fn,...args) => vm.runInNewContext('(' + fn.toString() + ')(node,...args)', {
+    node: domNode, args, getComputedStyle: () => ({ display: 'block', visibility }) }),
     scrollIntoView: async () => input.push('scroll'), clickablePoint: async () => ({ x: 42, y: 23 }),
     click: () => { throw Error('IntersectionObserver must not run') }, hover: () => { throw Error('IntersectionObserver must not run') } }
   await launchTaskBrowser(f.puppeteer)
   await clickTaskElement(f.page, element); await hoverTaskElement(f.page, element)
   assert.deepEqual(input, ['dom-click', 'scroll', ['hover', 42, 23]])
+  visibility = 'hidden'
+  await assert.rejects(clickTaskElement(f.page, element), /not available/)
+  await clickTaskElement(f.page, element, { allowHidden: true })
+  assert.equal(input.at(-1), 'dom-click')
   domNode.isConnected = false
   await assert.rejects(clickTaskElement(f.page, element), /not available/)
   assert.ok(!f.calls.includes('activate'))
