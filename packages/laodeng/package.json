@@ -1,5 +1,6 @@
 {
   "name": "@geekgeekrun/puppeteer-extra-plugin-laodeng",
+  "license": "AGPL-3.0-only",
   "version": "0.0.2",
   "description": "laodeng",
   "main": "./index.js",

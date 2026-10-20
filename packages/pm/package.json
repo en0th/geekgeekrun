@@ -14,7 +14,7 @@
     "multi-process"
   ],
   "author": "",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "devDependencies": {
     "electron": "28.2.0"
   },

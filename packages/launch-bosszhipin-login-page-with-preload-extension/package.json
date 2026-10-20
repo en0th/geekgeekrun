@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {},
   "author": "geekgeekrun",
-  "license": "ISC",
+  "license": "AGPL-3.0-only",
   "dependencies": {
     "@geekgeekrun/geek-auto-start-chat-with-boss": "workspace:*",
     "@geekgeekrun/utils": "workspace:*",

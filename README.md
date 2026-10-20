@@ -66,3 +66,11 @@
 
 
 
+
+## 许可证
+
+本项目采用 **GNU Affero General Public License v3.0（AGPL-3.0）** 许可证，© 2024–2026 geekgeekrun。
+
+- 你可以自由使用、修改、复制和再分发本项目；
+- 但当你**复制、修改或再分发**本项目（含衍生作品）时，衍生作品也必须以 AGPL-3.0 开源，并向接收者提供源码与许可证全文；
+- 完整条款见仓库根目录的 [LICENSE](LICENSE) 文件，或 <https://www.gnu.org/licenses/agpl-3.0.html>。

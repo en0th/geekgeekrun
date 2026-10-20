@@ -9,7 +9,7 @@
     "start": "node ./packages/run-core-of-geek-auto-start-chat-with-boss/daemon-main.mjs"
   },
   "author": "geekgeekrun",
-  "license": "ISC",
+  "license": "AGPL-3.0-only",
   "dependencies": {
     "@geekgeekrun/puppeteer-extra-plugin-laodeng": "workspace:*",
     "cheerio": "1.0.0-rc.12",

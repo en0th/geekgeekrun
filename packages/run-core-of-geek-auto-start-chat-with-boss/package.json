@@ -10,7 +10,7 @@
     "start:bare": "node ./main.mjs"
   },
   "author": "geekgeekrun",
-  "license": "ISC",
+  "license": "AGPL-3.0-only",
   "dependencies": {
     "@geekgeekrun/dingtalk-plugin": "workspace:*",
     "@geekgeekrun/geek-auto-start-chat-with-boss": "workspace:*",
