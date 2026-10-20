@@ -29,11 +29,12 @@ SQLite 编译会清空并重建 `dist`，因此类型检查和依赖编译产物
 ## 发布依赖
 
 - [自动发布](../.github/workflows/auto-release.yml)先检查推送对应的提交，通过后才准备版本、提交和 tag。准备阶段检出已检查的 SHA；不能改用检查期间向前移动的 `master`。
+- 自动升版产生的新提交先推送到临时候选分支，再通过 `workflow_dispatch` 对该 SHA 执行同一套 CI。只有新运行及 `checks / Quality gate` 都成功，才原子推进 `master` 和 tag；超时、失败、取消、缺失 gate 或旧运行都不能放行。这样不需要给机器人绕过主分支必需检查的权限。调度使用 `GITHUB_TOKEN` 支持的[显式工作流触发](https://docs.github.com/en/actions/concepts/security/github_token)。
 - [UI 发布](../.github/workflows/release-ui.yml)检查实际要发布的 tag，通过后 Windows、macOS 和 Linux 打包任务才能开始。因此手动推送 tag 也需要通过检查。
 - PR 检查仅使用 `contents: read`，不需要业务密钥，不使用 `pull_request_target`，检出时不保留写入凭据。新增加的远程 Actions 固定到完整提交 SHA。
 - 并发取消只在普通 CI 入口配置，可复用工作流不设置取消组，避免嵌套发布调用取消自身的父流程。
 
-如需 GitHub 在合并按钮处强制执行检查，应在仓库规则或分支保护中把首次运行产生的 **Quality gate** 检查设为必需检查。本批没有修改仓库服务端规则；代码中的发布依赖已明确要求检查成功。
+主分支必需检查使用 GitHub 实际产生的完整名称 **`checks / Quality gate`**，并限定来源为 GitHub Actions；严格模式要求分支保持最新。线上设置及最新验收状态见下方记录。
 
 ## 本地命令
 
@@ -79,4 +80,10 @@ Node 和 Electron 的依赖准备会切换原生模块 ABI；CI 使用不同任�
 - `actionlint 1.7.12` 对新入口、公共检查及两个发布工作流校验通过；冻结锁文件与新增测试依赖一致。
 - 原工作目录的 Electron 原生模块仍可加载；验证中的 ABI 切换均在独立目录完成。
 
-以上是 macOS arm64 上的本地复现和工作流静态校验，未声称 GitHub 托管 Linux 任务已执行。本批未提交或推送工作区、未触发线上 CI、未发布版本；工作流随代码提交后触发，首次托管运行仍需核对结果。
+以上保留首轮本地验证结果。后续提交与线上验收记录：
+
+- [PR #5](https://github.com/en0th/geekgeekrun/pull/5)已推送；基础实现提交为 `1df84ad455b64ba4e60103ed12efa33ca7852f2f`，已同步远程 `master` 的 `0.22.2` 版本元数据。
+- [首轮线上 CI](https://github.com/en0th/geekgeekrun/actions/runs/39442146062)已全部成功：Ubuntu 两端类型检查、完整回归及生产构建，macOS Electron 原生回归，最后的 Quality gate 均通过。
+- `master` 的保护规则已通过 GitHub API 写入并读回确认：必需检查为 `checks / Quality gate`，来源绑定 GitHub Actions（App ID `15368`），严格模式开启，管理员也必须遵守；没有添加机器人绕过权限。
+- 自动升版兼容必需检查的候选分支流程另有回归，覆盖准确 SHA/分支、新运行识别、缺失或跳过 gate、失败、调度拒绝和超时。该补充及后续修复的最终验收以 PR 最新 Checks 为准。
+- 本机运行状态、凭证、数据库和缓存均排除在提交之外；本轮没有发布应用版本。

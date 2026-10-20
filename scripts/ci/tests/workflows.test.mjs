@@ -54,4 +54,11 @@ test('version bumps and all release builds require the checked commit or tag fir
   assert.equal(release.jobs.verify.with.ref, '${{ inputs.tag || github.ref }}')
   for (const job of ['build_on_windows', 'build_on_macos', 'build_on_linux']) assert.equal(release.jobs[job].needs, 'verify')
   assert.notEqual(auto.jobs.verify.with.artifact_prefix, release.jobs.verify.with.artifact_prefix)
+  const steps = auto.jobs.prepare.steps
+  const wait = steps.findIndex(step => step.run === 'node scripts/ci/await-release-checks.mjs')
+  const publish = steps.findIndex(step => step.run?.includes('git push --atomic origin HEAD:master'))
+  assert.ok(wait >= 0 && publish > wait)
+  assert.equal(auto.jobs.prepare.permissions.actions, 'write')
+  assert.ok(steps.findIndex(step => step.id === 'candidate') < wait)
+  assert.ok(steps.find(step => step.id === 'candidate').run.includes('HEAD:refs/heads/$CANDIDATE_BRANCH'))
 })
