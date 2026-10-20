@@ -17,12 +17,19 @@ socket.on('data', (d) => {
     pending.get(msg._callbackUuid)?.(msg); pending.delete(msg._callbackUuid)
   }
 })
-const ask = (m) => new Promise((r) => { const id = randomUUID(); pending.set(id, r); socket.write(JSON.stringify({ ...m, _callbackUuid: id }) + '\n') })
+const ask = (m) => new Promise((r) => { const id = randomUUID(); pending.set(id, r); socket.write(JSON.stringify({ ...m, workerInstance: process.env.GEEKGEEKRUND_WORKER_INSTANCE, _callbackUuid: id }) + '\n') })
 const workerId = process.env.GEEKGEEKRUND_WORKER_ID
 if (process.env.FAKE_STOP_DELAY_MS) process.on('SIGTERM', () => {
   setTimeout(() => process.exit(0), Number(process.env.FAKE_STOP_DELAY_MS))
 })
 ;(async () => {
+  const progress = { ready: true }
+  if (process.env.FAKE_CHILD) {
+    const child = require('node:child_process').spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { detached: true, stdio: 'ignore' })
+    progress.childPid = child.pid
+  }
+  if (process.env.FAKE_PROGRESS) progress.collected = Number(process.env.FAKE_PROGRESS)
+  void ask({ type: 'worker-to-gui-message', workerId, data: { type: 'task-progress', progress } })
   if (process.env.FAKE_KIND === 'finite') {
     await new Promise((r) => setTimeout(r, Number(process.env.FAKE_MS || 300)))
     process.exit(Number(process.env.FAKE_EXIT || 0))

@@ -9,6 +9,7 @@ import path from 'node:path'
 import { readRunSettings } from '@geekgeekrun/geek-auto-start-chat-with-boss/run-settings.mjs'
 import { normalizeJobSources } from '@geekgeekrun/geek-auto-start-chat-with-boss/search-source.mjs'
 import { app } from 'electron'
+import { initializeAutoChatResume } from './task-resume'
 
 interface DaemonStatus {
   workers?: { workerId: string; args?: string[] }[]
@@ -96,9 +97,12 @@ export async function runCommon({
     )
     // Only an explicitly new logical run starts at zero. In particular, old journal
     // files may outlive a restored database whose run IDs are assigned again.
-    if (!resumeRunRecordId) createBudgetStore(storageFilePath, currentRunRecord?.id).save({
-      usage: { requests: 0, detailRequests: 0, activeMs: 0 }, baselineUnknown: false
-    })
+    if (!resumeRunRecordId) {
+      createBudgetStore(storageFilePath, currentRunRecord?.id).save({
+        usage: { requests: 0, detailRequests: 0, activeMs: 0 }, baselineUnknown: false
+      })
+      initializeAutoChatResume(Number(currentRunRecord?.id), readRunSettings(config['boss.json']).runMode)
+    }
   }
   const taskArgs = [`--mode=${mode}`, `--run-record-id=${currentRunRecord?.id || 0}`]
   // recorded in the task history so a finished run links to the right data (chats or jobs)

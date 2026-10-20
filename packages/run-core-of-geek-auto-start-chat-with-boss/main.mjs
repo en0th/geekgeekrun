@@ -10,6 +10,7 @@ import { get__dirname } from '@geekgeekrun/utils/legacy-path.mjs';
 import JSON5 from 'json5'
 import { readRunSettings } from '@geekgeekrun/geek-auto-start-chat-with-boss/run-settings.mjs'
 import { sleep } from '@geekgeekrun/utils/sleep.mjs'
+import { installWorkerShutdown } from '@geekgeekrun/utils/worker-shutdown.mjs'
 import {
   AUTO_CHAT_ERROR_EXIT_CODE
 } from './enums.mjs'
@@ -28,10 +29,6 @@ const rerunInterval = (() => {
   return v
 })()
 
-process.on('disconnect', () => {
-  process.exit()
-})
-
 const initPlugins = (hooks, { readConfigFile, getPublicDbFilePath }) => {
   const { groupRobotAccessToken: dingTalkAccessToken } = readConfigFile('dingtalk.json')
   if (!process.env.GEEKGEEKRUN_COLLECT_AUDIT_DIR) new DingtalkPlugin(dingTalkAccessToken).apply(hooks)
@@ -45,6 +42,7 @@ const main = async () => {
   const { readConfigFile, readStorageFile, getPublicDbFilePath } = await import('@geekgeekrun/geek-auto-start-chat-with-boss/runtime-file-utils.mjs')
   const bossCookies = readStorageFile('boss-cookies.json')
   const { mainLoop, closeBrowserWindow } = await import('@geekgeekrun/geek-auto-start-chat-with-boss/index.mjs')
+  const shutdown = installWorkerShutdown({ close: closeBrowserWindow })
   if (!bossCookies?.length) {
     console.error('There is no cookies. You can save a copy with EditThisCookie extension.')
     process.exit(AUTO_CHAT_ERROR_EXIT_CODE.COOKIE_INVALID)
@@ -75,6 +73,7 @@ const main = async () => {
     try {
       await mainLoop(hooks)
     } catch (err) {
+      if (shutdown.isStopping()) return
       if (err instanceof Error) {
         if (err.message.includes('AUTO_CHAT_BACKGROUND_WINDOW_UNAVAILABLE')) {
           console.error(err.detail || err.message)

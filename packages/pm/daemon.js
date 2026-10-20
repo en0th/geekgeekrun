@@ -32,6 +32,7 @@ const fs = require('fs')
 const { tmpdir } = require('os')
 const { randomUUID } = require('crypto')
 const { isSuccessfulTaskExit } = require('./task-exit.cjs')
+const { forceStopOwnedWorker } = require('./process-tree.cjs')
 const { writeJsonAtomicSync } = require('@geekgeekrun/utils/atomic-file.cjs')
 
 const ipcWritePipe = fs.createWriteStream(null, { fd: 3 })
@@ -277,6 +278,11 @@ function handleMessage(socket, message) {
 
   const workerId = message.workerId;
   const workerInfo = workers.get(workerId);
+  if (['worker-to-gui-message', 'worker-screenshot', 'check-should-exit', 'check-should-yield'].includes(message.type) &&
+    (!workerInfo || message.workerInstance !== workerInfo.instance)) {
+    sendResponse(socket, _callbackUuid, { workerId, shouldExit: true, shouldYield: true, staleInstance: true })
+    return
+  }
   switch (message.type) {
     case 'stop-owned-workers': {
       const ids = [...(socketToWorkerIdSetMap.get(socket) || [])]
@@ -436,6 +442,7 @@ function handleMessage(socket, message) {
 
 // 启动工具进程
 function startWorker({ workerId, command, args, env, ownerSocket }, restartCount = 0) {
+  const instance = randomUUID()
   const noAutoRestartExitCodeSet = new Set([0]);
   (env.GEEKGEEKRUND_NO_AUTO_RESTART_EXIT_CODE ?? '')
     .split(',')
@@ -451,6 +458,7 @@ function startWorker({ workerId, command, args, env, ownerSocket }, restartCount
       ...env,
       GEEKGEEKRUND_WORKER_ID: workerId,
       GEEKGEEKRUND_RESTART_COUNT: restartCount.toString(),
+      GEEKGEEKRUND_WORKER_INSTANCE: instance,
     }
   });
 
@@ -578,6 +586,7 @@ function startWorker({ workerId, command, args, env, ownerSocket }, restartCount
     args,
     env,
     workerId,
+    instance,
     ownerSocket,
   }
   workers.set(workerId, workerInfo);
@@ -620,11 +629,11 @@ function stopWorker(workerId, ownerSocket) {
   workerInfo.stopping = true
   workerInfo.status = 'stopping'
   workerInfo.stopPromise = new Promise(resolve => {
+    workerInfo.process.once('exit', resolve)
     workerInfo.process.once('close', resolve)
   })
   workerInfo.stopTimer = setTimeout(() => {
-    if (workerInfo.process.exitCode == null && workerInfo.process.signalCode == null)
-      workerInfo.process.kill('SIGKILL')
+    void forceStopOwnedWorker(workerInfo.process).catch(() => workerInfo.process.kill('SIGKILL'))
   }, STOP_TIMEOUT_MS)
   workerInfo.stopTimer.unref()
 
@@ -657,6 +666,7 @@ function getWorkersStatus() {
       command: workerInfo.command,
       args: workerInfo.args,
       pid: workerInfo.process?.pid,
+      instance: workerInfo.instance,
       // 最新截图（通常是 data URL 或 base64 字符串），以及截图时间
       screenshot: workerInfo.latestScreenshot ?? null,
       screenshotAt: workerInfo.latestScreenshotAt ?? null,

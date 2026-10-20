@@ -65,18 +65,22 @@ test('actual daemon requests settle errors and timeouts without detached rejecte
   const success = daemon.sendToDaemon({ type: 'fixture-success' }, { needCallback: true })
   socket.reply(2, { ok: true })
   assert.equal((await success).ok, true)
+  const interrupted = daemon.sendToDaemon({ type: 'fixture-disconnect' }, { needCallback: true })
+  const rejection = assert.rejects(interrupted, /连接已关闭/)
+  daemon.closeDaemonClient()
+  await rejection
   await new Promise(resolve => setImmediate(resolve))
 })
 
 const dbModule = await compile('../src/main/flow/OPEN_SETTING_WINDOW/utils/db/index.ts', /worker\/index\?nodeWorker&url$/,
   'export default () => globalThis.__ggrTaskContract.createWorker();')
 const runnerModule = await compile('../src/main/features/run-common.ts',
-  /connect-to-daemon$|utils\/db$|runtime-file-utils\.mjs$|run-budget-store\.mjs$|task-config-snapshot\.mjs$|run-settings\.mjs$|search-source\.mjs$|^electron$/,
+  /connect-to-daemon$|utils\/db$|task-resume$|runtime-file-utils\.mjs$|run-budget-store\.mjs$|task-config-snapshot\.mjs$|run-settings\.mjs$|search-source\.mjs$|^electron$/,
   `const f=globalThis.__ggrTaskContract;
    export const sendToDaemon=f.send,daemonEE=f.events,saveAndGetCurrentRunRecord=f.saveRecord;
    export const app={isPackaged:true},runtimeFolderPath='/fixture',storageFilePath='/fixture';
    export const readConfigFile=()=>({}),createBudgetStore=()=>({save(){}}),writeTaskConfigSnapshot=()=>'/fixture/snapshot';
-   export const readRunSettings=()=>({runMode:'collect'}),normalizeJobSources=()=>[];`)
+   export const readRunSettings=()=>({runMode:'collect'}),normalizeJobSources=()=>[],initializeAutoChatResume=()=>{};`)
 
 function taskFixture(t, reply) {
   const requests = [], commands = []
