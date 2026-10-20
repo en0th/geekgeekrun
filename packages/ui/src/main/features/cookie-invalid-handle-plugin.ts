@@ -62,6 +62,7 @@ export class CookieInvalidHandlePlugin {
             })
             throw new Error('LOGIN_STATUS_INVALID')
           }
+          throw e
         }
       }
       sendToDaemon({
@@ -132,6 +133,7 @@ export class CookieInvalidHandlePlugin {
           })
           throw new Error('LOGIN_STATUS_INVALID')
         }
+        throw e
       }
       // throw new Error('THROW_FOR_RETRY')
       return Promise.reject(new Error('THROW_FOR_RETRY'))
