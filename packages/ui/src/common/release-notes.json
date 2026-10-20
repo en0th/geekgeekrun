@@ -1,4 +1,9 @@
 {
+  "0.22.2": {
+    "date": "2026-10-20T03:36:54.356Z",
+    "draft": false,
+    "notes": "## 更新概要\n本次更新主要将 GeekGeekRun 的许可证统一为 AGPL-3.0，并补充许可证说明；功能上无变化。\n\n## 改进\n- 在软件说明中新增许可证章节，明确采用 AGPL-3.0，并统一各组件许可证标识，方便用户了解软件的使用和分发条件。\n\n## 注意事项\n- 本次更新不涉及功能变化，日常使用不受影响。\n- 软件现采用 GNU Affero General Public License v3.0（AGPL-3.0）。用户可以自由使用和修改；但如果复制、修改或再分发本软件（含衍生作品），衍生作品也必须以 AGPL-3.0 开源，并向接收者提供源码与许可证全文。完整条款可查看软件附带的许可证文件或访问 https://www.gnu.org/licenses/agpl-3.0.html 。\n\n---\n感谢本版本的贡献者：en0th\n\n完整变更：https://github.com/en0th/geekgeekrun/compare/be70cffd4ce0...ui-v0.22.2（0.22.1 → 0.22.2）"
+  },
   "0.22.1": {
     "date": "2026-10-16T09:34:03.688Z",
     "draft": false,
