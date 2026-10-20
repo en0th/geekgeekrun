@@ -36,6 +36,10 @@ async function startDaemon(sliceMs = 60000, extraEnv = {}) {
   const socket = net.connect(process.platform === 'win32' ? `\\\\.\\pipe\\${pipeName}` : path.join(tmpdir(), `${pipeName}.sock`))
   const pending = new Map()
   const events = []
+  // Retain transitions: a fast task can yield again before the test runner reads
+  // its next status. Assertions must observe the intended turn, not a wall clock.
+  const states = []
+  const stateWaiters = new Set()
   let buffer = ''
   socket.on('data', (d) => {
     buffer += d
@@ -43,7 +47,10 @@ async function startDaemon(sliceMs = 60000, extraEnv = {}) {
     while ((i = buffer.indexOf('\n')) >= 0) {
       const msg = JSON.parse(buffer.slice(0, i)); buffer = buffer.slice(i + 1)
       if (msg._callbackUuid && pending.has(msg._callbackUuid)) { pending.get(msg._callbackUuid)(msg); pending.delete(msg._callbackUuid) }
-      else if (msg.type !== 'status') events.push(msg)
+      else if (msg.type === 'status') {
+        states.push(msg)
+        for (const waiter of stateWaiters) waiter(msg)
+      } else events.push(msg)
     }
   })
   const send = (m) => new Promise((r) => { const id = randomUUID(); pending.set(id, r); socket.write(JSON.stringify({ ...m, _callbackUuid: id }) + '\n') })
@@ -53,8 +60,25 @@ async function startDaemon(sliceMs = 60000, extraEnv = {}) {
   const status = () => send({ type: 'get-status' })
   const running = async () => (await status()).workers.map((w) => w.workerId)
   const queued = async () => (await status()).queue.map((q) => `${q.workerId}:${q.reason}`)
+  const waitForState = (predicate, timeoutMs = 5000) => {
+    const previous = states.find(predicate)
+    if (previous) return Promise.resolve(previous)
+    return new Promise((resolve, reject) => {
+      const observed = state => {
+        if (!predicate(state)) return
+        clearTimeout(timer)
+        stateWaiters.delete(observed)
+        resolve(state)
+      }
+      const timer = setTimeout(() => {
+        stateWaiters.delete(observed)
+        reject(new Error('Timed out waiting for the daemon queue transition'))
+      }, timeoutMs)
+      stateWaiters.add(observed)
+    })
+  }
   const close = () => { socket.destroy(); child.kill() }
-  return { send, start, status, running, queued, events, close }
+  return { send, start, status, running, queued, waitForState, events, close }
 }
 
 test('one BOSS task runs at a time; others wait in order', async () => {
@@ -120,11 +144,15 @@ test('long tasks take turns once their time slice is used up', async () => {
   try {
     await d.start(AUTO)
     await d.start(FOLLOW)
-    await sleep(900)
-    assert.deepEqual(await d.running(), [FOLLOW])
-    assert.deepEqual(await d.queued(), [`${AUTO}:yielded`])
-    await sleep(700)
-    assert.deepEqual(await d.running(), [AUTO])
+    const followTurn = await d.waitForState(state => state.workers.some(w => w.workerId === FOLLOW))
+    assert.deepEqual(followTurn.workers.map(w => w.workerId), [FOLLOW])
+    assert.deepEqual(followTurn.queue.map(q => `${q.workerId}:${q.reason}`), [`${AUTO}:yielded`])
+    const autoTurn = await d.waitForState(state => state.workers.some(w => w.workerId === AUTO) &&
+      state.history.some(h => h.workerId === FOLLOW && h.outcome === 'yielded'))
+    assert.deepEqual(autoTurn.workers.map(w => w.workerId), [AUTO])
+    assert.deepEqual(autoTurn.queue.map(q => `${q.workerId}:${q.reason}`), [`${FOLLOW}:yielded`])
+    assert.deepEqual(autoTurn.history.slice(0, 2).map(h => `${h.workerId}:${h.outcome}`),
+      [`${FOLLOW}:yielded`, `${AUTO}:yielded`])
   } finally { d.close() }
 })
 
