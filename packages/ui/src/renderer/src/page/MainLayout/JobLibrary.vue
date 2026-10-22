@@ -158,6 +158,10 @@ const columns: RunDataColumn[] = [
   { key: 'discoveryOrigin' },
   { key: 'firstSeenRunId', defaultHidden: true },
   { key: 'lastSeenAt', minWidth: 165, defaultHidden: true },
+  { key: 'importSource', defaultHidden: true },
+  { key: 'sourceCapturedAt', minWidth: 180, defaultHidden: true },
+  { key: 'importedAt', minWidth: 165, defaultHidden: true },
+  { key: 'importFileName', minWidth: 180, defaultHidden: true },
   { key: 'experienceName' },
   {
     key: 'salary',

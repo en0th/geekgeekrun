@@ -20,7 +20,7 @@ function runId(value: unknown) {
   return Number(value)
 }
 
-export function bindJobRunScope(db: Db, id: number, accountId: string, signature: string | null) {
+export function bindJobRunScope(db: Db, id: number, accountId: string, signature: string | null, observationsStartedEmpty = false) {
   runId(id)
   if (!accountId?.trim() || (signature !== null && !/^v1:[a-f0-9]{64}$/.test(signature))) throw new Error('无效的岗位比较范围')
   db.transaction(() => {
@@ -32,7 +32,9 @@ export function bindJobRunScope(db: Db, id: number, accountId: string, signature
       return
     }
     if (signature === null) return
-    const historical = db.prepare('SELECT 1 FROM job_run_observation WHERE runRecordId = ? LIMIT 1').get(id)
+    // The worker can attest that this attempt started without observations,
+    // before navigation/preloading. Otherwise existing observations are unknown.
+    const historical = !observationsStartedEmpty && db.prepare('SELECT 1 FROM job_run_observation WHERE runRecordId = ? LIMIT 1').get(id)
     db.prepare('INSERT INTO job_run_scope (runRecordId, accountId, signature, comparable, reason) VALUES (?, ?, ?, ?, ?)')
       .run(id, accountId, signature, historical ? 0 : 1, historical ? '启用范围记录前已有采集，无法确认完整比较范围' : null)
   })()

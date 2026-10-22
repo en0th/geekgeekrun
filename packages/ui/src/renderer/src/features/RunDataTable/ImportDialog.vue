@@ -10,6 +10,10 @@
     @update:model-value="emit('update:visible', $event)"
     @closed="resetState"
   >
+    <ElRadioGroup v-if="dataset === 'jobLibrary' && !parsed" v-model="sourceFormat" class="mb12px" aria-label="导入文件格式" :disabled="parsing">
+      <ElRadioButton value="native">本软件导出</ElRadioButton>
+      <ElRadioButton value="boss-zhipin-scraper">boss-zhipin-scraper</ElRadioButton>
+    </ElRadioGroup>
     <ElAlert type="warning" :closable="false" show-icon class="mb12px">
       <template #title>导入会直接写入本地数据库</template>
       <div class="text-12px leading-18px">
@@ -24,7 +28,7 @@
           记录里带的职位、BOSS、公司信息，只在库里没有时补上，不会覆盖已有的。
         </div>
         <div>
-          支持本软件导出的 .xlsx、.csv、.json
+          支持本软件导出的 .xlsx、.csv、.json；职位库还可选择 scraper 的 JSON/CSV 列表或详情
           文件，表头用中文列名或字段名都行。建议导入前先导出一份备份。
         </div>
       </div>
@@ -57,6 +61,7 @@
       <div class="text-13px mb8px">
         文件 <strong>{{ parsed.fileName }}</strong> 共 <strong>{{ parsed.rows.length }}</strong> 行
       </div>
+      <ElAlert v-for="warning in parsed.warnings || []" :key="warning" :title="warning" type="warning" :closable="false" class="mb8px" />
       <div class="text-12px mb4px">已识别的列（{{ parsed.mappedFields.length }}）：</div>
       <div class="flex flex-wrap gap-4px mb8px">
         <ElTag
@@ -126,7 +131,7 @@
         <ElButton
           type="primary"
           :loading="importing"
-          :disabled="!parsed.rows.length || missingRequired.length > 0"
+          :disabled="!parsed.rows.length || missingRequired.length > 0 || incompleteRowCount === parsed.rows.length"
           @click="handleImport"
           >导入 {{ parsed.rows.length }} 行</ElButton
         >
@@ -145,6 +150,8 @@ import {
   ElDialog,
   ElIcon,
   ElProgress,
+  ElRadioGroup,
+  ElRadioButton,
   ElResult,
   ElTable,
   ElTableColumn,
@@ -185,6 +192,7 @@ const parsed = ref<ParsedImport | null>(null)
 const importing = ref(false)
 const progress = ref(0)
 const result = ref<RunDataImportRes | null>(null)
+const sourceFormat = ref<'native' | 'boss-zhipin-scraper'>('native')
 
 const missingRequired = computed(() =>
   parsed.value
@@ -208,7 +216,7 @@ async function handleFile(file?: File | null) {
   if (!file) return
   parsing.value = true
   try {
-    parsed.value = await parseImportFile(props.dataset, file)
+    parsed.value = await parseImportFile(props.dataset, file, sourceFormat.value)
   } catch (err) {
     toast.error(`解析文件失败：${(err as Error)?.message ?? err}`)
   } finally {
@@ -227,7 +235,8 @@ function handleDrop(e: DragEvent) {
 
 async function handleImport() {
   if (!parsed.value) return
-  const rows = parsed.value.rows
+  const file = parsed.value, dataset = props.dataset
+  const rows = file.rows
   const total: RunDataImportRes = {
     total: rows.length,
     inserted: 0,
@@ -241,7 +250,9 @@ async function handleImport() {
     // chunked so progress can be shown; each chunk is its own transaction
     for (let offset = 0; offset < rows.length; offset += CHUNK_SIZE) {
       const { data } = (await electron.ipcRenderer.invoke('run-data-import', {
-        dataset: props.dataset,
+        dataset,
+        sourceFormat: file.sourceFormat,
+        sourceFileName: file.fileName,
         rows: JSON.parse(JSON.stringify(rows.slice(offset, offset + CHUNK_SIZE)))
       })) as { data: RunDataImportRes }
       total.inserted += data.inserted
