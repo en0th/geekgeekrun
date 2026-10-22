@@ -115,6 +115,8 @@ export const getRunDataStats = (payload: RunDataStatsReq) =>
   runDataWorkerCall('getRunDataStats', payload)
 
 export const getJobSummary = (payload: RunDataQuery) => runDataWorkerCall('getJobSummary', payload)
+export const getJobRunComparison = (payload: { runRecordId: number; baselineRunId?: number }) =>
+  runDataWorkerCall('getJobRunComparison', payload)
 
 export const deleteRunData = (payload: RunDataDeleteReq) =>
   runDataWorkerCall('deleteRunData', payload)

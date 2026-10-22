@@ -1,7 +1,9 @@
 import { restoreLocalCooldowns } from './local-cooldown'
 import { createDetailWriter } from './detail-writer'
 import { observeJob } from './job-discovery'
+import { bindJobRunScope } from './job-run-comparison'
 export { ensureJobDiscovery } from './job-discovery'
+export { getJobRunComparison } from './job-run-comparison'
 import "reflect-metadata";
 import { type DataSource } from "typeorm";
 
@@ -49,6 +51,7 @@ import { AddSalaryUnits1792454400000 } from './migrations/1792454400000-AddSalar
 import { AddJobDiscovery1792454500000 } from './migrations/1792454500000-AddJobDiscovery'
 import { BackfillJobNatures1792454600000 } from './migrations/1792454600000-BackfillJobNatures'
 import { IndexAccountHistory1792454700000 } from './migrations/1792454700000-IndexAccountHistory'
+import { AddJobRunScope1792630000000 } from './migrations/1792630000000-AddJobRunScope'
 import { FavoriteFolder } from "./entity/FavoriteFolder";
 import { FavoriteJob } from "./entity/FavoriteJob";
 import { JobHireStatusLog } from "./entity/JobHireStatusLog";
@@ -100,7 +103,8 @@ export function initDb(dbFilePath) {
       AddSalaryUnits1792454400000,
       AddJobDiscovery1792454500000,
       BackfillJobNatures1792454600000,
-      IndexAccountHistory1792454700000
+      IndexAccountHistory1792454700000,
+      AddJobRunScope1792630000000
     ],
     migrationsRun: true
   });
@@ -111,11 +115,13 @@ export default class SqlitePlugin {
   initPromise: Promise<DataSource>;
   runRecordId: number;
   collectOnlyMatched: boolean;
+  comparisonScope: string | null;
 
-  constructor(dbFilePath, { collectOnlyMatched = false } = {}) {
+  constructor(dbFilePath, { collectOnlyMatched = false, comparisonScope = null as string | null } = {}) {
     this.initPromise = initDb(dbFilePath);
     this.runRecordId = minimist(process.argv.slice(2))['run-record-id'] ?? 0
     this.collectOnlyMatched = collectOnlyMatched
+    this.comparisonScope = comparisonScope
   }
 
   userInfo = null
@@ -169,6 +175,8 @@ export default class SqlitePlugin {
         user.name = userInfo.name;
 
         await userInfoRepository.save(user);
+        if (this.runRecordId > 0)
+          bindJobRunScope((ds.driver as any).databaseConnection, this.runRecordId, user.encryptUserId, this.comparisonScope)
         if (!this.historyContext) return
         const { blockJobNotSuit, blockBossNotNewChat, ...strategies } = this.historyContext
         const records = await getNotSuitMarkRecordsInLastSomeDays(ds, 7, user.encryptUserId)
