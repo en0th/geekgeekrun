@@ -1,6 +1,7 @@
 const ORIGIN = 'https://www.zhipin.com'
 const brandPattern = /^[a-f\d]{16}[A-Za-z\d_~-]{1,100}$/
 const invalid = () => new Error('公司来源需要 BOSS 品牌 ID（encryptBrandId）或 /gongsi/ 品牌主页链接')
+const companyPath = /^\/gongsi\/(?:job\/(?:c\d{9}\/)?(?:\d{6}\/)?)?([^/]+)\.html$/
 
 /** Companys/gongsis legal-entity IDs are not interchangeable with brand IDs. */
 export function normalizeCompanyBrandId(value) {
@@ -10,7 +11,7 @@ export function normalizeCompanyBrandId(value) {
     let url
     try { url = new URL(id) } catch { throw invalid() }
     if (!['www.zhipin.com', 'zhipin.com'].includes(url.hostname) || url.port || url.username || url.password) throw invalid()
-    const match = url.pathname.match(/^\/gongsi\/(?:job\/)?([^/]+)\.html$/)
+    const match = url.pathname.match(companyPath)
     if (!match) throw invalid()
     try { id = decodeURIComponent(match[1]) } catch { throw invalid() }
   }
@@ -21,6 +22,20 @@ export function normalizeCompanyBrandId(value) {
 export const companyHomeUrl = value => `${ORIGIN}/gongsi/${normalizeCompanyBrandId(value)}.html`
 export const companyJobsUrl = value => `${ORIGIN}/gongsi/job/${normalizeCompanyBrandId(value)}.html`
 export const companySourceFingerprint = value => ['company', normalizeCompanyBrandId(value)]
+export function isCompanyJobsDocument(value, brandId) {
+  try {
+    const url = new URL(value)
+    if (url.protocol !== 'https:' || url.port || url.username || url.password || !url.pathname.startsWith('/gongsi/job/')) return false
+    const id = normalizeCompanyBrandId(value)
+    return !brandId || id === normalizeCompanyBrandId(brandId)
+  } catch { return false }
+}
+export function describeCompanySource(row) {
+  try {
+    const id = normalizeCompanyBrandId(row.brandId), label = String(row.label || '').trim()
+    return (label ? `${label}（${id}）` : id) + (row.keyword ? ` · “${row.keyword}”` : '')
+  } catch { return '公司品牌需要检查' }
+}
 
 export function assertCompanyJobIdentity(brand, row, detail) {
   const expected = normalizeCompanyBrandId(brand)

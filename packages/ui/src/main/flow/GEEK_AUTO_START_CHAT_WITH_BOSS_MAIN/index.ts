@@ -324,7 +324,7 @@ const runAutoChat = async () => {
           process.exit(AUTO_CHAT_ERROR_EXIT_CODE.CITY_FILTER_NOT_APPLIED)
           return
         }
-        if (/LOGIN_STATUS_(RESTRICTED|UNKNOWN)|AUTO_CHAT_ACCOUNT_CHANGED|AUTO_CHAT_SEARCH_FILTER_NOT_APPLIED|AUTO_CHAT_JOB_PAGE_CLOSED/.test(err.message)) {
+        if (/LOGIN_STATUS_(RESTRICTED|UNKNOWN)|AUTO_CHAT_ACCOUNT_CHANGED|AUTO_CHAT_(?:SEARCH_FILTER_NOT_APPLIED|COMPANY_SOURCE_NOT_CONFIRMED)|AUTO_CHAT_JOB_PAGE_CLOSED/.test(err.message)) {
           const accountChanged = err.message.includes('ACCOUNT_CHANGED')
           const detail = (err as Error & { detail?: string }).detail
           taskProgress.update(undefined, accountChanged

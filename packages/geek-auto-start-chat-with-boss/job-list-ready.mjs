@@ -1,6 +1,7 @@
 // A selected filter is not proof that the asynchronously replaced list is current.
 import { jobResponseKind } from './boss-job-responses.mjs'
 import { searchPageMatches } from './search-source.mjs'
+import { inspectCompanyPage, companyScopeMatches, COMPANY_LIST_PATH } from './company-page.mjs'
 
 const fields = ['city', 'salary', 'experience', 'degree', 'industry', 'scale', 'jobType']
 const normalize = value => [...new Set((Array.isArray(value) ? value : String(value ?? '').split(','))
@@ -19,6 +20,7 @@ function readView() {
 }
 
 function scopeMatches(parameters, expected, source, path) {
+  if (source.type === 'company') return path === COMPANY_LIST_PATH && companyScopeMatches(parameters, expected, source)
   if (source.type === 'search') {
     if (path !== '/wapi/zpgeek/search/joblist.json' || !searchPageMatches(parameters, source)) return false
   } else if (path !== '/wapi/zpgeek/pc/recommend/job/list.json') return false
@@ -43,20 +45,25 @@ export async function waitForCurrentJobList({ page, monitor, source, timeoutMs =
   checkResponses = () => monitor.assertHealthy(), pause = ms => new Promise(resolve => setTimeout(resolve, ms)),
   now = Date.now, onReady = () => {}, onFailure = () => {} }) {
   const started = now(), deadline = started + timeoutMs
-  const initial = await page.evaluate(readView)
+  const reader = source.type === 'company' ? inspectCompanyPage : readView
+  const initial = await page.evaluate(reader)
   const expected = initial?.scope
   let observed = null
   while (true) {
     await checkResponses()
-    const current = await page.evaluate(readView)
+    const current = await page.evaluate(reader)
+    if (source.type === 'company' && !current?.loggedIn)
+      throw Object.assign(new Error('AUTO_CHAT_COMPANY_SOURCE_NOT_CONFIRMED'), { detail: '公司页面登录状态无法确认，请登录后恢复' })
     const response = monitor.getListSnapshot()
     const path = response?.path
     const scopeUnchanged = expected && current &&
+      (source.type !== 'company' || companyScopeMatches(current.scope, expected, source)) &&
       String(current.scope.query ?? '').trim() === String(expected.query ?? '').trim() &&
       (source.type !== 'search' || searchPageMatches(expected, source)) && ['position', ...fields]
       .every(key => normalize(current.scope[key]) === normalize(expected[key]))
     const scopeConfirmed = scopeUnchanged && response && scopeMatches(response.parameters, expected, source, path)
     const rowsConfirmed = Array.isArray(response?.ids) && current &&
+      (source.type !== 'company' || current.brandIds.every(id => id === source.brandId)) &&
       current.ids.every(Boolean) && JSON.stringify(current.ids) === JSON.stringify(response.ids)
     observed = { sequence: response?.sequence ?? null, path: path ?? null, page: response?.page ?? null,
       scopeConfirmed: !!scopeConfirmed, rowsConfirmed: !!rowsConfirmed,

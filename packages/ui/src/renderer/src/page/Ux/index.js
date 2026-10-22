@@ -5,6 +5,7 @@ import { experienceSelectionLabels, experienceSelectionCodes, matchesExperience,
 import { parseSalaryDetails, matchesSalaryDetails } from "@geekgeekrun/utils/job-values.cjs";
 import { normalizeCitySelection, matchesCitySelection } from "@geekgeekrun/geek-auto-start-chat-with-boss/city-filter.mjs";
 import { exportTemplates, parseTemplateFile, uniqueName } from "./template-io.js";
+import { normalizeCompanyBrandId, describeCompanySource } from "@geekgeekrun/geek-auto-start-chat-with-boss/company-source.mjs";
 import { parseMarkdown } from "./markdown.js";
 import {
   REPOSITORY_URL,
@@ -111,6 +112,7 @@ import {
   potentialSourceCount,
   positionCascaderProps,
   emptyPositionCodes,
+  ensureCompanySource,
 } from "./search-settings.js";
 
 export default Vue.defineComponent({
@@ -393,6 +395,7 @@ export default Vue.defineComponent({
             ...(type === "search" ? { children: [] } : {}),
           });
     }
+    ensureCompanySource(draft.value);
     if (
       !draft.value.sourceList.find((s) => s.type === "search").children?.length
     )
@@ -1079,6 +1082,7 @@ export default Vue.defineComponent({
       return out.every(Boolean) && regex(out) === pattern ? out : null;
     }
     function keywordDraft(d) {
+      ensureCompanySource(d);
       const search = d.sourceList?.find((s) => s.type === "search");
       if (search && !search.children?.length)
         search.children = [{ type: "search-kw", enabled: true, keyword: "" }];
@@ -2091,6 +2095,16 @@ export default Vue.defineComponent({
           (s) => s.type === "search" && s.enabled,
         );
         const searchRows = searchOptionsForRun(d, search);
+        const company = d.sourceList.find(s => s.type === 'company' && s.enabled);
+        if (company) {
+          const rows = (company.children || []).filter(row => row.enabled);
+          if (!rows.length) a.push({ field: 'company-source', text: '请添加至少一家启用的公司。' });
+          for (const row of rows) {
+            try { normalizeCompanyBrandId(row.brandId); }
+            catch (error) { a.push({ field: 'company-source', text: error.message }); }
+            if (String(row.keyword || '').trim().length > 50) a.push({ field: 'company-source', text: '公司内搜索词最多50个字符。' });
+          }
+        }
         if (search && !searchRows.some((c) => c.enabled && hasSearchCriteria(c)))
           a.push({
             field: "source",
@@ -2994,6 +3008,7 @@ export default Vue.defineComponent({
       search: ["搜索结果", "BOSS顶部搜索框找到的岗位。"],
       recommend: ["推荐职位", "BOSS“推荐”列表中的岗位。"],
       expect: ["按BOSS求职期望推荐", "BOSS已设置的求职期望对应的岗位。"],
+      company: ["公司品牌岗位", "从指定品牌的公司招聘页查看岗位，逐条核对品牌 ID。"],
     };
     function moveItem(list, index, delta) {
       const next = index + delta;
@@ -3018,6 +3033,7 @@ export default Vue.defineComponent({
     function sourceControls() {
       const d = draft.value,
         search = d.sourceList.find((s) => s.type === "search"),
+        company = d.sourceList.find((s) => s.type === "company"),
         rotate = isSearchRotationEnabled(d),
         enabledSources = d.sourceList.filter((source) => source.enabled),
         searchRows = searchOptionsForRun(d, search),
@@ -3108,6 +3124,18 @@ export default Vue.defineComponent({
               "source",
             )
           : null,
+        company?.enabled ? field('公司主页 / 品牌 ID', h('div', [
+          ...(company.children || []).map((row, index) => h('div', { class: 'ux-search-row' }, [
+            check(row, 'enabled', '使用', { 'aria-label': '使用公司 ' + (index + 1) }),
+            input(row, 'brandId', { placeholder: 'BOSS公司主页链接或 encryptBrandId', 'aria-label': '公司主页或品牌ID ' + (index + 1) }),
+            input(row, 'label', { placeholder: '备注名称（可选）', 'aria-label': '公司备注 ' + (index + 1) }),
+            input(row, 'keyword', { placeholder: '公司内搜索（可选）', 'aria-label': '公司内搜索 ' + (index + 1) }),
+            orderButtons(company.children, index, '公司 ' + (index + 1)),
+            button('删除', () => { company.children.splice(index, 1); changed(); }, { size: 'small', plain: true, type: 'danger' }),
+          ])),
+          button('添加公司', () => { (company.children ||= []).push({ enabled: true, brandId: '', keyword: '', label: '' }); changed(); }, { size: 'small', plain: true }),
+          hint('城市、薪资、经验和学历按公司页面筛选；行业与规模按该品牌资料核验。求职条件和只收集规则继续生效。'),
+        ]), '品牌 ID 用于确认公司身份；公司名称备注只用于展示。', true, 'company-source') : null,
         disclosure(
           "BOSS页面筛选（已设置 " +
             (d.platformMode === 2
@@ -4718,7 +4746,7 @@ export default Vue.defineComponent({
           label: "职位筛选与来源",
           checks: collectAll
             ? [
-                check("职位来源", ["source-selection"]),
+                check("职位来源", ["source-selection", "company-source"]),
                 ...(search ? [check("搜索关键词", ["source"])] : []),
               ]
             : [
@@ -4735,7 +4763,7 @@ export default Vue.defineComponent({
                     issues.some((i) => i.field === key && key !== "companies"),
                   )
                   .map(([key, label]) => check("确认原有条件：" + label, [key])),
-                check("职位来源", ["source-selection"]),
+                check("职位来源", ["source-selection", "company-source"]),
                 ...(search ? [check("搜索关键词", ["source"])] : []),
               ],
           extra: (() => {
@@ -6727,7 +6755,7 @@ export default Vue.defineComponent({
         .filter((x) => x.enabled)
         .map((x) => {
           const label = sourceInfo[x.type]?.[0] || x.type;
-          const words = (x.children || [])
+          const words = x.type === 'company' ? (x.children || []).filter(c => c.enabled).map(describeCompanySource) : (x.children || [])
             .filter((c) => c.enabled && hasSearchCriteria(c))
             .map((c) => describeSearchSource(c));
           return words.length ? `${label}（${words.join("、")}）` : label;

@@ -38,6 +38,8 @@ export interface SearchKeyword {
   type: string
   enabled: boolean
   keyword: string
+  brandId?: string
+  label?: string
 }
 
 export interface JobSourceForm {

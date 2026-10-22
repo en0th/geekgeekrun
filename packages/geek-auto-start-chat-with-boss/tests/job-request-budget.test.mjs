@@ -58,6 +58,22 @@ test('failed ledger writes abort the intercepted request instead of releasing it
   monitor.dispose()
 })
 
+test('company documents, filter loads and pagination share the durable request cap', async () => {
+  const f = fixture({ requests: 3 })
+  const monitor = await attachJobRequestBudget(f.page, f.budget)
+  const brand = '0123456789abcdef1nRz'
+  f.request(`https://www.zhipin.com/gongsi/job/c101280600/${brand}.html?salary=404`, 'document')
+  f.request(`https://www.zhipin.com/wapi/zpgeek/brand/job/querylist.json?brandId=${brand}&page=1`, 'filter')
+  f.request(`https://www.zhipin.com/wapi/zpgeek/brand/job/querylist.json?brandId=${brand}&page=2`, 'page2')
+  f.request(`https://www.zhipin.com/wapi/zpgeek/brand/job/querylist.json?brandId=${brand}&page=3`, 'page3')
+  await flush()
+  assert.equal(f.budget.snapshot().usage.requests, 3)
+  assert.equal(f.budget.snapshot().usage.detailRequests, 0)
+  assert.deepEqual(f.calls.filter(c => c.method === 'Fetch.failRequest').map(c => c.args.requestId), ['page3'])
+  await assert.rejects(f.budget.guard(() => 1), /RUN_BUDGET_EXCEEDED/)
+  monitor.dispose()
+})
+
 test('lost interception and failed attachment fail closed; disposing is silent', async () => {
   assert.equal(CDPSessionEvent.Disconnected, require('puppeteer-extra').pptr.CDPSessionEvent.Disconnected)
   const f = fixture()

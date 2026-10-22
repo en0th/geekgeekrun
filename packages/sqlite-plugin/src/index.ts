@@ -119,12 +119,14 @@ export default class SqlitePlugin {
   collectOnlyMatched: boolean;
   comparisonScope: string | null;
   comparisonStartedEmpty = false;
+  captureNetworkDetails: boolean;
 
-  constructor(dbFilePath, { collectOnlyMatched = false, comparisonScope = null as string | null } = {}) {
+  constructor(dbFilePath, { collectOnlyMatched = false, comparisonScope = null as string | null, captureNetworkDetails = true } = {}) {
     this.initPromise = initDb(dbFilePath);
     this.runRecordId = minimist(process.argv.slice(2))['run-record-id'] ?? 0
     this.collectOnlyMatched = collectOnlyMatched
     this.comparisonScope = comparisonScope
+    this.captureNetworkDetails = captureNetworkDetails
   }
 
   userInfo = null
@@ -148,7 +150,7 @@ export default class SqlitePlugin {
     hooks.pageGotten.tap(
       'SqlitePlugin',
       (page) => {
-        if (this.collectOnlyMatched) return
+        if (this.collectOnlyMatched || !this.captureNetworkDetails) return
         page.on('response', async (response) => {
           if (response.url().startsWith('https://www.zhipin.com/wapi/zpgeek/job/detail.json')) {
             try {

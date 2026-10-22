@@ -1,6 +1,7 @@
 import { jobResponseKind } from './boss-job-responses.mjs'
 import { budgetStateError } from './run-budget.mjs'
 import { createRequire } from 'node:module'
+import { isCompanyJobsDocument } from './company-source.mjs'
 // puppeteer-extra loads Puppeteer through require(). Its CDP event names are Symbols;
 // the separately loaded ESM copy exports different Symbols for the same event.
 const { CDPSessionEvent } = createRequire(import.meta.url)('puppeteer')
@@ -14,7 +15,7 @@ export async function attachJobRequestBudget(page, budget) {
   async function paused({ requestId, request }) {
     if (disposed) return
     try {
-      const kind = jobResponseKind(request.url)
+      const kind = jobResponseKind(request.url) || (isCompanyJobsDocument(request.url) ? 'list' : null)
       if (kind) budget.reserveRequest(kind)
       await session.send('Fetch.continueRequest', { requestId })
     } catch (error) {
@@ -28,7 +29,8 @@ export async function attachJobRequestBudget(page, budget) {
     session.on('Fetch.requestPaused', paused)
     session.on(CDPSessionEvent.Disconnected, disconnected)
     await session.send('Fetch.enable', { patterns: [
-      '/wapi/zpgeek/search/joblist.json', '/wapi/zpgeek/pc/recommend/job/list.json', '/wapi/zpgeek/job/detail.json'
+      '/wapi/zpgeek/search/joblist.json', '/wapi/zpgeek/pc/recommend/job/list.json', '/wapi/zpgeek/job/detail.json',
+      '/wapi/zpgeek/brand/job/querylist.json', '/gongsi/job/'
     ].map(endpoint => ({ urlPattern: '*://*zhipin.com' + endpoint + '*', requestStage: 'Request' })) })
   } catch {
     disposed = true

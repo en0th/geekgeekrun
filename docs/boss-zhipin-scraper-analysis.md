@@ -145,7 +145,7 @@ Skill stage: dist/boss-zhipin-scraper-2.3.1/
 
 | issue | 上游诉求/现状 | 对 GeekGeekRun 的判断 |
 | --- | --- | --- |
-| [#97 公司维度](https://github.com/eatmoreduck/boss-zhipin-scraper/issues/97) | 提出公司名搜索说明、本地公司过滤、公司主页/品牌 ID 来源三个不同方案 | 已有公司包含/排除和公司资料库；真正新增的是公司主页来源，需单独验证，不重复实现本地包含匹配 |
+| [#97 公司维度](https://github.com/eatmoreduck/boss-zhipin-scraper/issues/97) | 提出公司名搜索说明、本地公司过滤、公司主页/品牌 ID 来源三个不同方案 | 已有公司包含/排除和公司资料库；后续已核验并接入独立公司招聘页来源、品牌/岗位身份和原生分页，保留筛选与只收集边界，见[公司来源验收](company-job-source-2026-10-22.md) |
 | [#94 最多 20 页](https://github.com/eatmoreduck/boss-zhipin-scraper/issues/94) | 请求从 10 提到 20；源码当前会警告并钳制到 10，并非完全静默 | 采用可配置任务预算思路；不直接照搬 20 或 500 作为安全阈值 |
 | [#90 跨轮比较](https://github.com/eatmoreduck/boss-zhipin-scraper/issues/90) | 基准加载告警、集成测试和 merge 语义仍待跟进 | 值得采用“首次发现”和“同范围跨轮新增”两个明确定义，使用 SQLite 实现 |
 | [#85 岗位知识图谱](https://github.com/eatmoreduck/boss-zhipin-scraper/issues/85) | 提案涉及外部 Graphiti/Neo4j、MySQL 表与 LLM；这些不属于本次 JSON CLI 基线的现有能力 | 暂缓；未来可做只读导出/独立分析插件，不列入默认采集依赖 |

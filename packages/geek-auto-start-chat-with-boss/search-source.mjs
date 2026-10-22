@@ -1,5 +1,5 @@
 import catalog from './data/position-codes.json' with { type: 'json' }
-import { hasCompanyConstraint } from './company-source.mjs'
+import { hasCompanyConstraint, normalizeCompanyBrandId } from './company-source.mjs'
 
 const positions = new Map()
 export const positionOptions = Object.entries(catalog).filter(([name]) => name !== '_meta').map(([groupLabel, group]) => ({
@@ -53,6 +53,16 @@ export function normalizeJobSources(sources = []) {
         result.push({ type: 'search', keyword, positionCodes })
         seen.add(key)
       }
+    } else if (source.type === 'company') {
+      if (!Array.isArray(source.children)) throw new Error('公司来源列表无效，请重新添加公司')
+      const rows = (source.children || []).filter(row => row?.enabled)
+      if (!rows.length) throw new Error('请为公司来源填写至少一个品牌 ID 或公司主页')
+      for (const row of rows) {
+        const brandId = normalizeCompanyBrandId(row.brandId), keyword = String(row.keyword || '').trim()
+        if (keyword.length > 50) throw new Error('公司内搜索词最多 50 个字符')
+        const key = JSON.stringify(['company', brandId, keyword])
+        if (!seen.has(key)) { result.push({ type: 'company', brandId, keyword }); seen.add(key) }
+      }
     } else if (!seen.has(source.type)) {
       result.push({ type: source.type })
       seen.add(source.type)
@@ -61,6 +71,7 @@ export function normalizeJobSources(sources = []) {
   return result
 }
 export function sourceFingerprintEntry(source) {
+  if (source.type === 'company') return ['company', normalizeCompanyBrandId(source.brandId), source.keyword || '']
   const entry = [source.type, source.selector ?? null, source.keyword ?? null]
   const codes = normalizePositionCodes(source.positionCodes)
   // Preserve the existing resume fingerprint when the new optional field is unused.
@@ -100,6 +111,9 @@ export function searchPageMatches(scope, source) {
 export async function readSearchScope(page) {
   return page.evaluate(() => {
     const form = document.querySelector('.page-jobs-main')?.__vue__?.formData
+    const root = document.querySelector('.page-company-position')?.__vue__
+    const company = Array.isArray(root?.jobList) ? root : root?.$children?.find(child => Array.isArray(child.jobList))
+    if (company) return { query: '', position: '', city: company.city || '100010000', brandId: company.encryptBrandId }
     if (!form) return null
     const url = new URL(location.href)
     return { query: form.query ?? url.searchParams.get('query') ?? '',

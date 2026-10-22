@@ -150,3 +150,25 @@ test('greeting at the threshold emits one success and saves browser state', asyn
   assert.equal(current.ctx.chatSourceRotationDone, true)
   assert.equal(saves, 1)
 })
+
+test('returning from a chat navigation waits for the actual company source path', async () => {
+  const current = context(20)
+  const companyUrl = 'https://www.zhipin.com/gongsi/job/0123456789abcdef1nRz.html?salary=404'
+  let returned = false, confirmedPath = false
+  Object.assign(current.ctx, {
+    targetJobData: { jobInfo: { encryptUserId: 'boss-1' } }, currentSourceIndex: 0,
+    hooks: { newChatStartup: { promise: async () => {} } }, ChatStartupFrom: { AutoFromRecommendList: 1 },
+    JobSource: { recommend: 1 }, storeStorage: async () => {}, sleepWithRandomDelay: async () => {},
+    chatSourceRotationDone: false, sourceUrlBeforeGreet: companyUrl,
+    page: { $: async () => null, goBack: async () => { returned = true }, waitForFunction: async (fn, _options, url) => {
+      confirmedPath = vm.runInNewContext('(' + fn.toString() + ')(url)', { URL, url,
+        location: new URL(companyUrl), document: { readyState: 'complete' } })
+      assert.equal(confirmedPath, true)
+    } },
+  })
+  const start = source.indexOf('          const waitAndHandleChatSuccess =')
+  const end = source.indexOf('          const handleAddFriendResponse =', start)
+  await current.run('(async function () {' + source.slice(start, end) + ' await waitAndHandleChatSuccess({ hasGoToChatPage: true }) })()')
+  assert.equal(returned, true)
+  assert.equal(confirmedPath, true)
+})

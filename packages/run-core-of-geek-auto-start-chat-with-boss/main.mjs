@@ -10,6 +10,7 @@ import { get__dirname } from '@geekgeekrun/utils/legacy-path.mjs';
 import JSON5 from 'json5'
 import { readRunSettings } from '@geekgeekrun/geek-auto-start-chat-with-boss/run-settings.mjs'
 import { jobComparisonScope } from '@geekgeekrun/geek-auto-start-chat-with-boss/job-comparison-scope.mjs'
+import { normalizeJobSources } from '@geekgeekrun/geek-auto-start-chat-with-boss/search-source.mjs'
 import { sleep } from '@geekgeekrun/utils/sleep.mjs'
 import { installWorkerShutdown } from '@geekgeekrun/utils/worker-shutdown.mjs'
 import {
@@ -36,6 +37,7 @@ const initPlugins = (hooks, { readConfigFile, getPublicDbFilePath }) => {
   const settings = readRunSettings(readConfigFile('boss.json'))
   new SqlitePlugin(getPublicDbFilePath(), {
     collectOnlyMatched: settings.runMode === 'collect' && settings.collectOnlyMatchingJobs,
+    captureNetworkDetails: !normalizeJobSources(readConfigFile('boss.json').jobSourceList).some(source => source.type === 'company'),
     comparisonScope: jobComparisonScope(Object.fromEntries(
       ['boss.json', 'common-job-condition-config.json', 'target-company-list.json'].map(name => [name, readConfigFile(name)])))
   }).apply(hooks)
@@ -114,7 +116,7 @@ const main = async () => {
           process.exit(AUTO_CHAT_ERROR_EXIT_CODE.CITY_FILTER_NOT_APPLIED)
           return
         }
-        if (/LOGIN_STATUS_(RESTRICTED|UNKNOWN)|AUTO_CHAT_ACCOUNT_CHANGED|AUTO_CHAT_SEARCH_FILTER_NOT_APPLIED|AUTO_CHAT_JOB_PAGE_CLOSED/.test(err.message)) {
+        if (/LOGIN_STATUS_(RESTRICTED|UNKNOWN)|AUTO_CHAT_ACCOUNT_CHANGED|AUTO_CHAT_(?:SEARCH_FILTER_NOT_APPLIED|COMPANY_SOURCE_NOT_CONFIRMED)|AUTO_CHAT_JOB_PAGE_CLOSED/.test(err.message)) {
           console.error(err.detail || err.message)
           await closeBrowserWindow?.()
           process.exit(err.message.includes('ACCOUNT_CHANGED') ? AUTO_CHAT_ERROR_EXIT_CODE.ACCOUNT_CHANGED : AUTO_CHAT_ERROR_EXIT_CODE.LOGIN_STATUS_UNCONFIRMED)

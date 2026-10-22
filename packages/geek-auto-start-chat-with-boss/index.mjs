@@ -65,6 +65,7 @@ import { clickTaskElement } from './task-page-input.mjs'
 import { closeOwnedBrowser } from './browser-cleanup.mjs'
 import { applyPageFilters } from './page-filters.mjs'
 import { waitForCurrentJobList } from './job-list-ready.mjs'
+import { activateCompanySource, applyCompanyPageFilters, assertCompanyPlatformFilters, isCompanyJobsDocument } from './company-page.mjs'
 const flattedCityList = []
 ;(cityGroupData?.zpData?.cityGroup ?? []).forEach(it => {
   const firstChar = it.firstChar
@@ -589,7 +590,7 @@ export function testIfJobTitleOrDescriptionSuit (jobInfo, matchLogic) {
   return createJobDetailMatcher({ expectJobNameRegExpStr, expectJobTypeRegExpStr, expectJobDescRegExpStr }, matchLogic)(jobInfo)
 }
 
-async function setFilterCondition (selectedFilters) {
+async function setFilterCondition (selectedFilters, source) {
   const {
     cityList = [],
     salaryList = [],
@@ -615,6 +616,11 @@ async function setFilterCondition (selectedFilters) {
     }).join('，'))
   }
   console.log('----------------------------')
+  if (source?.type === 'company') {
+    const matches = await applyCompanyPageFilters(page, source, selectedFilters, { checkResponses: checkJobResponses })
+    autoStartChatEventBus.emit('PAGE_FILTERS_APPLIED', { filters: selectedFilters, source: 'company', matchesCompany: matches })
+    return matches
+  }
   await applyCityFilter(page, cityList, { cityCatalog: flattedCityList })
   await applyPageFilters(page, selectedFilters, {
     catalogs: { ...jobFilterConditions, industryList: Object.values(industryFilterConditionsMapByCode) },
@@ -624,7 +630,7 @@ async function setFilterCondition (selectedFilters) {
   })
   if (!isCollectAll && !await applyJobNatureFilter(page, requiredJobConditions.jobNatures))
     autoStartChatEventBus.emit('TASK_PROGRESS', { detail: '网页求职类型筛选未能确认，将按岗位明确给出的类型逐条核验' })
-
+  return true
 }
 
 async function toRecommendPage (hooks) {
@@ -760,12 +766,35 @@ async function toRecommendPage (hooks) {
             await activateSearchSource(page, source, SEARCH_BOX_SELECTOR)
           }
         })
+        break
+      }
+      case 'company': {
+        computedSourceList.push({ ...source,
+          async getIsCurrentActiveSource() {
+            return page.evaluate(({ brandId, keyword }) => {
+              const root = document.querySelector('.page-company-position')?.__vue__
+              const v = Array.isArray(root?.jobList) ? root : root?.$children?.find(child => Array.isArray(child.jobList))
+              return v?.encryptBrandId === brandId && String(v.queryParams?.query || '').trim() === keyword
+            }, source)
+          },
+          async setToActiveSource() { await activateCompanySource(page, source) }
+        })
+        break
       }
     }
   }
   if (!computedSourceList.length) {
     // e.g. only the expect source is enabled and the account has no 求职期望
     throw new Error('AUTO_CHAT_NO_USABLE_SOURCE')
+  }
+  for (const source of computedSourceList) {
+    if (!['recommend', 'expect'].includes(source.type)) continue
+    const activate = source.setToActiveSource
+    source.setToActiveSource = async function () {
+      if (await page.evaluate(() => !!document.querySelector('.page-company-position')))
+        await page.goto(recommendJobPageUrl, { waitUntil: 'domcontentloaded', timeout: 30000 })
+      await activate.call(this)
+    }
   }
 
 
@@ -850,9 +879,10 @@ async function toRecommendPage (hooks) {
           Promise.race([
             page.waitForSelector(USER_SET_EXPECT_JOB_ENTRIES_SELECTOR),
             page.waitForSelector(RECOMMEND_JOB_ENTRY_SELECTOR),
+            page.waitForSelector('.page-company-position'),
           ]),
           Promise.race([
-            page.waitForSelector(".job-list-container .rec-job-list"),
+            page.waitForSelector(".job-list-container .rec-job-list, .page-company-position"),
             page.waitForSelector(".recommend-result-job .job-empty-wrapper")
           ])
         ])
@@ -875,7 +905,9 @@ async function toRecommendPage (hooks) {
           jobResponseMonitor?.expectList()
           try {
             await guardJobResponses(() => activateSourceAndWait(page, () => source.setToActiveSource(), {
-              matchesResponse: response => source.type === 'search'
+              matchesResponse: response => source.type === 'company'
+                ? response.status() === 200 && isCompanyJobsDocument(response.url(), source.brandId)
+                : source.type === 'search'
                 ? searchRequestMatches(response.request(), source)
                 : response.url().startsWith('https://www.zhipin.com/wapi/zpgeek/pc/recommend/job/list.json')
             }))
@@ -885,6 +917,8 @@ async function toRecommendPage (hooks) {
             }
           } catch (error) {
             await checkJobResponses()
+            if (source.type === 'company' && error?.name === 'TimeoutError')
+              throw Object.assign(new Error('AUTO_CHAT_COMPANY_SOURCE_NOT_CONFIRMED'), { detail: '公司页面或列表请求未能确认，请检查页面和网络后恢复' })
             if (source.type === 'search' && error?.name === 'TimeoutError') {
               const failure = new Error('AUTO_CHAT_SEARCH_FILTER_NOT_APPLIED')
               failure.detail = '未能确认BOSS已应用搜索内容和平台职位类目，任务已暂停；请检查页面后恢复'
@@ -902,12 +936,19 @@ async function toRecommendPage (hooks) {
         }
         await sleepWithRandomDelay(1500)
         jobResponseMonitor?.expectList()
-        await setFilterCondition(filterCondition)
-        await guardJobResponses(() => waitForCurrentJobList({ page, monitor: jobResponseMonitor,
+        if (!await setFilterCondition(filterCondition, computedSourceList[currentSourceIndex])) {
+          autoStartChatEventBus.emit('TASK_PROGRESS', { detail: '公司行业或规模不符合当前页面筛选组合，查看下个组合', state: 'searching' })
+          continue iterateFilterCondition
+        }
+        const readyList = await guardJobResponses(() => waitForCurrentJobList({ page, monitor: jobResponseMonitor,
           source: computedSourceList[currentSourceIndex], checkResponses: checkJobResponses,
           onReady: data => autoStartChatEventBus.emit('JOB_LIST_READY', data),
           onFailure: data => autoStartChatEventBus.emit('PAGE_FILTER_NOT_APPLIED', { field: 'list', ...data }),
         }))
+        if (readyList.count === 0) {
+          autoStartChatEventBus.emit('TASK_PROGRESS', { detail: '当前来源在此筛选组合没有岗位，查看下个组合', state: 'searching' })
+          continue iterateFilterCondition
+        }
         try {
           // the greeting went out and the per-source success limit is reached: rotate below
           let chatSourceRotationDone = false
@@ -918,7 +959,7 @@ async function toRecommendPage (hooks) {
               // job list
               let  recommendJobListElProxy
               try {
-                recommendJobListElProxy= await page.waitForSelector('.job-list-container .rec-job-list', { timeout: 5 * 1000 })
+                recommendJobListElProxy= await page.waitForSelector('.job-list-container .rec-job-list, .page-company-position .position-job-list', { timeout: 5 * 1000 })
               } catch {}
               if (!recommendJobListElProxy){
                 await hooks.encounterEmptyRecommendJobList?.promise({
@@ -928,7 +969,18 @@ async function toRecommendPage (hooks) {
               }
               let jobListData = []
               async function updateJobListData () {
-                jobListData = await page.evaluate(`document.querySelector('.page-jobs-main')?.__vue__?.jobList`)
+                if (computedSourceList[currentSourceIndex].type === 'company') {
+                  await guardJobResponses(() => waitForCurrentJobList({ page, monitor: jobResponseMonitor,
+                    source: computedSourceList[currentSourceIndex], checkResponses: checkJobResponses }))
+                  const nextList = await page.$('.page-company-position .position-job-list')
+                  await recommendJobListElProxy?.dispose()
+                  recommendJobListElProxy = nextList
+                }
+                jobListData = await page.evaluate(() => {
+                  const root = document.querySelector('.page-company-position')?.__vue__
+                  const company = Array.isArray(root?.jobList) ? root : root?.$children?.find(child => Array.isArray(child.jobList))
+                  return (document.querySelector('.page-jobs-main')?.__vue__ || company)?.jobList
+                })
                 if (!Array.isArray(jobListData)) throw new Error('AUTO_CHAT_LIST_STALLED')
                 for (const row of jobListData) {
                   if (isCollectAll) break
@@ -1019,7 +1071,7 @@ async function toRecommendPage (hooks) {
                     )
                 })
               }
-              continueFind: while (targetJobIndex < 0 && !hasReachLastPage) {
+              continueFind: while (targetJobIndex < 0) {
                 // between jobs: the task queue may ask this run to make way for a queued task
                 runBudget?.checkpoint()
                 await hooks.checkpoint?.promise()
@@ -1048,7 +1100,7 @@ async function toRecommendPage (hooks) {
                 if (tempTargetJobIndexToCheckDetail >= 0) {
                   // scroll that target element into view
                   await page.evaluate(`
-                    targetEl = document.querySelector("ul.rec-job-list").children[${tempTargetJobIndexToCheckDetail}]
+                    targetEl = document.querySelector("ul.rec-job-list, ul.position-job-list").querySelectorAll('li.job-card-box')[${tempTargetJobIndexToCheckDetail}]
                     targetEl.scrollIntoView({
                       behavior: 'smooth',
                       block: ${Math.random() > 0.5 ? '\'center\'' : '\'end\''}
@@ -1070,7 +1122,13 @@ async function toRecommendPage (hooks) {
                   })
                   await checkJobResponses()
                   targetJobData = await page.evaluate('document.querySelector(".job-detail-box").__vue__.data')
-                  selectedJobData = await page.evaluate('document.querySelector(".page-jobs-main").__vue__.currentJob')
+                  selectedJobData = await page.evaluate(() => {
+                    const root = document.querySelector('.page-company-position')?.__vue__
+                    const company = Array.isArray(root?.jobList) ? root : root?.$children?.find(child => Array.isArray(child.jobList))
+                    return (document.querySelector('.page-jobs-main')?.__vue__ || company)?.currentJob
+                  })
+                  if (computedSourceList[currentSourceIndex].type === 'company')
+                    assertCompanyPlatformFilters(computedSourceList[currentSourceIndex], selectedJobData, targetJobData, filterCondition)
                   // save the job detail info
                   await hooks.jobDetailIsGetFromRecommendList?.promise(targetJobData)
                   autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'viewed', detail: '已查看岗位详情' })
@@ -1600,10 +1658,20 @@ async function toRecommendPage (hooks) {
 
           await hooks.newChatWillStartup?.promise(targetJobData)
           const startChatButtonProxy = await page.$('.job-detail-box .op-btn.op-btn-chat')
+          const sourceUrlBeforeGreet = page.url()
           await sleep(500)
           //#region click the chat button
           await checkJobResponses()
           runBudget?.checkpoint()
+          if (computedSourceList[currentSourceIndex].type === 'company') {
+            const live = await page.evaluate(() => {
+              const root = document.querySelector('.page-company-position')?.__vue__
+              const v = Array.isArray(root?.jobList) ? root : root?.$children?.find(child => Array.isArray(child.jobList))
+              return { row: v?.currentJob, detail: document.querySelector('.job-detail-box')?.__vue__?.data }
+            })
+            assertCompanyPlatformFilters(computedSourceList[currentSourceIndex], live.row, live.detail, filterCondition)
+            if (live.row?.encryptJobId !== targetJobData.jobInfo.encryptId) throw new Error('AUTO_CHAT_COMPANY_SOURCE_NOT_CONFIRMED')
+          }
           await clickTaskElement(page, startChatButtonProxy)
 
           const waitAddFriendResponse = async () => {
@@ -1653,9 +1721,10 @@ async function toRecommendPage (hooks) {
             await sleepWithRandomDelay(1500)
             if (hasGoToChatPage) {
               await page.goBack()
-              await page.waitForFunction(() => {
-                return location.href.startsWith(`https://www.zhipin.com/web/geek/jobs`) && document.readyState === 'complete'
-              }, { polling: 100 })
+              await page.waitForFunction(expectedUrl => {
+                const expected = new URL(expectedUrl)
+                return location.origin === expected.origin && location.pathname === expected.pathname && document.readyState === 'complete'
+              }, { polling: 100 }, sourceUrlBeforeGreet)
               await sleepWithRandomDelay(2000)
             }
             const closeDialogButtonProxy = await page.$('.greet-boss-dialog .greet-boss-footer .cancel-btn')
