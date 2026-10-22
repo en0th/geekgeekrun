@@ -120,7 +120,8 @@
 import { toast } from '@renderer/features/Toast'
 import { computed, reactive, ref } from 'vue'
 import { ElButton, ElDrawer, ElInputNumber, ElOption, ElSelect } from 'element-plus'
-import EChart from './EChart.vue'
+import { lazyComponent } from '../lazy-component'
+const EChart = lazyComponent(() => import('./EChart.vue'), '正在加载图表')
 import {
   runDataDatasets,
   type RunDataDatasetKey,

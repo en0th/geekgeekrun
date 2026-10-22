@@ -22,18 +22,31 @@ import {
   AI_MAX_RETRIES_RANGE,
 } from "../../../../common/model-config.mjs";
 import { followIssues } from "../../../../common/ux-validation.mjs";
-import { ElMessageBox, ElImageViewer, ElCascader } from "element-plus";
+import {
+  ElMessageBox, ElCascader, ElAlert, ElButton, ElCheckbox, ElDialog, ElDrawer, ElIcon,
+  ElInput, ElInputNumber, ElOption, ElPopover, ElProgress, ElRadio, ElRadioButton,
+  ElRadioGroup, ElSelect, ElStep, ElSteps, ElSwitch, ElTabPane, ElTabs, ElTag, ElTooltip,
+} from "element-plus";
+import { lazyComponent } from "../../features/lazy-component";
 import { positionOptions, normalizePositionCodes, hasSearchCriteria, describeSearchSource } from "@geekgeekrun/geek-auto-start-chat-with-boss/search-source.mjs";
-import JobLibrary from "../MainLayout/JobLibrary.vue";
-import RunDataTable from "../../features/RunDataTable/index.vue";
+const JobLibrary = lazyComponent(() => import("../MainLayout/JobLibrary.vue"));
+const RunDataTable = lazyComponent(() => import("../../features/RunDataTable/index.vue"));
 import { runDataStatsPresets } from "../../features/RunDataTable/stats-presets";
 import { toDbDate, formatSalary } from "../../features/RunDataTable/format";
 import { EXIT_CODE_LABELS } from "../../../../common/task-labels";
-import BossLibrary from "../MainLayout/BossLibrary.vue";
-import CompanyLibrary from "../MainLayout/CompanyLibrary.vue";
-import StartChatRecord from "../MainLayout/StartChatRecord.vue";
-import MarkAsNotSuitRecord from "../MainLayout/MarkAsNotSuitRecord.vue";
-import FavoriteJobs from "../MainLayout/FavoriteJobs.vue";
+const BossLibrary = lazyComponent(() => import("../MainLayout/BossLibrary.vue"));
+const CompanyLibrary = lazyComponent(() => import("../MainLayout/CompanyLibrary.vue"));
+const StartChatRecord = lazyComponent(() => import("../MainLayout/StartChatRecord.vue"));
+const MarkAsNotSuitRecord = lazyComponent(() => import("../MainLayout/MarkAsNotSuitRecord.vue"));
+const FavoriteJobs = lazyComponent(() => import("../MainLayout/FavoriteJobs.vue"));
+const ElImageViewer = lazyComponent(() => import("element-plus/es/components/image-viewer/index.mjs"));
+const ElTable = lazyComponent(() => import("element-plus/es/components/table/index.mjs"));
+const ElTableColumn = lazyComponent(() => import("element-plus/es/components/table/index.mjs").then(module => module.ElTableColumn));
+const uxElements = {
+  ElAlert, ElButton, ElCheckbox, ElDialog, ElDrawer, ElIcon, ElInput, ElInputNumber,
+  ElOption, ElPopover, ElProgress, ElRadio, ElRadioButton, ElRadioGroup, ElSelect,
+  ElStep, ElSteps, ElSwitch, ElTabPane, ElTable, ElTableColumn, ElTabs, ElTag, ElTooltip,
+};
 import {
   Fold,
   Expand,
@@ -679,10 +692,9 @@ export default Vue.defineComponent({
       ["hr", "只看人事发布的岗位"],
       ["activity", "招聘者最近活跃"],
     ];
-    let app = { _context: R.getCurrentInstance().appContext };
     function E(name, props = {}, children) {
       return h(
-        app._context.components[name],
+        uxElements[name],
         props,
         typeof children === "function"
           ? { default: children }

@@ -17,7 +17,6 @@
 <script lang="ts" setup>
 import { useRouter } from 'vue-router'
 import { onMounted } from 'vue'
-import { sleep } from '@geekgeekrun/utils/sleep.mjs'
 
 const router = useRouter()
 
@@ -25,14 +24,12 @@ const router = useRouter()
 // const downloadProcessWaitee = ref(null)
 
 onMounted(async () => {
-  await sleep(1500)
   try {
     await electron.ipcRenderer.invoke('pre-enter-setting-ui')
   } catch (err) {
     console.log('pre-enter-setting-ui error', err)
   } finally {
-    await sleep(500)
-    router.replace('/main-layout')
+    router.replace('/ux/auto')
   }
 })
 </script>

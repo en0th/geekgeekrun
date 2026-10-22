@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { NewReleaseInfo } from '../../../common/types/update'
 import { ref } from 'vue'
-import { throttle } from 'lodash'
+import throttle from 'lodash/throttle'
 import type { RunningTask } from '../../../common/types/task'
 
 export const useUpdateStore = defineStore('update', () => {

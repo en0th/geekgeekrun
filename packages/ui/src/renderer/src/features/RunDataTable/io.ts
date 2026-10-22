@@ -1,5 +1,4 @@
 // Export rows to xlsx / csv / json and parse import files back into db-shaped rows.
-import * as XLSX from 'xlsx'
 import dayjs from 'dayjs'
 import {
   runDataDatasets,
@@ -57,6 +56,7 @@ export async function exportRows(
       2
     )
   } else {
+    const XLSX = await import('xlsx')
     const sheet = XLSX.utils.aoa_to_sheet(toTabular(dataset, rows))
     if (format === 'csv') {
       // BOM so Excel detects UTF-8
@@ -141,6 +141,7 @@ export async function parseImportFile(
       throw new Error('无法识别的 JSON 结构，需要数组或包含 rows 数组的对象')
     }
   } else {
+    const XLSX = await import('xlsx')
     const isCsv = /\.csv$/i.test(file.name)
     // csv: keep cells as text so ids like "00123" aren't turned into numbers
     const book = XLSX.read(await file.arrayBuffer(), {
