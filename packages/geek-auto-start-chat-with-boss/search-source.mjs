@@ -125,12 +125,18 @@ export async function activateSearchSource(page, source, searchBoxSelector) {
     await page.goto(buildPositionSearchUrl(source, page.url(), scope || {}), { waitUntil: 'domcontentloaded', timeout: 30000 })
     return
   }
-  await page.waitForSelector(searchBoxSelector)
+  const box = await page.waitForSelector(searchBoxSelector)
+  await box?.dispose()
   const input = await page.$(`${searchBoxSelector} input`)
-  await input.focus()
-  await input.evaluate(element => element.select())
-  // Keyboard replacement also notifies the site's reactive input component.
-  await input.press('Backspace')
-  await input.type(String(source.keyword || '').trim(), { delay: 100 })
-  await input.press('Enter')
+  if (!input) throw Object.assign(new Error('AUTO_CHAT_SEARCH_FILTER_NOT_APPLIED'), {
+    detail: '未找到BOSS搜索输入框，任务已暂停；请检查页面后恢复',
+  })
+  try {
+    await input.focus()
+    await input.evaluate(element => element.select())
+    // Keyboard replacement also notifies the site's reactive input component.
+    await input.press('Backspace')
+    await input.type(String(source.keyword || '').trim(), { delay: 100 })
+    await input.press('Enter')
+  } finally { await input.dispose() }
 }
