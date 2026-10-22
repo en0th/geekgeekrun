@@ -1,0 +1,62 @@
+name: Build and validate native installer
+description: Exercise fresh installation, an installed 0.22.2 upgrade, GUI restart and data preservation
+inputs:
+  platform:
+    description: Native platform and architecture used in the validation report
+    required: true
+  previous_tag:
+    description: Previous stable installer to upgrade
+    default: ui-v0.22.2
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/setup-checks
+    - name: Prepare Electron native dependencies
+      shell: bash
+      run: |
+        pnpm rebuild esbuild
+        pnpm --filter geekgeekrun-ui rebuild electron
+        pnpm --filter geekgeekrun-ui exec electron-builder install-app-deps
+    - name: Prepare Linux installer and display tools
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install --yes xvfb
+    - name: Build native distributable without publishing
+      shell: bash
+      env:
+        CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      run: pnpm --filter geekgeekrun-ui run build:make-dist-for-current-platform
+    - name: Install, upgrade and restart the actual packaged application
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        GGR_PREVIOUS_TAG: ${{ inputs.previous_tag }}
+      run: |
+        if [ "$RUNNER_OS" = Linux ]; then
+          xvfb-run --auto-servernum node scripts/release/install-upgrade-smoke.mjs
+        else
+          node scripts/release/install-upgrade-smoke.mjs
+        fi
+    - name: Upload validated installer
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+      with:
+        name: binary-geekgeekrun-ui-${{ inputs.platform }}
+        path: |
+          packages/ui/dist/*.exe
+          packages/ui/dist/*.dmg
+          packages/ui/dist/*.deb
+        if-no-files-found: error
+        retention-days: 14
+    - name: Upload package validation evidence
+      if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+      with:
+        name: package-validation-${{ inputs.platform }}
+        path: |
+          .ci-reports/package-${{ inputs.platform }}.json
+          .ci-reports/${{ inputs.platform }}-*.log
+        include-hidden-files: true
+        if-no-files-found: error
+        retention-days: 14

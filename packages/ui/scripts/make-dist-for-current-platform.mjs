@@ -19,6 +19,7 @@ export default async function makeDistForCurrentPlatform() {
     process.exit(1)
   }
   const buildParameter = {
+    publish: 'never',
     config: getBuilderConfig()
   }
   buildParameter[platformKeyForBuildParameter] = buildTargets.map((it) => `${it}:${process.arch}`)

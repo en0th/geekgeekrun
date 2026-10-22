@@ -68,7 +68,7 @@ test('version bumps and all release builds require the checked commit or tag fir
   assert.equal(auto.jobs.verify.with.ref, '${{ github.sha }}')
   assert.equal(auto.jobs.prepare.steps.find(step => step.name === 'Checkout source').with.ref, '${{ github.sha }}')
   assert.equal(release.jobs.verify.uses, reusable)
-  assert.equal(release.jobs.verify.with.ref, '${{ inputs.tag || github.ref }}')
+  assert.equal(release.jobs.verify.with.ref, '${{ inputs.ref || inputs.tag || github.ref }}')
   for (const job of ['build_on_windows', 'build_on_macos', 'build_on_linux']) assert.equal(release.jobs[job].needs, 'verify')
   assert.notEqual(auto.jobs.verify.with.artifact_prefix, release.jobs.verify.with.artifact_prefix)
   const steps = auto.jobs.prepare.steps

@@ -2,196 +2,182 @@ name: Release UI
 
 on:
   push:
-    # Sequence of patterns matched against refs/tags
-    tags:
-      - "ui-v*" # Push events to matching v*, i.e. v1.0, v20.15.10
-  # called by auto-release.yml; tags pushed from a workflow with GITHUB_TOKEN don't trigger the push event
+    tags: ['ui-v*']
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Exact candidate commit or tag to build and validate
+        required: true
+        default: master
+        type: string
+      previous_tag:
+        description: Previous stable installer used for upgrade validation
+        default: ui-v0.22.2
+        type: string
+      publish:
+        description: Publish only after every installer has passed validation
+        default: false
+        type: boolean
   workflow_call:
     inputs:
       tag:
-        description: Tag to build and release, e.g. ui-v0.18.0
+        description: Checked version tag to build and release
         type: string
         required: true
       release_notes:
-        description: Release body in Markdown
         type: string
         required: true
       draft:
-        description: Create the release as a draft
         type: boolean
         default: false
       prerelease:
-        description: Mark the release as a prerelease (manual ui-v* tag pushes always are)
         type: boolean
         default: false
 
+permissions:
+  contents: read
+
+env:
+  PUPPETEER_SKIP_DOWNLOAD: 'true'
+
 jobs:
   verify:
-    permissions:
-      contents: read
     uses: ./.github/workflows/quality-checks.yml
     with:
-      ref: ${{ inputs.tag || github.ref }}
+      ref: ${{ inputs.ref || inputs.tag || github.ref }}
       artifact_prefix: tag-release
 
   build_on_windows:
     needs: verify
-    env:
-      PUPPETEER_SKIP_DOWNLOAD: 'true'
     runs-on: windows-2022
-    permissions:
-      contents: read
-
-    # Steps represent a sequence of tasks that will be executed as part of the job
+    timeout-minutes: 40
     steps:
-    # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-    - name: Checkout source
-      uses: actions/checkout@v4
-      with:
-        ref: ${{ inputs.tag || github.ref }}
-    
-    - name: Install pnpm
-      run: |
-        npm i pnpm@8.15.9 -g
-         
-    - name: Patch pnpm
-      uses: actions/github-script@v7
-      with:
-        script: |
-          // https://github.com/pnpm/pnpm/issues/5638
-          const path = require('path')
-          const fs = require('fs')
-          const childProcess = require('child_process')
-          const npmGlobalModuleFolder = childProcess.execSync('npm root -g').toString().trim()
-          const pnpmCjsFilePath = path.join(npmGlobalModuleFolder, 'pnpm/bin/pnpm.cjs')
-          let pnpmCjsFileContent = fs.readFileSync(pnpmCjsFilePath).toString().replace(/^(#!\/usr\/bin\/env node)/, '#!node')
-          fs.writeFileSync(pnpmCjsFilePath, pnpmCjsFileContent)
-
-    - name: Install dependencies
-      run: |
-        cd packages/ui
-        pnpm i --force
-
-    - name: Build
-      run: |
-        cd packages/ui
-        pnpm run build:make-dist-for-current-platform
-
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: binary-geekgeekrun-ui-windows-x64-${{ github.sha }}
-        path: |
-          ${{ github.workspace }}/packages/ui/dist/*.exe
-        overwrite: true
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref || inputs.tag || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/validate-package
+        with:
+          platform: win32-x64
+          previous_tag: ${{ inputs.previous_tag || 'ui-v0.22.2' }}
 
   build_on_macos:
     needs: verify
     strategy:
+      fail-fast: false
       matrix:
         platform:
-          - os: macos-15-intel # for x64 build
-            arch: x64
-          - os: macos-15 # for arm64 build
-            arch: arm64
-    env:
-      PUPPETEER_SKIP_DOWNLOAD: 'true'
+          - os: macos-15-intel
+            identity: darwin-x64
+          - os: macos-15
+            identity: darwin-arm64
     runs-on: ${{ matrix.platform.os }}
-    permissions:
-      contents: read
-
-    # Steps represent a sequence of tasks that will be executed as part of the job
+    timeout-minutes: 40
     steps:
-    # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-    - name: Checkout source
-      uses: actions/checkout@v4
-      with:
-        ref: ${{ inputs.tag || github.ref }}
-    
-    - name: Install dependencies
-      run: |
-        npm i pnpm@8.15.9 -g
-        cd packages/ui
-        pnpm i --force
-
-    - name: Build
-      run: |
-        cd packages/ui
-        pnpm run build:make-dist-for-current-platform
-
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: binary-geekgeekrun-ui-macos-${{ matrix.platform.arch }}-${{ github.sha }}
-        path: |
-          ${{ github.workspace }}/packages/ui/dist/*.dmg
-        overwrite: true
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref || inputs.tag || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/validate-package
+        with:
+          platform: ${{ matrix.platform.identity }}
+          previous_tag: ${{ inputs.previous_tag || 'ui-v0.22.2' }}
 
   build_on_linux:
     needs: verify
-    env:
-      PUPPETEER_SKIP_DOWNLOAD: 'true'
     runs-on: ubuntu-22.04
-    permissions:
-      contents: read
-
-    # Steps represent a sequence of tasks that will be executed as part of the job
+    timeout-minutes: 40
     steps:
-    # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-    - name: Checkout source
-      uses: actions/checkout@v4
-      with:
-        ref: ${{ inputs.tag || github.ref }}
-    
-    - name: Install dependencies
-      run: |
-        npm i pnpm@8.15.9 -g
-        cd packages/ui
-        pnpm i --force
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref || inputs.tag || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/validate-package
+        with:
+          platform: linux-x64
+          previous_tag: ${{ inputs.previous_tag || 'ui-v0.22.2' }}
 
-    - name: Build
-      run: |
-        cd packages/ui
-        pnpm run build:make-dist-for-current-platform
-
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: binary-geekgeekrun-ui-linux-x64-${{ github.sha }}
-        path: |
-          ${{ github.workspace }}/packages/ui/dist/*.deb
-          ${{ github.workspace }}/packages/ui/dist/*.rpm
-        overwrite: true
+  installation_gate:
+    name: Installer and upgrade gate
+    if: always()
+    needs: [build_on_windows, build_on_macos, build_on_linux]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Require every native build and installation to pass
+        env:
+          WINDOWS: ${{ needs.build_on_windows.result }}
+          MACOS: ${{ needs.build_on_macos.result }}
+          LINUX: ${{ needs.build_on_linux.result }}
+        run: test "$WINDOWS" = success && test "$MACOS" = success && test "$LINUX" = success
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref || inputs.tag || github.ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: package-validation-*
+          merge-multiple: true
+          path: package-evidence
+      - name: Require four complete reports for the exact version and commit
+        run: node scripts/release/validate-package-reports.mjs package-evidence --reports-only
 
   release:
-    runs-on: ubuntu-latest
+    needs: installation_gate
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.publish }}
+    runs-on: ubuntu-22.04
     permissions:
       contents: write
-    needs: 
-      - build_on_linux
-      - build_on_macos
-      - build_on_windows
-
     steps:
-      - name: Download artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          path: geekgeekrun-ui@${{ github.sha }}
+          ref: ${{ inputs.ref || inputs.tag || github.ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - uses: actions/download-artifact@v4
+        with:
           pattern: binary-geekgeekrun-ui-*
           merge-multiple: true
-
-      - name: Display structure of downloaded files
-        run: ls -llR geekgeekrun-ui@${{ github.sha }}
-
-      - name: Create release for public
+          path: release-artifacts
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: package-validation-*
+          merge-multiple: true
+          path: release-artifacts
+      - name: Verify installer bytes and prepare release metadata
+        env:
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: |
+          node scripts/release/validate-package-reports.mjs release-artifacts
+          node --input-type=module <<'JS'
+          import fs from 'node:fs'
+          import { execFileSync } from 'node:child_process'
+          const { version } = JSON.parse(fs.readFileSync('packages/ui/package.json'))
+          const notes = process.env.RELEASE_NOTES || JSON.parse(fs.readFileSync('packages/ui/src/common/release-notes.json'))[version]?.notes
+          if (!notes?.trim()) throw Error('Release notes are required')
+          fs.writeFileSync('release-body.txt', notes)
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `tag=ui-v${version}\n`)
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `sha=${execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()}\n`)
+          JS
+        id: metadata
+      - name: Publish validated release
         uses: ncipollo/release-action@v1
         with:
           repo: geekgeekrun
-          # inputs are empty on a manual tag push, which keeps the old prerelease behaviour
-          prerelease: ${{ !inputs.tag || inputs.prerelease }}
+          prerelease: ${{ github.event_name == 'push' || inputs.prerelease || false }}
           draft: ${{ inputs.draft || false }}
-          allowUpdates: true
-          artifacts: geekgeekrun-ui@${{ github.sha }}/*
-          tag: ${{ inputs.tag || github.ref }}
+          allowUpdates: false
+          artifacts: release-artifacts/*.exe,release-artifacts/*.dmg,release-artifacts/*.deb
+          tag: ${{ steps.metadata.outputs.tag }}
+          commit: ${{ steps.metadata.outputs.sha }}
           token: ${{ secrets.GITHUB_TOKEN }}
-          body: ${{ inputs.release_notes || 'TODO New Release.' }}
+          bodyFile: release-body.txt
