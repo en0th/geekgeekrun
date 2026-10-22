@@ -10,6 +10,7 @@ import { companyFilterScope, companyFilteredUrl, companyRequestMatches, applyCom
 import { watchJobResponses } from '../boss-job-responses.mjs'
 import { waitForCurrentJobList } from '../job-list-ready.mjs'
 import { loadNextJobBatch, NoMatchBatchGuard, describeListScope } from '../auto-chat-navigation.mjs'
+import { beginChatConfirmation } from '../browser-health.mjs'
 
 const brand = '0123456789abcdef1nRz', other = 'fedcba98765432101nRz'
 const source = { type: 'company', brandId: brand, keyword: '' }
@@ -254,7 +255,7 @@ test('the shipped final click rechecks company and job after the last asynchrono
   for (const mode of ['changed-brand', 'changed-job', 'same']) {
     const f = fixture(t, { wrapped: true }); let clicks = 0
     const context = { page: f.page, computedSourceList: [source], currentSourceIndex: 0, filterCondition: {},
-      targetJobData: detail('first'), runBudget: null, assertCompanyPlatformFilters, startChatButtonProxy: {},
+      targetJobData: detail('first'), runBudget: null, assertCompanyPlatformFilters, startChatButtonProxy: {}, beginChatConfirmation,
       checkJobResponses: async () => {
         if (mode === 'changed-brand') f.view.currentJob = row('first', other)
         if (mode === 'changed-job') { f.view.currentJob = row('different'); f.view.jobDetail = detail('different') }

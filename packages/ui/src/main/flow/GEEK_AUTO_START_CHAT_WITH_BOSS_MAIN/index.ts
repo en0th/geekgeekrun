@@ -304,6 +304,13 @@ const runAutoChat = async () => {
         return
       }
       if (err instanceof Error) {
+        if (['AUTO_CHAT_BROWSER_UNAVAILABLE', 'AUTO_CHAT_MESSAGE_SEND_UNCONFIRMED'].includes(err.message)) {
+          taskProgress.update(undefined, (err as Error & { detail?: string }).detail || '浏览器或连接异常，任务已暂停', 'blocked')
+          saveResume()
+          await closeBrowserWindow?.()
+          process.exit(err.message.includes('SEND_UNCONFIRMED') ? AUTO_CHAT_ERROR_EXIT_CODE.MESSAGE_SEND_UNCONFIRMED : AUTO_CHAT_ERROR_EXIT_CODE.BROWSER_UNAVAILABLE)
+          return
+        }
         if (err.message.includes('AUTO_CHAT_PAGE_FILTER_NOT_APPLIED')) {
           taskProgress.update(undefined, (err as Error & { detail?: string }).detail || '页面筛选未能确认，任务已暂停', 'blocked')
           saveResume()
