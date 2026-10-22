@@ -9,6 +9,7 @@ import path from 'node:path'
 import { get__dirname } from '@geekgeekrun/utils/legacy-path.mjs';
 import JSON5 from 'json5'
 import { readRunSettings } from '@geekgeekrun/geek-auto-start-chat-with-boss/run-settings.mjs'
+import { jobComparisonScope } from '@geekgeekrun/geek-auto-start-chat-with-boss/job-comparison-scope.mjs'
 import { sleep } from '@geekgeekrun/utils/sleep.mjs'
 import { installWorkerShutdown } from '@geekgeekrun/utils/worker-shutdown.mjs'
 import {
@@ -34,7 +35,9 @@ const initPlugins = (hooks, { readConfigFile, getPublicDbFilePath }) => {
   if (!process.env.GEEKGEEKRUN_COLLECT_AUDIT_DIR) new DingtalkPlugin(dingTalkAccessToken).apply(hooks)
   const settings = readRunSettings(readConfigFile('boss.json'))
   new SqlitePlugin(getPublicDbFilePath(), {
-    collectOnlyMatched: settings.runMode === 'collect' && settings.collectOnlyMatchingJobs
+    collectOnlyMatched: settings.runMode === 'collect' && settings.collectOnlyMatchingJobs,
+    comparisonScope: jobComparisonScope(Object.fromEntries(
+      ['boss.json', 'common-job-condition-config.json', 'target-company-list.json'].map(name => [name, readConfigFile(name)])))
   }).apply(hooks)
 }
 

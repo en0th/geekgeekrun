@@ -1,6 +1,6 @@
 import 'reflect-metadata'
 import { parentPort } from 'node:worker_threads'
-import { initDb } from '@geekgeekrun/sqlite-plugin'
+import { initDb, getJobRunComparison } from '@geekgeekrun/sqlite-plugin'
 import { type DataSource } from 'typeorm'
 import { getPublicDbFilePath } from '@geekgeekrun/geek-auto-start-chat-with-boss/runtime-file-utils.mjs'
 import { measureExecutionTime } from '../../../../../../common/utils/performance'
@@ -75,6 +75,7 @@ const payloadHandler = {
     runData.getRunDataDistinctValues(withTaskRuns(payload), payload),
   getRunDataStats: (payload) => runData.getRunDataStats(withTaskRuns(payload), payload),
   getJobSummary: (payload) => runData.getJobSummary(getRawDb(), payload),
+  getJobRunComparison: (payload) => getJobRunComparison(getRawDb(), payload.runRecordId, payload.baselineRunId),
   deleteRunData: (payload) => runData.deleteRunData(getRawDb(), payload),
   importRunData: (payload) => runData.importRunData(getRawDb(), payload),
   listFavoriteFolders: () => favorites.listFavoriteFolders(getRawDb()),

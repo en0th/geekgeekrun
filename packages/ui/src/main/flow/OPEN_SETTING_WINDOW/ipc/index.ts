@@ -59,6 +59,7 @@ import {
   getRunDataDistinctValues,
   getRunDataStats,
   getJobSummary,
+  getJobRunComparison,
   deleteRunData,
   importRunData,
   listFavoriteFolders,
@@ -587,6 +588,7 @@ export default function initIpc() {
     getRunDataStats(await withTaskContext(payload))
   )
   ipcMain.handle('run-data-job-summary', (_, payload) => getJobSummary(payload))
+  ipcMain.handle('run-data-job-comparison', (_, payload) => getJobRunComparison(payload))
   ipcMain.handle('run-data-delete', (_, payload) => deleteRunData(payload))
   ipcMain.handle('run-data-import', (_, payload) => importRunData(payload))
   ipcMain.handle(

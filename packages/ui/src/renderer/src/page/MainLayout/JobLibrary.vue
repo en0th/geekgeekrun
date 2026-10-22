@@ -4,8 +4,15 @@
       <ElRadioGroup v-model="runScope" size="small" aria-label="岗位采集范围">
         <ElRadioButton value="all">本轮采集</ElRadioButton>
         <ElRadioButton value="new">本轮新增</ElRadioButton>
+        <ElRadioButton value="comparison" :disabled="!comparison?.baselineRunId || comparisonLoading">较同范围基准新增</ElRadioButton>
       </ElRadioGroup>
       <p class="text-12px ggr-text-muted">本轮新增指本任务首次采集入库的岗位，按本地资料库去重。恢复任务沿用同一编号；台账启用前的数据不计入本轮采集。</p>
+      <p class="text-12px ggr-text-muted">
+        <template v-if="comparison?.baselineRunId">同范围基准 #{{ comparison.baselineRunId }}：本轮观察 {{ comparison.currentObserved }}，增加 {{ comparison.added }}，重复 {{ comparison.retained }}，基准中本轮未观察到 {{ comparison.notObserved }}。</template>
+        <template v-else>{{ comparisonError || comparison?.reason || '正在读取比较范围…' }}</template>
+        <ElButton link size="small" :loading="comparisonLoading" @click="loadComparison">刷新比较</ElButton>
+      </p>
+      <p v-if="comparison?.baselineRunId" class="text-12px ggr-text-muted">按同账号、同搜索及筛选配置的较早任务比较岗位 ID；预算或中断可能导致采样不完整。“增加”不代表平台新发布，“未观察到”不代表下架。台账计数保留已删除详情的岗位，列表只显示仍保存的详情。</p>
     </div>
     <RunDataTable
       ref="tableRef"
@@ -87,7 +94,7 @@
 
 <script setup lang="ts">
 import { toast } from '@renderer/features/Toast'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ElButton, ElDrawer, ElDialog, ElRadioGroup, ElRadioButton } from 'element-plus'
 import { type VChatStartupLog } from '@geekgeekrun/sqlite-plugin/src/entity/VChatStartupLog'
 import { type JobInfoChangeLog } from '@geekgeekrun/sqlite-plugin/src/entity/JobInfoChangeLog'
@@ -99,6 +106,7 @@ import { formatSalary } from '../../features/RunDataTable/format'
 import type { RunDataColumn } from '../../features/RunDataTable/types'
 import type { RunDataFilter } from '../../../../common/run-data'
 import { greetJobManually, type GreetableJob } from '../../features/greet-job'
+import type { JobRunComparison } from '@geekgeekrun/sqlite-plugin/src/job-run-comparison'
 
 // shown inside another view (任务详情 → 本次数据): limited to some rows, with its own
 // remembered conditions, not reacting to 资料库 jumps, and without the page frame
@@ -112,7 +120,31 @@ const props = defineProps<{
   extraColumns?: RunDataColumn[]
 }>()
 const runScope = ref('all')
-const runContext = computed(() => props.runRecordId ? { jobRunId: props.runRecordId } : undefined)
+const comparison = ref<JobRunComparison | null>(null)
+const comparisonLoading = ref(false), comparisonError = ref('')
+let comparisonRequest = 0
+async function loadComparison() {
+  if (!props.runRecordId) return
+  const request = ++comparisonRequest
+  comparisonLoading.value = true
+  comparisonError.value = ''
+  try {
+    const { data } = await electron.ipcRenderer.invoke('run-data-job-comparison', { runRecordId: props.runRecordId })
+    if (request !== comparisonRequest) return
+    comparison.value = data
+    if (!data.baselineRunId && runScope.value === 'comparison') runScope.value = 'all'
+    tableRef.value?.refresh()
+  } catch (error) {
+    if (request === comparisonRequest) {
+      comparisonError.value = `比较读取失败：${(error as Error).message}`
+      comparison.value = null
+      if (runScope.value === 'comparison') runScope.value = 'all'
+    }
+  } finally { if (request === comparisonRequest) comparisonLoading.value = false }
+}
+const runContext = computed(() => props.runRecordId ? { jobRunId: props.runRecordId,
+  ...(runScope.value === 'comparison' ? { jobComparison: true,
+    jobComparisonBaseRunId: comparison.value?.baselineRunId } : {}) } : undefined)
 const scopedFilters = computed<RunDataFilter[]>(() => [
   ...(props.baseFilters ?? []),
   ...(props.runRecordId && runScope.value === 'new'
@@ -141,6 +173,13 @@ const columns: RunDataColumn[] = [
 const shownColumns = computed(() => [...columns, ...(props.extraColumns ?? [])])
 
 const tableRef = ref<{ refresh: () => void }>()
+watch(() => props.runRecordId, () => {
+  comparisonRequest++
+  comparison.value = null
+  comparisonError.value = ''
+  runScope.value = 'all'
+  if (props.runRecordId) void loadComparison()
+}, { immediate: true })
 const greetingJobId = ref<string | null>(null)
 async function handleGreetButtonClick(row: GreetableJob) {
   if (greetingJobId.value) return

@@ -18,7 +18,7 @@ import {
 } from '../../../../../../common/run-data'
 import { PagedRes } from '../../../../../../common/types/pagination'
 import { parseSalaryDetails, explicitJobNature } from '@geekgeekrun/utils/job-values.cjs'
-import { ensureJobDiscovery } from '@geekgeekrun/sqlite-plugin'
+import { ensureJobDiscovery, getJobRunComparison } from '@geekgeekrun/sqlite-plugin'
 import { summarizeJobs } from './job-summary'
 import type { JobSummary } from '../../../../../../common/job-summary'
 import { nowDbDate } from './db-date'
@@ -211,7 +211,7 @@ function buildFilterSql(dataset: RunDataDatasetKey, filter: RunDataFilter, param
   }
 }
 
-function buildWhere(query: RunDataQuery, params: unknown[], excludeField?: string) {
+function buildWhere(db: Db, query: RunDataQuery, params: unknown[], excludeField?: string) {
   const def = getDataset(query.dataset)
   const clauses: string[] = []
   const jobRunId = (query.context as { jobRunId?: unknown } | undefined)?.jobRunId
@@ -221,6 +221,14 @@ function buildWhere(query: RunDataQuery, params: unknown[], excludeField?: strin
       throw new Error('无效的岗位采集任务编号')
     clauses.push('EXISTS (SELECT 1 FROM job_run_observation o WHERE o.runRecordId = ? AND o.encryptJobId = t.encryptJobId)')
     params.push(id)
+  }
+  const context = query.context as { jobComparison?: boolean; jobComparisonBaseRunId?: unknown } | undefined
+  if (context?.jobComparison) {
+    if (query.dataset !== 'jobLibrary' || jobRunId === undefined) throw new Error('岗位比较必须指定当前任务')
+    const comparison = getJobRunComparison(db, jobRunId, context.jobComparisonBaseRunId)
+    if (!comparison.baselineRunId) throw new Error(comparison.reason || '没有可用的同范围比较基准')
+    clauses.push('NOT EXISTS (SELECT 1 FROM job_run_observation b WHERE b.runRecordId = ? AND b.encryptJobId = t.encryptJobId)')
+    params.push(comparison.baselineRunId)
   }
   const tokens = (query.keyword ?? '').trim().split(/\s+/).filter(Boolean)
   const searchable = def.fields.filter((it) => it.searchable)
@@ -259,7 +267,7 @@ export function queryRunData(db: Db, query: RunDataPageQuery): PagedRes<Row> {
   const pageNo = Math.max(1, Number(query.pageNo) || 1)
   const pageSize = Math.min(5000, Math.max(1, Number(query.pageSize) || 100))
   const params: unknown[] = []
-  const where = buildWhere(query, params)
+  const where = buildWhere(db, query, params)
   const from = fromSql(query.dataset)
   const { total } = db.prepare(`SELECT COUNT(*) AS total ${from} ${where}`).get(...params) as {
     total: number
@@ -274,7 +282,7 @@ export const EXPORT_ROW_LIMIT = 200000
 
 export function queryAllRunData(db: Db, query: RunDataQuery): Row[] {
   const params: unknown[] = []
-  const where = buildWhere(query, params)
+  const where = buildWhere(db, query, params)
   return db
     .prepare(
       `SELECT t.* ${fromSql(query.dataset)} ${where} ${buildOrderBy(query)} LIMIT ${EXPORT_ROW_LIMIT}`
@@ -286,7 +294,7 @@ export function getRunDataDistinctValues(db: Db, req: RunDataDistinctReq): RunDa
   const c = col(req.dataset, req.field)
   const params: unknown[] = []
   // ignore the filter on the field itself so every option stays pickable
-  const where = buildWhere(req, params, req.field)
+  const where = buildWhere(db, req, params, req.field)
   const limit = Math.min(2000, Math.max(1, Number(req.limit) || 500))
   return db
     .prepare(
@@ -302,7 +310,7 @@ export const JOB_SUMMARY_LIMIT = 5000
 export function getJobSummary(db: Db, query: RunDataQuery): JobSummary {
   if (!['jobLibrary', 'favoriteJobs'].includes(query.dataset)) throw new Error('此数据表不支持岗位摘要')
   const params: unknown[] = []
-  const where = buildWhere(query, params)
+  const where = buildWhere(db, query, params)
   const from = fromSql(query.dataset)
   return db.transaction(() => {
     const { total } = db.prepare(`SELECT COUNT(DISTINCT t.encryptJobId) AS total ${from} ${where}`).get(...params) as { total: number }
@@ -358,7 +366,7 @@ const orderedBuckets: (RunDataStatsGroup['bucket'] | undefined)[] = [
 export function getRunDataStats(db: Db, req: RunDataStatsReq): RunDataStatsRes {
   const from = fromSql(req.dataset)
   const whereParams: unknown[] = []
-  const where = buildWhere(req, whereParams)
+  const where = buildWhere(db, req, whereParams)
   const { total } = db.prepare(`SELECT COUNT(*) AS total ${from} ${where}`).get(...whereParams) as {
     total: number
   }
