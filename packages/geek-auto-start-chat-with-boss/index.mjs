@@ -64,6 +64,7 @@ import { launchTaskBrowser, showTaskBrowser } from './task-browser.mjs'
 import { clickTaskElement } from './task-page-input.mjs'
 import { closeOwnedBrowser } from './browser-cleanup.mjs'
 import { applyPageFilters } from './page-filters.mjs'
+import { waitForCurrentJobList } from './job-list-ready.mjs'
 const flattedCityList = []
 ;(cityGroupData?.zpData?.cityGroup ?? []).forEach(it => {
   const firstChar = it.firstChar
@@ -871,6 +872,7 @@ async function toRecommendPage (hooks) {
         } else {
           const source = computedSourceList[currentSourceIndex]
           jobResponseMonitor?.expectSearch()
+          jobResponseMonitor?.expectList()
           try {
             await guardJobResponses(() => activateSourceAndWait(page, () => source.setToActiveSource(), {
               matchesResponse: response => source.type === 'search'
@@ -899,12 +901,13 @@ async function toRecommendPage (hooks) {
           })
         }
         await sleepWithRandomDelay(1500)
+        jobResponseMonitor?.expectList()
         await setFilterCondition(filterCondition)
-        await sleep(1500) // TODO: accurately check if job list request sent and response received after set condition
-        await page.waitForFunction(() => {
-          return !document.querySelector('.job-recommend-result .job-rec-loading')
-        }, { polling: 100 })
-        await checkJobResponses()
+        await guardJobResponses(() => waitForCurrentJobList({ page, monitor: jobResponseMonitor,
+          source: computedSourceList[currentSourceIndex], checkResponses: checkJobResponses,
+          onReady: data => autoStartChatEventBus.emit('JOB_LIST_READY', data),
+          onFailure: data => autoStartChatEventBus.emit('PAGE_FILTER_NOT_APPLIED', { field: 'list', ...data }),
+        }))
         try {
           // the greeting went out and the per-source success limit is reached: rotate below
           let chatSourceRotationDone = false

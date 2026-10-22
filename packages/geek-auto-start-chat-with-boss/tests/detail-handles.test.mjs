@@ -18,6 +18,8 @@ function fixture({ missing = false, wrongDetail = false, failedClick = false } =
     const doc = { querySelector: selector => ({ __vue__: selector === '.page-jobs-main'
       ? { currentJob: { encryptJobId: id } } : { data: { jobInfo: { encryptId: wrongDetail ? 'old-job' : id } } } }) }
     if (!vm.runInNewContext('(' + fn.toString() + ')(id)', { document: doc, id })) throw new Error('timeout')
+    state.created++; state.handles++; state.peak = Math.max(state.peak, state.handles)
+    return { dispose: async () => { state.handles-- } }
   } }
   return { page, list, state }
 }
@@ -25,7 +27,7 @@ function fixture({ missing = false, wrongDetail = false, failedClick = false } =
 test('repeated reviews keep one card handle in flight regardless of list length, including index zero', async () => {
   const current = fixture()
   for (let index = 0; index < 100; index++) await openJobCardForReview({ ...current, index, jobId: 'job-' + index })
-  assert.deepEqual(current.state, { handles: 0, peak: 1, created: 100, clicks: 100 })
+  assert.deepEqual(current.state, { handles: 0, peak: 1, created: 200, clicks: 100 })
 })
 
 test('missing/detached cards release their handles and stale detail IDs remain blocked', async () => {

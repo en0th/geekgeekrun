@@ -72,12 +72,13 @@ export async function openJobCardForReview({ page, list, index, jobId, timeoutMs
     await handle.dispose()
   }
   try {
-    await page.waitForFunction(expectedId => {
+    const ready = await page.waitForFunction(expectedId => {
       const selected = document.querySelector('.page-jobs-main')?.__vue__?.currentJob
       const detail = document.querySelector('.job-detail-box')?.__vue__?.data
       return String(selected?.encryptJobId || selected?.encryptId || '') === String(expectedId) &&
         String(detail?.jobInfo?.encryptId || '') === String(expectedId)
     }, { timeout: timeoutMs, polling: 100 }, jobId)
+    await ready.dispose()
   } catch {
     await checkResponses()
     throw new Error('AUTO_CHAT_DETAIL_NOT_READY')

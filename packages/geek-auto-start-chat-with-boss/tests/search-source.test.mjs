@@ -123,3 +123,32 @@ test('a response missing the requested position cannot confirm successful activa
   }), { matchesResponse: response => searchRequestMatches(response.request(), source), timeout: 5 }), { name: 'TimeoutError' })
   assert.equal(page.listenerCount('response'), 0)
 })
+
+test('keyword activation releases both selector and input handles, including typing errors and a missing input', async () => {
+  for (const mode of ['normal', 'typing-error', 'missing']) {
+    let held = 0, created = 0
+    const actions = []
+    const handle = value => { held++; created++; return { ...value, dispose: async () => { held-- } } }
+    const page = {
+      evaluate: async () => ({ position: '' }),
+      waitForSelector: async () => handle({}),
+      $: async () => mode === 'missing' ? null : handle({
+        focus: async () => actions.push('focus'),
+        evaluate: async fn => fn({ select: () => actions.push('select') }),
+        press: async key => actions.push(key),
+        type: async (text, options) => {
+          assert.equal(options.delay, 100)
+          if (mode === 'typing-error') throw Error('detached input')
+          actions.push(text)
+        },
+      }),
+    }
+    if (mode === 'normal') {
+      for (let i = 0; i < 100; i++) await activateSearchSource(page, { keyword: ' Java ' }, '.search')
+      assert.equal(created, 200)
+      assert.deepEqual(actions.slice(0, 5), ['focus', 'select', 'Backspace', 'Java', 'Enter'])
+    } else await assert.rejects(activateSearchSource(page, { keyword: 'Java' }, '.search'),
+      mode === 'typing-error' ? /detached input/ : /AUTO_CHAT_SEARCH_FILTER_NOT_APPLIED/)
+    assert.equal(held, 0)
+  }
+})
