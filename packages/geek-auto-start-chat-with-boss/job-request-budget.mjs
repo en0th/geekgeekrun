@@ -8,13 +8,16 @@ import { taskBrowserError, taskPageError } from './browser-health.mjs'
 const { CDPSessionEvent } = createRequire(import.meta.url)('puppeteer')
 
 /** Intercept only job list/detail requests, before they can leave the task's page. */
-export async function attachJobRequestBudget(page, budget) {
+export async function attachJobRequestBudget(page, budget, { onConnectionLost } = {}) {
   let session
   let disposed = false
   const unavailable = () => budgetStateError('岗位请求预算监听已中断，任务已暂停；请检查浏览器后恢复，累计用量会保留')
   const disconnected = () => {
-    if (!disposed) budget.fail(page.isClosed?.() || page.browser?.()?.connected === false
-      ? taskPageError(page, taskBrowserError('connection')) : unavailable())
+    if (disposed) return
+    let diagnostic
+    try { diagnostic = onConnectionLost?.() } catch { /* Keep the durable budget stop even if diagnostics fail. */ }
+    budget.fail(diagnostic instanceof Error ? diagnostic : taskPageError(page,
+      page.isClosed?.() || page.browser?.()?.connected === false ? taskBrowserError('connection') : unavailable()))
   }
   async function paused({ requestId, request }) {
     if (disposed) return

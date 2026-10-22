@@ -19,10 +19,10 @@ socket.on('data', (d) => {
 })
 const ask = (m) => new Promise((r) => { const id = randomUUID(); pending.set(id, r); socket.write(JSON.stringify({ ...m, workerInstance: process.env.GEEKGEEKRUND_WORKER_INSTANCE, _callbackUuid: id }) + '\n') })
 const workerId = process.env.GEEKGEEKRUND_WORKER_ID
-if (process.env.FAKE_STOP_DELAY_MS) process.on('SIGTERM', () => {
-  setTimeout(() => process.exit(0), Number(process.env.FAKE_STOP_DELAY_MS))
-})
+const shutdownReady = import('../../utils/worker-shutdown.mjs').then(({ installWorkerShutdown }) =>
+  installWorkerShutdown({ close: () => new Promise(resolve => setTimeout(resolve, Number(process.env.FAKE_STOP_DELAY_MS || 0))) }))
 ;(async () => {
+  await shutdownReady
   const progress = { ready: true }
   if (process.env.FAKE_CHILD) {
     const child = require('node:child_process').spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { detached: true, stdio: 'ignore' })

@@ -27,13 +27,30 @@ test('SQLite compilation precedes both type checks and full regression, and nati
   for (const check of ['typecheck:node', 'typecheck:web', 'pnpm test:ci']) assert.ok(index(check) > build)
   assert.ok(index('geekgeekrun-ui build') > index('pnpm test:ci'))
   assert.ok(quality.jobs.electron_native.steps.some(step => step.run?.includes('pnpm test:electron')))
-  assert.deepEqual(quality.jobs.quality_gate.needs.sort(), ['electron_native', 'node_checks'])
+  assert.deepEqual(quality.jobs.quality_gate.needs.sort(), ['electron_native', 'node_checks', 'windows_checks'])
   assert.equal(quality.jobs.quality_gate.if, 'always()')
   const pkg = JSON.parse(fs.readFileSync(path.join(repositoryRoot, 'package.json')))
   assert.match(pkg.scripts['test:ci'], /--require-native/)
   assert.match(pkg.scripts['test:electron'], /--electron/)
   const setup = read('.github/actions/setup-checks/action.yml')
   assert.ok(setup.runs.steps.some(step => step.run?.includes('--frozen-lockfile --ignore-scripts')))
+})
+
+test('Windows validates full contracts, native SQLite and real task windows before the same required gate', () => {
+  const job = quality.jobs.windows_checks
+  assert.equal(job['runs-on'], 'windows-2025')
+  const commands = job.steps.filter(step => step.run).map(step => step.run)
+  for (const required of ['pnpm typecheck', 'pnpm test:ci', 'pnpm --filter geekgeekrun-ui build',
+    'node scripts/ci/browser-smoke.mjs', 'pnpm test:electron', 'node scripts/ci/electron-stop-smoke.mjs']) assert.ok(commands.includes(required), required)
+  assert.ok(commands.indexOf('node scripts/ci/browser-smoke.mjs') < commands.findIndex(command => command.includes('install-app-deps')))
+  assert.equal(quality.jobs.quality_gate.steps[0].env.WINDOWS_RESULT, '${{ needs.windows_checks.result }}')
+  assert.match(quality.jobs.quality_gate.steps[0].run, /WINDOWS_RESULT/)
+  for (const name of ['node_checks', 'electron_native', 'windows_checks']) {
+    const upload = quality.jobs[name].steps.find(step => step.uses?.startsWith('actions/upload-artifact@'))
+    assert.equal(upload.with['include-hidden-files'], true)
+    assert.equal(upload.with['if-no-files-found'], 'error')
+    assert.ok(upload.with.path.trim().split('\n').every(file => /^\.ci-reports\/[a-z-]+\.(xml|json)$/.test(file)))
+  }
 })
 
 test('the full regression command includes configuration durability and task execution contracts', () => {

@@ -6,7 +6,7 @@ const require = createRequire(import.meta.url)
 const { CDPSessionEvent } = require('puppeteer')
 import { createRunBudget } from '../run-budget.mjs'
 import { attachJobRequestBudget } from '../job-request-budget.mjs'
-import { beginChatConfirmation } from '../browser-health.mjs'
+import { beginChatConfirmation, taskBrowserError } from '../browser-health.mjs'
 
 const list = 'https://www.zhipin.com/wapi/zpgeek/search/joblist.json?query=Python'
 const detail = 'https://www.zhipin.com/wapi/zpgeek/job/detail.json?jobId=test'
@@ -99,4 +99,13 @@ test('a disconnected browser retains transport or unconfirmed-send diagnostics i
     await assert.rejects(f.budget.guard(() => 1), pending ? /MESSAGE_SEND_UNCONFIRMED/ : /BROWSER_UNAVAILABLE/)
     monitor.dispose()
   }
+})
+
+test('a task health observer classifies session loss before the page-close event can arrive', async () => {
+  const f = fixture(), expected = taskBrowserError('connection')
+  f.page.browser = () => ({ connected: true }); f.page.isClosed = () => false
+  const monitor = await attachJobRequestBudget(f.page, f.budget, { onConnectionLost: () => expected })
+  f.session.emit(CDPSessionEvent.Disconnected)
+  await assert.rejects(f.budget.guard(() => assert.fail('cannot act while classifying')), error => error === expected)
+  monitor.dispose()
 })
