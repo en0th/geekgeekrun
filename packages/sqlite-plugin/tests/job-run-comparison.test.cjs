@@ -93,3 +93,24 @@ test('the SQLite login hook binds the worker scope only after the account is con
   assert.deepEqual(db.prepare('SELECT accountId, signature, comparable FROM job_run_scope').get(),
     { accountId: 'confirmed', signature, comparable: 1 })
 })
+
+test('pre-login observations from this launch are comparable while a prior unconfirmed attempt stays excluded', { skip }, async () => {
+  for (const retry of [false, true]) {
+    const Plugin = require('../dist/index.js').default
+    const plugin = new Plugin(':memory:', { comparisonScope: signature }), ds = await plugin.initPromise
+    ds.setOptions({ logging: false })
+    try {
+      const hooks = Object.fromEntries(['pageGotten', 'userInfoResponse', 'mainFlowWillLaunch',
+        'jobDetailIsGetFromRecommendList', 'newChatWillStartup', 'newChatStartup', 'jobMarkedAsNotSuit']
+        .map(name => [name, name === 'pageGotten' ? new SyncHook(['data']) : new AsyncSeriesHook(['data'])]))
+      plugin.runRecordId = 10; plugin.apply(hooks)
+      await hooks.mainFlowWillLaunch.promise()
+      const db = ds.driver.databaseConnection
+      require('../dist/job-discovery.js').saveCapturedJob(db, job('preloaded'), 10)
+      if (retry) await hooks.mainFlowWillLaunch.promise()
+      await hooks.userInfoResponse.promise({ userInfoResponse: { code: 0, zpData: { encryptUserId: 'confirmed', name: 'fixture' } } })
+      assert.equal(db.prepare('SELECT comparable FROM job_run_scope').get().comparable, retry ? 0 : 1)
+      assert.equal(db.prepare('SELECT COUNT(*) n FROM job_run_observation').get().n, 1)
+    } finally { await ds.destroy() }
+  }
+})

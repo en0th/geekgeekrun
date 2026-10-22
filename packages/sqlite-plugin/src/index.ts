@@ -118,6 +118,7 @@ export default class SqlitePlugin {
   runRecordId: number;
   collectOnlyMatched: boolean;
   comparisonScope: string | null;
+  comparisonStartedEmpty = false;
 
   constructor(dbFilePath, { collectOnlyMatched = false, comparisonScope = null as string | null } = {}) {
     this.initPromise = initDb(dbFilePath);
@@ -178,7 +179,8 @@ export default class SqlitePlugin {
 
         await userInfoRepository.save(user);
         if (this.runRecordId > 0)
-          bindJobRunScope((ds.driver as any).databaseConnection, this.runRecordId, user.encryptUserId, this.comparisonScope)
+          bindJobRunScope((ds.driver as any).databaseConnection, this.runRecordId, user.encryptUserId,
+            this.comparisonScope, this.comparisonStartedEmpty)
         if (!this.historyContext) return
         const { blockJobNotSuit, blockBossNotNewChat, ...strategies } = this.historyContext
         const records = await getNotSuitMarkRecordsInLastSomeDays(ds, 7, user.encryptUserId)
@@ -197,6 +199,12 @@ export default class SqlitePlugin {
       async (context) => {
         this.userInfo = null
         this.historyContext = context
+        // This hook runs before navigation. Detail preloads may arrive before
+        // userInfoResponse; they still belong to this attempt once it confirms
+        // the account. A retry with earlier unconfirmed observations fails shut.
+        const ds = await this.initPromise
+        this.comparisonStartedEmpty = !(ds.driver as any).databaseConnection
+          .prepare('SELECT 1 FROM job_run_observation WHERE runRecordId = ? LIMIT 1').get(this.runRecordId)
       }
     );
 
