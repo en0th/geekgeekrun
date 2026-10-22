@@ -7,6 +7,7 @@ import {
 } from '../../../../common/run-data'
 import { EXPORT_DATE_FORMAT, enumLabel, formatDbDate, isBlank, toDbDate } from './format'
 import type { RunDataRow } from './types'
+import { adaptScraperRecords } from '../../../../common/scraper-import.mjs'
 
 export type ExportFormat = 'xlsx' | 'csv' | 'json'
 
@@ -86,6 +87,8 @@ export interface ParsedImport {
   rows: Record<string, unknown>[]
   mappedFields: RunDataField[]
   unknownHeaders: string[]
+  warnings?: string[]
+  sourceFormat?: 'boss-zhipin-scraper'
 }
 
 function normalizeValue(field: RunDataField, v: unknown, rawDb: boolean): unknown {
@@ -114,7 +117,8 @@ function normalizeValue(field: RunDataField, v: unknown, rawDb: boolean): unknow
 
 export async function parseImportFile(
   dataset: RunDataDatasetKey,
-  file: File
+  file: File,
+  sourceFormat: 'native' | 'boss-zhipin-scraper' = 'native'
 ): Promise<ParsedImport> {
   const fields = runDataDatasets[dataset].fields
   const byHeader = new Map<string, RunDataField>()
@@ -125,10 +129,15 @@ export async function parseImportFile(
 
   let records: Record<string, unknown>[]
   let rawDb = false
+  let metadata: Record<string, unknown> = {}
+  if (sourceFormat === 'boss-zhipin-scraper' && dataset !== 'jobLibrary') throw new Error('scraper 文件仅支持导入职位库')
   if (/\.json$/i.test(file.name)) {
     const parsed = JSON.parse(await file.text())
     if (Array.isArray(parsed)) {
       records = parsed
+    } else if (sourceFormat === 'boss-zhipin-scraper' && Array.isArray(parsed?.jobs)) {
+      records = parsed.jobs
+      metadata = parsed
     } else if (Array.isArray(parsed?.rows)) {
       if (parsed.dataset && parsed.dataset !== dataset) {
         throw new Error(
@@ -138,7 +147,7 @@ export async function parseImportFile(
       records = parsed.rows
       rawDb = true
     } else {
-      throw new Error('无法识别的 JSON 结构，需要数组或包含 rows 数组的对象')
+      throw new Error('无法识别的 JSON 结构，需要数组或 rows 对象；scraper 的 jobs 文件请先选择对应格式')
     }
   } else {
     const XLSX = await import('xlsx')
@@ -152,6 +161,14 @@ export async function parseImportFile(
     const sheet = book.Sheets[book.SheetNames[0]]
     if (!sheet) throw new Error('文件中没有工作表')
     records = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: null, raw: true })
+  }
+
+  if (sourceFormat === 'boss-zhipin-scraper') {
+    const adapted = adaptScraperRecords(records, metadata)
+    const keys = new Set<string>()
+    for (const row of adapted.rows) for (const key of Object.keys(row)) keys.add(key)
+    return { fileName: file.name, rows: adapted.rows, mappedFields: fields.filter(field => keys.has(field.key)),
+      unknownHeaders: adapted.ignoredHeaders, warnings: adapted.warnings, sourceFormat }
   }
 
   const headers = new Set<string>()

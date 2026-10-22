@@ -130,6 +130,8 @@ export interface RunDataDeleteReq {
 
 export interface RunDataImportReq {
   dataset: RunDataDatasetKey
+  sourceFormat?: 'boss-zhipin-scraper'
+  sourceFileName?: string
   // keyed by field key, values already normalised (enum -> number, date -> UTC db string)
   rows: Record<string, unknown>[]
 }
@@ -202,7 +204,11 @@ const discoveryFields: RunDataField[] = [
   { key: 'firstSeenAt', label: '首次入库时间', type: 'date' },
   { key: 'firstSeenRunId', label: '首次入库任务', type: 'number' },
   { key: 'discoveryOrigin', label: '入库来源', type: 'string' },
-  { key: 'lastSeenAt', label: '最近采集时间', type: 'date' }
+  { key: 'lastSeenAt', label: '最近采集时间', type: 'date' },
+  { key: 'importSource', label: '最近导入格式', type: 'string' },
+  { key: 'sourceCapturedAt', label: '导入源采集时间（原文）', type: 'string' },
+  { key: 'importedAt', label: '最近导入时间', type: 'date' },
+  { key: 'importFileName', label: '最近导入文件', type: 'string' }
 ]
 
 const hireStatusFields: RunDataField[] = [

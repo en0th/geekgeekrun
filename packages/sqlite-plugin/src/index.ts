@@ -52,6 +52,7 @@ import { AddJobDiscovery1792454500000 } from './migrations/1792454500000-AddJobD
 import { BackfillJobNatures1792454600000 } from './migrations/1792454600000-BackfillJobNatures'
 import { IndexAccountHistory1792454700000 } from './migrations/1792454700000-IndexAccountHistory'
 import { AddJobRunScope1792630000000 } from './migrations/1792630000000-AddJobRunScope'
+import { AddJobImportRecord1792630100000 } from './migrations/1792630100000-AddJobImportRecord'
 import { FavoriteFolder } from "./entity/FavoriteFolder";
 import { FavoriteJob } from "./entity/FavoriteJob";
 import { JobHireStatusLog } from "./entity/JobHireStatusLog";
@@ -104,7 +105,8 @@ export function initDb(dbFilePath) {
       AddJobDiscovery1792454500000,
       BackfillJobNatures1792454600000,
       IndexAccountHistory1792454700000,
-      AddJobRunScope1792630000000
+      AddJobRunScope1792630000000,
+      AddJobImportRecord1792630100000
     ],
     migrationsRun: true
   });

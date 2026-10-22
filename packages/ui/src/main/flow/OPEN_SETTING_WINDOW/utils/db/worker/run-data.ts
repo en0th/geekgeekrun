@@ -22,6 +22,7 @@ import { ensureJobDiscovery, getJobRunComparison } from '@geekgeekrun/sqlite-plu
 import { summarizeJobs } from './job-summary'
 import type { JobSummary } from '../../../../../../common/job-summary'
 import { nowDbDate } from './db-date'
+import { scraperCapturedAt } from '../../../../../../common/scraper-import.mjs'
 export { nowDbDate } from './db-date'
 
 // the subset of the better-sqlite3 API used here (no @types package installed)
@@ -67,9 +68,11 @@ const baseSql: Record<RunDataDatasetKey, string> = {
   jobLibrary: `SELECT
     j.rowid AS _rowid, j.encryptJobId, ${jobColumns},
     d.firstSeenAt, d.firstSeenRunId, d.origin AS discoveryOrigin, d.lastSeenAt,
-    b.name AS bossName, b.title AS bossTitle, c.name AS companyName,
+    b.name AS bossName, b.title AS bossTitle, COALESCE(NULLIF(c.name, ''), i.companyName) AS companyName,
+    i.sourceFormat AS importSource, i.sourceCapturedAt, i.importedAt, i.fileName AS importFileName,
     h.hireStatus, h.lastSeenDate AS hireStatusCheckedAt, ch.chattedAt
   FROM job_info j
+    LEFT JOIN job_import_record i ON i.encryptJobId = j.encryptJobId
     LEFT JOIN job_discovery d ON d.encryptJobId = j.encryptJobId
     LEFT JOIN boss_info b ON b.encryptBossId = j.encryptBossId
     LEFT JOIN company_info c ON c.encryptCompanyId = j.encryptCompanyId
@@ -81,11 +84,13 @@ const baseSql: Record<RunDataDatasetKey, string> = {
     f.id, f.folderId, f.encryptJobId, f.createdAt AS favoritedAt, ff.name AS folderName,
     ${jobColumns},
     d.firstSeenAt, d.firstSeenRunId, d.origin AS discoveryOrigin, d.lastSeenAt,
-    b.name AS bossName, b.title AS bossTitle, c.name AS companyName,
+    b.name AS bossName, b.title AS bossTitle, COALESCE(NULLIF(c.name, ''), i.companyName) AS companyName,
+    i.sourceFormat AS importSource, i.sourceCapturedAt, i.importedAt, i.fileName AS importFileName,
     h.hireStatus, h.lastSeenDate AS hireStatusCheckedAt,
     (SELECT MAX(l.checkedAt) FROM job_hire_status_log l
       WHERE l.encryptJobId = f.encryptJobId AND l.hireStatus IN (2, 3)) AS closedAt
   FROM favorite_job f
+    LEFT JOIN job_import_record i ON i.encryptJobId = f.encryptJobId
     JOIN favorite_folder ff ON ff.id = f.folderId
     LEFT JOIN job_info j ON j.encryptJobId = f.encryptJobId
     LEFT JOIN job_discovery d ON d.encryptJobId = f.encryptJobId
@@ -572,7 +577,9 @@ function upsertJobFromRow(db: Db, row: Row, insertOnly = false) {
 // add company/boss rows referenced by a job-shaped row when they're missing;
 // existing ones are left alone since the db copy is usually newer than the file
 function insertJobRelations(db: Db, row: Row) {
-  upsertCompany(db, row.encryptCompanyId, { name: str(row.companyName) }, true)
+  upsertCompany(db, row.encryptCompanyId, { name: str(row.companyName),
+    scaleLow: num(row.companyScaleLow), scaleHigh: num(row.companyScaleHigh),
+    stageName: str(row.companyStageName), industryName: str(row.companyIndustryName) }, true)
   upsertBoss(
     db,
     row.encryptBossId,
@@ -637,6 +644,8 @@ function importLogRow(
 
 export function importRunData(db: Db, req: RunDataImportReq): RunDataImportRes {
   const def = getDataset(req.dataset)
+  if (req.sourceFormat !== undefined && (req.sourceFormat !== 'boss-zhipin-scraper' || req.dataset !== 'jobLibrary'))
+    throw new Error('不支持的导入来源或数据表')
   const rows = Array.isArray(req.rows) ? req.rows : []
   const res: RunDataImportRes = {
     total: rows.length,
@@ -664,7 +673,22 @@ export function importRunData(db: Db, req: RunDataImportReq): RunDataImportRes {
       case 'jobLibrary':
         if (!key(row.encryptJobId)) throw new Error('缺少职位ID')
         insertJobRelations(db, row)
-        return upsertJobFromRow(db, row)
+        {
+          const result = upsertJobFromRow(db, row)
+          if (req.sourceFormat === 'boss-zhipin-scraper') {
+            db.prepare(`INSERT INTO job_import_record
+              (encryptJobId, sourceFormat, sourceCapturedAt, importedAt, fileName, companyName, missingDescription)
+              VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(encryptJobId) DO UPDATE SET
+              sourceFormat = excluded.sourceFormat, sourceCapturedAt = excluded.sourceCapturedAt,
+              importedAt = excluded.importedAt, fileName = excluded.fileName,
+              companyName = COALESCE(NULLIF(excluded.companyName, ''), job_import_record.companyName),
+              missingDescription = excluded.missingDescription`)
+              .run(key(row.encryptJobId), req.sourceFormat, scraperCapturedAt(row.sourceCapturedAt), nowDbDate(),
+                String(req.sourceFileName || '').replace(/^.*[\\/]/, '').slice(0, 255), str(row.companyName), str(row.description) ? 0 : 1)
+            return result === 'unchanged' ? 'updated' : result
+          }
+          return result
+        }
       case 'bossLibrary':
         if (!key(row.encryptBossId)) throw new Error('缺少BOSS ID')
         upsertCompany(db, row.encryptCompanyId, { name: str(row.companyName) }, true)
