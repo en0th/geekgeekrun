@@ -4,6 +4,7 @@ import { EventEmitter } from 'node:events'
 import { installWorkerShutdown } from '../worker-shutdown.mjs'
 import { installGuiShutdown } from '../gui-shutdown.mjs'
 import { closeOwnedBrowser } from '../../geek-auto-start-chat-with-boss/browser-cleanup.mjs'
+import { requestGracefulStop, SHUTDOWN_MESSAGE_TYPE } from '../worker-shutdown-protocol.cjs'
 
 test('worker termination waits for browser cleanup and saves the final checkpoint exactly once', async () => {
   const calls = [], host = new EventEmitter(); host.exit = code => calls.push(['exit', code])
@@ -27,6 +28,30 @@ test('checkpoint errors still close the owned browser and exit', async () => {
   await shutdown.stop()
   assert.deepEqual(calls, ['reported', 'close', 'reported', 0])
   shutdown.dispose()
+})
+
+test('private IPC shutdown waits for checkpoint and browser cleanup on Windows without an abrupt signal', async () => {
+  const calls = [], host = new EventEmitter(); host.exit = code => calls.push(code)
+  const shutdown = installWorkerShutdown({ host, save: () => calls.push('save'), close: async () => calls.push('close') })
+  host.emit('message', { type: 'unrelated' }); assert.equal(shutdown.isStopping(), false)
+  const child = { connected: true, exitCode: null, signalCode: null,
+    send: (value, callback) => { assert.equal(value.type, SHUTDOWN_MESSAGE_TYPE); host.emit('message', value); callback(null) },
+    kill: () => assert.fail('Windows must not be killed before graceful cleanup') }
+  assert.equal(requestGracefulStop(child, { platform: 'win32' }), true)
+  await shutdown.stop()
+  assert.deepEqual(calls, ['save', 'close', 'save', 0])
+  shutdown.dispose(); assert.equal(host.listenerCount('message'), 0)
+})
+
+test('lost IPC uses POSIX signals when available and leaves Windows force termination to the owned deadline', () => {
+  for (const platform of ['win32', 'linux']) {
+    const calls = [], child = { connected: false, exitCode: null, signalCode: null, kill: signal => calls.push(signal) }
+    assert.equal(requestGracefulStop(child, { platform }), false)
+    assert.deepEqual(calls, platform === 'win32' ? [] : ['SIGTERM'])
+    child.connected = true; child.send = (_value, callback) => callback(Error('channel closed'))
+    requestGracefulStop(child, { platform })
+    assert.equal(calls.length, platform === 'win32' ? 0 : 2)
+  }
 })
 
 test('GUI quit waits for owned tasks before disconnecting, including repeated quit requests', async () => {

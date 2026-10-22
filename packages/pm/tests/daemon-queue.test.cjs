@@ -6,6 +6,7 @@ const net = require('net')
 const path = require('path')
 const { tmpdir } = require('os')
 const { randomUUID } = require('crypto')
+const { requestGracefulStop } = require('../../utils/worker-shutdown-protocol.cjs')
 
 const AUTO = 'geekAutoStartWithBossMain', FOLLOW = 'readNoReplyAutoReminderMain', POLL = 'jobStatusPollMain'
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -29,7 +30,7 @@ test('an unreadable persisted task history is preserved when a later task finish
 async function startDaemon(sliceMs = 60000, extraEnv = {}) {
   const pipeName = `ggr-test-${randomUUID()}`
   const child = spawn(process.execPath, [path.join(__dirname, '../daemon.js')], {
-    stdio: ['ignore', 'ignore', 'ignore', 'pipe'],
+    stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'ipc'],
     env: { ...process.env, GEEKGEEKRUND_PIPE_NAME: pipeName, GEEKGEEKRUND_TIME_SLICE_MS: String(sliceMs), ...extraEnv }
   })
   await new Promise((resolve) => child.stdio[3].once('data', resolve)) // DAEMON_READY
@@ -77,7 +78,7 @@ async function startDaemon(sliceMs = 60000, extraEnv = {}) {
       stateWaiters.add(observed)
     })
   }
-  const close = () => { socket.destroy(); child.kill() }
+  const close = () => { socket.destroy(); requestGracefulStop(child) }
   const waitForStatus = async (predicate, timeoutMs = 5000) => {
     const deadline = Date.now() + timeoutMs
     while (Date.now() < deadline) {
@@ -152,7 +153,7 @@ test('daemon termination closes sockets and waits for workers instead of leaving
   await d.start(AUTO, { FAKE_STOP_DELAY_MS: '250' })
   await d.ready(AUTO)
   const exited = new Promise(resolve => d.child.once('exit', resolve))
-  d.child.kill('SIGTERM')
+  requestGracefulStop(d.child)
   await Promise.race([exited, sleep(2500).then(() => { throw Error('daemon did not exit') })])
   assert.equal(d.socket.destroyed, true)
 })

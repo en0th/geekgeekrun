@@ -26,6 +26,7 @@ if (typeof require !== 'undefined') {
 
 const net = require('net');
 const { spawn } = require('child_process');
+const { requestGracefulStop, SHUTDOWN_MESSAGE_TYPE } = require('@geekgeekrun/utils/worker-shutdown-protocol.cjs')
 const path = require('path');
 const split2 = require('split2');
 const fs = require('fs')
@@ -452,7 +453,7 @@ function startWorker({ workerId, command, args, env, ownerSocket }, restartCount
   console.log(`启动工具进程: ${workerId}${restartCount > 0 ? ` (重启第${restartCount}次)` : ''}`);
   // 添加参数使工具进程在后台运行，不显示 UI
   const workerProcess = spawn(command, args, {
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     env: {
       ...process.env,
       ...env,
@@ -637,7 +638,7 @@ function stopWorker(workerId, ownerSocket) {
   }, STOP_TIMEOUT_MS)
   workerInfo.stopTimer.unref()
 
-  workerInfo.process.kill('SIGTERM');
+  requestGracefulStop(workerInfo.process)
 
   // 通知GUI客户端
   broadcastToGUI({
@@ -766,3 +767,4 @@ async function shutdownDaemon() {
 }
 process.on('SIGTERM', () => { void shutdownDaemon() });
 process.on('SIGINT', () => { void shutdownDaemon() });
+process.on('message', message => { if (message?.type === SHUTDOWN_MESSAGE_TYPE) void shutdownDaemon() })

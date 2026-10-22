@@ -1914,7 +1914,7 @@ async function runBrowserLoop (hooks) {
       if (error.diagnostic) console.debug('BOSS_BROWSER_DIAGNOSTIC', JSON.stringify(error.diagnostic))
     } })
     jobRequestBudgetMonitor?.dispose()
-    jobRequestBudgetMonitor = await attachJobRequestBudget(page, runBudget)
+    jobRequestBudgetMonitor = await attachJobRequestBudget(page, runBudget, { onConnectionLost: () => browserHealthMonitor?.connectionLost() })
     jobResponseMonitor?.dispose()
     jobResponseMonitor = watchJobResponses(page, {
       onBlocked: error => autoStartChatEventBus.emit('TASK_PROGRESS', { detail: error.detail, state: 'blocked' }),

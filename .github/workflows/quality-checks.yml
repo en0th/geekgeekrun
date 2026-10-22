@@ -83,14 +83,57 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
+  windows_checks:
+    name: Windows host validation
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-checks
+      - name: Prepare Node native dependencies
+        run: |
+          pnpm rebuild esbuild
+          pnpm --filter @geekgeekrun/sqlite-plugin rebuild better-sqlite3
+      - name: Build SQLite plugin
+        run: pnpm build:sqlite
+      - name: Check main-process and renderer types
+        run: pnpm typecheck
+      - name: Run full Windows regression without skips
+        run: pnpm test:ci
+      - name: Build production UI
+        run: pnpm --filter geekgeekrun-ui build
+      - name: Verify real Chrome window, task input and collection boundaries
+        run: node scripts/ci/browser-smoke.mjs
+      - name: Prepare Electron native dependencies
+        run: |
+          pnpm --filter geekgeekrun-ui rebuild electron
+          pnpm --filter geekgeekrun-ui exec electron-builder install-app-deps
+      - name: Verify Windows Electron ABI and native regression
+        run: pnpm test:electron
+      - name: Verify full Electron task shutdown channel
+        run: node scripts/ci/electron-stop-smoke.mjs
+      - name: Upload Windows reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ${{ inputs.artifact_prefix }}-windows-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .ci-reports/*
+          retention-days: 14
+          if-no-files-found: warn
+
   quality_gate:
     name: Quality gate
     if: always()
-    needs: [node_checks, electron_native]
+    needs: [node_checks, electron_native, windows_checks]
     runs-on: ubuntu-22.04
     steps:
       - name: Require every check to succeed
         env:
           NODE_RESULT: ${{ needs.node_checks.result }}
           ELECTRON_RESULT: ${{ needs.electron_native.result }}
-        run: test "$NODE_RESULT" = success && test "$ELECTRON_RESULT" = success
+          WINDOWS_RESULT: ${{ needs.windows_checks.result }}
+        run: test "$NODE_RESULT" = success && test "$ELECTRON_RESULT" = success && test "$WINDOWS_RESULT" = success

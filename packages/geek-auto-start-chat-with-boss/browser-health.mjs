@@ -19,7 +19,7 @@ export function taskPageError(page, error) {
 const reasons = {
   executable: ['launch', '未找到可执行的浏览器，任务已暂停；请在浏览器设置中重新选择已安装的 Chrome 或 Edge 后恢复'],
   launch: ['launch', '浏览器启动失败，任务已暂停；请检查所选浏览器是否可正常打开、版本是否可用后恢复'],
-  connection: ['connection', '与任务浏览器的连接已中断，任务已暂停；请检查浏览器或代理设置后恢复'],
+  connection: ['connection', '任务浏览器的连接或监听已中断，任务已暂停；请检查浏览器或代理设置后恢复'],
   closed: ['page', '任务浏览器页面已关闭，任务已暂停；可从任务列表恢复，重新打开浏览器'],
   crashed: ['page', '任务浏览器页面已崩溃，任务已暂停；请关闭占用较高的程序或更新浏览器后恢复'],
   network: ['navigation', 'BOSS页面或岗位请求连接失败，任务已暂停；请检查网络后恢复'],
@@ -57,11 +57,12 @@ export function watchTaskBrowser(browser, page, { onFailure = () => {} } = {}) {
   const failed = new Promise((_, reject) => { rejectFailure = reject })
   failed.catch(() => {})
   function block(error) {
-    if (disposed || failure) return
+    if (disposed || failure) return failure
     error = taskPageError(page, error)
     failure = error
     rejectFailure(error)
     try { onFailure(error) } catch { /* Diagnostics cannot disable the stop. */ }
+    return failure
   }
   const closed = () => block(taskBrowserError('closed'))
   const crashed = cause => block(taskBrowserError('crashed', { cause }))
@@ -103,6 +104,7 @@ export function watchTaskBrowser(browser, page, { onFailure = () => {} } = {}) {
   }
   return {
     assertHealthy,
+    connectionLost: disconnected,
     async guard(action) { assertHealthy(); return Promise.race([Promise.resolve().then(() => { assertHealthy(); return action() }), failed]) },
     dispose() {
       disposed = true
