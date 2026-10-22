@@ -99,7 +99,7 @@ import {
   readNoReplyReminderLlmMockWindow
 } from '../../../window/readNoReplyReminderLlmMockWindow'
 import { RequestSceneEnum } from '../../../features/llm-request-log'
-import { checkUpdateForUi } from '../../../features/updater'
+import { initUpdateIpc } from '../../../features/updater'
 import { daemonEE, sendToDaemon } from '../connect-to-daemon'
 import { runCommon } from '../../../features/run-common'
 import { loginWithCookieAssistant } from '../../../features/login-with-cookie-assistant'
@@ -861,10 +861,7 @@ export default function initIpc() {
   ipcMain.on('close-read-no-reply-reminder-llm-mock-window', () => {
     readNoReplyReminderLlmMockWindow?.close()
   })
-  ipcMain.handle('check-update', async () => {
-    const newRelease = await checkUpdateForUi()
-    return newRelease
-  })
+  initUpdateIpc()
   ipcMain.handle('login-with-cookie-assistant', async () => {
     return await loginWithCookieAssistant({
       windowOption: {

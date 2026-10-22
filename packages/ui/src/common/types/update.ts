@@ -5,3 +5,8 @@ export interface NewReleaseInfo {
   assetName: string
   releaseNote: string
 }
+
+export interface UpdateSettings {
+  autoCheck: boolean
+  ignoredVersions: string[]
+}

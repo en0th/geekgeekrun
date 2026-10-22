@@ -6254,6 +6254,67 @@ export default Vue.defineComponent({
       modal.value = "";
       R.message({ type: "success", message: "提示词已保存" });
     }
+    async function ignoreAvailableUpdate() {
+      const release = updateStore.availableNewRelease;
+      if (!release) return;
+      try {
+        await updateStore.ignoreVersion(release.releaseVersion);
+        R.message({ type: "success", message: "已忽略版本 " + release.releaseVersion });
+      } catch (error) {
+        R.message({ type: "error", message: "未能忽略此版本：" + error.message });
+      }
+    }
+    async function setUpdateAutoCheck(enabled) {
+      try {
+        await updateStore.setAutoCheck(enabled);
+        R.message({ type: "success", message: enabled ? "已开启自动检测更新" : "已关闭自动检测更新" });
+      } catch (error) {
+        R.message({ type: "error", message: "更新设置保存失败：" + error.message });
+      }
+    }
+    async function checkUpdatesNow() {
+      try {
+        const release = await updateStore.checkUpdate(true);
+        if (release === undefined) return;
+        R.message({ type: release ? "success" : "info", message: release
+          ? "发现新版本 " + release.releaseVersion : "当前没有可用的新版本" });
+      } catch (error) {
+        R.message({ type: "error", message: "检测更新失败：" + error.message });
+      }
+    }
+    function updateSettingsCard() {
+      const release = updateStore.availableNewRelease;
+      return card("软件更新", [
+        hint("当前版本：" + buildInfo.version),
+        updateStore.error ? alert(updateStore.error, "error") : null,
+        field("自动检测更新", E("ElSwitch", {
+          modelValue: updateStore.settings.autoCheck,
+          "onUpdate:modelValue": setUpdateAutoCheck,
+          "aria-label": "自动检测更新",
+          disabled: !updateStore.ready || updateStore.saving,
+        }), "启动时及每30分钟自动检测。关闭后不再自动联网检测，仍可手动检测。"),
+        inline([
+          button("立即检测更新", checkUpdatesNow, { type: "primary", loading: updateStore.checking,
+            disabled: !updateStore.ready || updateStore.saving }),
+          !updateStore.ready ? button("重新读取设置", () => updateStore.loadSettings(), { plain: true }) : null,
+        ]),
+        release ? inline([
+          h("span", "发现新版本：" + release.releaseVersion),
+          button("查看更新", () => window.electron.ipcRenderer.send("open-external-link", release.releasePageUrl), { plain: true }),
+          button("忽略此版本", ignoreAvailableUpdate, { plain: true, disabled: updateStore.saving }),
+        ]) : null,
+        updateStore.settings.ignoredVersions.length ? inline([
+          hint("已忽略：" + updateStore.settings.ignoredVersions.join("、")),
+          button("恢复已忽略版本的提示", async () => {
+            try {
+              await updateStore.restoreIgnoredVersions();
+              R.message({ type: "success", message: "已恢复更新提示" });
+            } catch (error) { R.message({ type: "error", message: "恢复失败：" + error.message }); }
+          }, { plain: true, disabled: updateStore.saving }),
+        ]) : null,
+        tip("忽略只针对指定版本，更高版本仍会提示。手动检测可以查看已忽略的版本。"),
+      ]);
+    }
     function settingsPage() {
       const tab = settingTab.value;
       return [
@@ -6271,6 +6332,7 @@ export default Vue.defineComponent({
             ["templates", "配置模板"],
             ["pace", "运行节奏"],
             ["data", "数据、备份与日志"],
+            ["updates", "软件更新"],
           ],
           (v) => {
             settingTab.value = v;
@@ -6411,6 +6473,7 @@ export default Vue.defineComponent({
             ])
           : null,
         tab === "ai" ? aiSettings() : null,
+        tab === "updates" ? updateSettingsCard() : null,
         tab === "ai" ? aiFooter() : null,
         ...(tab === "data" ? dataSettings() : []),
         ...(tab === "templates" ? templateSettings() : []),
@@ -8399,15 +8462,17 @@ export default Vue.defineComponent({
             ),
             h("div", { class: "ux-nav-bottom" }, [
               updateStore.availableNewRelease
-                ? button(
-                    "发现新版本",
+                ? h("div", { class: "ux-update-notice" }, [button(
+                    "发现新版本 " + updateStore.availableNewRelease.releaseVersion,
                     () =>
                       window.electron.ipcRenderer.send(
                         "open-external-link",
                         updateStore.availableNewRelease.releasePageUrl,
                       ),
                     { link: true, type: "primary" },
-                  )
+                  ), button("忽略此版本", ignoreAvailableUpdate, {
+                    link: true, size: "small", disabled: updateStore.saving,
+                  })])
                 : null,
               button("版本：" + buildInfo.version, openReleaseNotes, {
                 link: true,
