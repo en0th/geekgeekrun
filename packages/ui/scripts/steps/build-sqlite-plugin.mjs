@@ -2,28 +2,21 @@ import childProcess from 'node:child_process'
 import path from 'node:path'
 import url from 'node:url'
 
-export default function buildSqlitePlugin() {
-  const rawCwd = process.cwd()
+export default function buildSqlitePlugin({ spawnSync = childProcess.spawnSync } = {}) {
   const __dirname = url.fileURLToPath(new URL('.', import.meta.url))
 
   const sqlitePluginDirPath = path.join(__dirname, '../../../sqlite-plugin')
-  process.chdir(sqlitePluginDirPath)
-  try {
-    const sqlitePluginBuildProcess = childProcess.spawnSync('pnpm run build', {
-      stdio: ['inherit', 'inherit', 'inherit'],
-      shell: true
+  const manager = process.env.npm_execpath
+  const pinned = manager && /^pnpm(?:\.[cm]?js)?$/.test(path.basename(manager))
+  const result = spawnSync(pinned ? process.execPath : process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
+    pinned ? [manager, 'run', 'build'] : ['run', 'build'], {
+      cwd: sqlitePluginDirPath,
+      stdio: 'inherit',
+      shell: !pinned && process.platform === 'win32'
     })
-    process.chdir(rawCwd)
-    if (sqlitePluginBuildProcess.error) {
-      throw sqlitePluginBuildProcess.error
-    }
-    if (sqlitePluginBuildProcess.status !== 0) {
-      throw new Error(`SQLite plugin build failed (${sqlitePluginBuildProcess.status})`)
-    }
-  } catch (error) {
-    process.chdir(rawCwd)
-    console.error('error encounter when build sqlite plugin:')
-    console.error(error)
-    process.exit(1)
+  if (result.error) throw result.error
+  if (result.signal || result.status !== 0) {
+    const reason = result.signal ? `signal ${result.signal}` : `exit code ${result.status ?? 'unknown'}`
+    throw new Error(`SQLite plugin build failed (${reason})`)
   }
 }

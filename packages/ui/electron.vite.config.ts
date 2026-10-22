@@ -5,6 +5,9 @@ import UnoCSS from 'unocss/vite'
 import { presetUno, presetAttributify, presetIcons } from 'unocss'
 import transformerDirective from '@unocss/transformer-directives'
 import Replace from 'unplugin-replace/vite'
+import Components from 'unplugin-vue-components/vite'
+import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
+import { rendererBuildReport } from './scripts/renderer-build-report'
 
 process.env = { ...process.env, ...loadEnv(process.env.NODE_ENV!, process.cwd()) }
 const mainPlugins = [
@@ -19,10 +22,13 @@ const mainPlugins = [
 const preloadPlugins = [externalizeDepsPlugin()]
 const rendererPlugins = [
   vue(),
+  Components({ dts: false, dirs: [], resolvers: [ElementPlusResolver({ importStyle: false })] }),
   UnoCSS({
     presets: [presetUno(), presetAttributify(), presetIcons()],
     transformers: [transformerDirective()]
-  })
+  }),
+  ...(process.env.GEEKGEEKRUN_RENDERER_REPORT
+    ? [rendererBuildReport(process.env.GEEKGEEKRUN_RENDERER_REPORT)] : [])
 ]
 if (process.env.NODE_ENV) {
   ;[mainPlugins, preloadPlugins, rendererPlugins].forEach((pluginList) => {
@@ -68,6 +74,15 @@ export default defineConfig({
     },
     plugins: rendererPlugins,
     build: {
+      rollupOptions: {
+        output: {
+          // Only the async chart view imports this renderer; keep its cache separate.
+          manualChunks(id) {
+            if (id.replace(/\\/g, '/').includes('/node_modules/zrender/')) return 'chart-renderer'
+            return undefined
+          }
+        }
+      },
       minify: process.env.NODE_ENV === 'development' ? undefined : 'terser'
     }
   }
