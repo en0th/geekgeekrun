@@ -36,6 +36,8 @@
             <el-button type="text" size="small" @click="handleViewNewReleaseClick"
               >了解更新内容</el-button
             >
+            <el-button type="text" size="small" :disabled="updateStore.saving" @click="handleIgnoreRelease"
+              >忽略此版本</el-button>
           </div>
         </div>
         <div>
@@ -64,6 +66,7 @@
 import { useRouter } from 'vue-router'
 import { REPOSITORY_URL } from '../../../../common/repository.mjs'
 import useBuildInfo from '@renderer/hooks/useBuildInfo'
+import { toast } from '@renderer/features/Toast'
 import { useUpdateStore, useTaskManagerStore } from '../../store/index'
 import BossPart from './LeftNavBar/BossPart.vue'
 import GlobalConfigPart from './LeftNavBar/GlabalConfigPart.vue'
@@ -85,6 +88,12 @@ function handleDownloadNewReleaseClick() {
 }
 function handleViewNewReleaseClick() {
   electron.ipcRenderer.send('open-external-link', updateStore.availableNewRelease!.releasePageUrl)
+}
+async function handleIgnoreRelease() {
+  const release = updateStore.availableNewRelease
+  if (!release) return
+  try { await updateStore.ignoreVersion(release.releaseVersion) }
+  catch (error) { toast.error('未能忽略此版本：' + (error as Error).message) }
 }
 
 const taskManagerStore = useTaskManagerStore()

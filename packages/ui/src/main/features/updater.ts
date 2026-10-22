@@ -1,8 +1,12 @@
 import semver from 'semver'
 import packageJson from '../../../package.json'
 import os from 'node:os'
+import { BrowserWindow, ipcMain } from 'electron'
 import { NewReleaseInfo } from '../../common/types/update'
+import type { UpdateSettings } from '../../common/types/update'
 import { RELEASES_API_URL } from '../../common/repository.mjs'
+import { normalizeUpdateVersion } from '../../common/update-settings.mjs'
+import { getUpdateSettings, ignoreUpdateVersion, restoreIgnoredUpdateVersions, setUpdateAutoCheck, updateSettingsEvents } from './update-settings'
 
 export const currentOsPlatform = os.platform()
 const RELEASE_LIST_URL = RELEASES_API_URL
@@ -51,41 +55,60 @@ function findTargetAsset(
   return targetAsset
 }
 
-export const checkUpdateForUi = async (): Promise<NewReleaseInfo | null> => {
+const automaticChecks = new Set<AbortController>()
+let automaticGeneration = 0
+updateSettingsEvents.on('changed', (settings: UpdateSettings) => {
+  if (!settings.autoCheck) {
+    automaticGeneration++
+    for (const controller of automaticChecks) controller.abort()
+  }
+})
+
+export const checkUpdateForUi = async ({ manual = false } = {}): Promise<NewReleaseInfo | null> => {
+  const generation = automaticGeneration
+  const settings = await getUpdateSettings()
+  if (!manual && (!settings.autoCheck || generation !== automaticGeneration)) return null
+  const controller = new AbortController()
+  if (!manual) automaticChecks.add(controller)
+  const timeout = setTimeout(() => controller.abort(), 15000)
   let releaseList: GitHubReleaseItem[] = []
   try {
     const headers = new Headers()
     headers.append('Accept', 'application/vnd.github+json')
     headers.append('X-GitHub-Api-Version', '2022-11-28')
-    await fetch(RELEASE_LIST_URL, {
+    const response = await fetch(RELEASE_LIST_URL, {
       method: 'GET',
       headers: headers,
-      redirect: 'follow'
+      redirect: 'follow',
+      signal: controller.signal
     })
-      .then((res) => res.json())
-      .then((res) => {
-        if (Array.isArray(res)) {
-          releaseList = res
-        } else {
-          throw res
-        }
-      })
+    if (!response.ok) throw new Error(`检测更新失败（HTTP ${response.status}）`)
+    const body = await response.json()
+    if (!Array.isArray(body)) throw new Error('更新服务返回的数据无法识别')
+    releaseList = body
   } catch (err) {
-    console.log(err)
+    if (!manual && generation !== automaticGeneration) return null
+    if (controller.signal.aborted) throw new Error('检测更新超时，请稍后重试')
+    throw err
+  } finally {
+    clearTimeout(timeout)
+    automaticChecks.delete(controller)
   }
-  console.log(releaseList)
-  const availableRelease = releaseList.find((it) => !it.draft && !it.prerelease)
+  const availableRelease = releaseList.find((it) => !it.draft && !it.prerelease &&
+    semver.valid(normalizeUpdateVersion(it.tag_name)))
   if (!availableRelease) {
     return null
   }
-  const availableReleaseVersion = availableRelease.tag_name.replace(/^(ui-v)/, '')
+  const availableReleaseVersion = normalizeUpdateVersion(availableRelease.tag_name)
   if (!semver.gt(availableReleaseVersion, packageJson.version)) {
     return null
   }
+  const currentSettings = await getUpdateSettings()
+  if (!manual && (generation !== automaticGeneration || !currentSettings.autoCheck ||
+    currentSettings.ignoredVersions.includes(availableReleaseVersion))) return null
   const { assets } = availableRelease
   const targetAsset = findTargetAsset(assets ?? [])
   if (targetAsset) {
-    console.log(targetAsset)
     return {
       releaseVersion: availableReleaseVersion,
       releasePageUrl: availableRelease.html_url,
@@ -95,4 +118,24 @@ export const checkUpdateForUi = async (): Promise<NewReleaseInfo | null> => {
     }
   }
   return null
+}
+
+export function initUpdateIpc() {
+  updateSettingsEvents.on('changed', settings => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      try {
+        if (!window.isDestroyed() && !window.webContents.isDestroyed())
+          window.webContents.send('update-settings-changed', settings)
+      } catch {
+        // A window can close between the checks and send. The persisted save
+        // still succeeded, and other windows must receive the new settings.
+        console.warn('无法向已关闭的窗口同步更新设置')
+      }
+    }
+  })
+  ipcMain.handle('get-update-settings', () => getUpdateSettings())
+  ipcMain.handle('set-update-auto-check', (_, enabled) => setUpdateAutoCheck(enabled))
+  ipcMain.handle('ignore-update-version', (_, version) => ignoreUpdateVersion(version))
+  ipcMain.handle('restore-ignored-update-versions', () => restoreIgnoredUpdateVersions())
+  ipcMain.handle('check-update', (_, payload) => checkUpdateForUi({ manual: payload?.manual === true }))
 }
