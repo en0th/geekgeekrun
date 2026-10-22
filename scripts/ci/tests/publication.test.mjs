@@ -2,6 +2,10 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { verifyPublication } from '../../release/verify-publication.mjs'
 import { requiredPlatforms } from '../../release/validate-package-reports.mjs'
+import fs from 'node:fs'
+import path from 'node:path'
+import yaml from 'js-yaml'
+import { repositoryRoot } from '../test-suite.mjs'
 
 const sha = 'a'.repeat(40), workflowSha = 'b'.repeat(40), repository = 'owner/repo'
 function fixture() {
@@ -28,6 +32,18 @@ function fixture() {
 test('a checked, merged candidate can promote the already-tested artifacts without rebuilding', async () => {
   const { options } = fixture()
   assert.deepEqual(await verifyPublication(options), { sha, runId: '123', url: 'https://example.test/run' })
+})
+
+test('publication permission maintenance can preserve tested binaries while application changes and renames cannot', async () => {
+  const f = fixture()
+  f.values.comparison.files = [{ filename: '.github/workflows/publish-validated-release.yml' },
+    { filename: 'scripts/release/verify-publication.mjs' }]
+  assert.equal((await verifyPublication(f.options)).sha, sha)
+  f.values.comparison.files[0].previous_filename = 'packages/ui/package.json'
+  await assert.rejects(verifyPublication(f.options))
+  const workflow = yaml.load(fs.readFileSync(path.join(repositoryRoot, '.github/workflows/publish-validated-release.yml'), 'utf8'))
+  assert.equal(workflow.jobs.publish.permissions.checks, 'read')
+  assert.equal(workflow.jobs.publish.permissions.actions, 'read')
 })
 
 test('publication refuses another branch, source tree, commit, workflow or untrusted check', async () => {
