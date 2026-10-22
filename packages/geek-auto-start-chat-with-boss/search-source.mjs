@@ -1,4 +1,5 @@
 import catalog from './data/position-codes.json' with { type: 'json' }
+import { hasCompanyConstraint } from './company-source.mjs'
 
 const positions = new Map()
 export const positionOptions = Object.entries(catalog).filter(([name]) => name !== '_meta').map(([groupLabel, group]) => ({
@@ -86,12 +87,14 @@ export function searchRequestMatches(request, source) {
     if (!/(^|\.)zhipin\.com$/.test(url.hostname) || url.pathname !== '/wapi/zpgeek/search/joblist.json') return false
     const [keyword, positionCodes] = searchSourceIdentity(source)
     return String(values.query ?? '').trim() === keyword &&
+      !hasCompanyConstraint(values) &&
       JSON.stringify(receivedCodes(values.position)) === JSON.stringify(positionCodes)
   } catch { return false }
 }
 export function searchPageMatches(scope, source) {
   const [keyword, codes] = searchSourceIdentity(source)
   return String(scope.query ?? '').trim() === keyword &&
+    !hasCompanyConstraint(scope) &&
     JSON.stringify(receivedCodes(scope.position)) === JSON.stringify(codes)
 }
 export async function readSearchScope(page) {
@@ -101,7 +104,9 @@ export async function readSearchScope(page) {
     const url = new URL(location.href)
     return { query: form.query ?? url.searchParams.get('query') ?? '',
       position: form.position ?? url.searchParams.get('position') ?? '',
-      city: form.city ?? url.searchParams.get('city') ?? '' }
+      city: form.city ?? url.searchParams.get('city') ?? '',
+      ...Object.fromEntries(['brandId', 'encryptBrandId', 'companyId', 'encryptCompanyId']
+        .map(key => [key, form[key] ?? url.searchParams.get(key) ?? ''])) }
   })
 }
 export function buildPositionSearchUrl(source, currentUrl, scope = {}) {
@@ -121,7 +126,7 @@ export function buildPositionSearchUrl(source, currentUrl, scope = {}) {
 /** Navigate only when entering/leaving a position filter; ordinary keyword search keeps its UI path. */
 export async function activateSearchSource(page, source, searchBoxSelector) {
   const scope = await readSearchScope(page)
-  if (normalizePositionCodes(source.positionCodes).length || receivedCodes(scope?.position).length) {
+  if (normalizePositionCodes(source.positionCodes).length || receivedCodes(scope?.position).length || hasCompanyConstraint(scope || {})) {
     await page.goto(buildPositionSearchUrl(source, page.url(), scope || {}), { waitUntil: 'domcontentloaded', timeout: 30000 })
     return
   }
