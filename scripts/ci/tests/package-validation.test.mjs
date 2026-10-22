@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
+import { createRequire } from 'node:module'
 import yaml from 'js-yaml'
 import { validatePackageReports, requiredPlatforms } from '../../release/validate-package-reports.mjs'
 import { repositoryRoot } from '../test-suite.mjs'
@@ -65,4 +66,16 @@ test('manual candidates stay unpublished and release jobs require installation a
   assert.deepEqual(workflow.jobs.installation_gate.needs, ['build_on_windows', 'build_on_macos', 'build_on_linux'])
   assert.ok(workflow.jobs.release.steps.some(step => step.run?.includes('validate-package-reports.mjs release-artifacts')))
   assert.equal(workflow.jobs.release.steps.find(step => step.name === 'Publish validated release').with.allowUpdates, false)
+})
+
+test('the real builder resolves each bundled license once instead of merging the configuration twice', async () => {
+  const { getBuildParameters } = await import('../../../packages/ui/scripts/make-dist-for-current-platform.mjs')
+  const fromUi = createRequire(path.join(repositoryRoot, 'packages/ui/package.json'))
+  const fromBuilder = createRequire(fromUi.resolve('electron-builder/package.json'))
+  const { getConfig } = fromBuilder('app-builder-lib/out/util/config.js')
+  const options = getBuildParameters()
+  assert.equal(options.publish, 'never')
+  const effective = await getConfig(options.projectDir, typeof options.config === 'string' ? options.config : null,
+    typeof options.config === 'object' ? options.config : null)
+  assert.equal(effective.extraResources.filter(item => item.to === 'third-party/position-codes.NOTICE').length, 1)
 })

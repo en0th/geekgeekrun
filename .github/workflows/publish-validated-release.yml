@@ -1,0 +1,96 @@
+name: Publish validated release
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful Release UI candidate workflow run
+        type: string
+        required: true
+      sha:
+        description: Exact tested commit already merged into the default branch
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: publish-validated-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Require checked default branch, candidate gates and all native artifacts
+        id: verified
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VALIDATED_SHA: ${{ inputs.sha }}
+          VALIDATED_RUN_ID: ${{ inputs.run_id }}
+        run: node scripts/release/verify-publication.mjs
+      - name: Check out the exact tested source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ steps.verified.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: binary-geekgeekrun-ui-*
+          merge-multiple: true
+          run-id: ${{ steps.verified.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: release-artifacts
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: package-validation-*
+          merge-multiple: true
+          run-id: ${{ steps.verified.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: release-artifacts
+      - name: Verify exact installer bytes and prepare public evidence
+        id: metadata
+        env:
+          VALIDATION_URL: ${{ steps.verified.outputs.url }}
+        run: |
+          node scripts/release/validate-package-reports.mjs release-artifacts
+          node --input-type=module <<'JS'
+          import fs from 'node:fs'
+          const evidence = JSON.parse(fs.readFileSync('release-artifacts/validated-installers.json'))
+          const { version } = evidence
+          const entry = JSON.parse(fs.readFileSync('packages/ui/src/common/release-notes.json'))[version]
+          if (!entry?.notes?.trim() || entry.draft) throw Error('Final release notes are required')
+          fs.writeFileSync('release-body.txt', entry.notes)
+          fs.writeFileSync('release-artifacts/SHA256SUMS', evidence.installers.map(file => `${file.sha256}  ${file.name}`).join('\n') + '\n')
+          fs.writeFileSync('release-artifacts/validation.json', JSON.stringify({ ...evidence, validationUrl: process.env.VALIDATION_URL,
+            previousVersion: '0.22.2', scenarios: ['fresh installation', 'installed upgrade', 'native migrations', 'GUI pages', 'restart', 'uninstall preserves data'],
+            sent: 0, marked: 0, bossRequests: 0 }, null, 2) + '\n')
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `tag=ui-v${version}\n`)
+          JS
+      - name: Upload all assets before publishing the formal release
+        uses: ncipollo/release-action@339a81892b84b4eeb0f6e744e4574d79d0d9b8dd # v1
+        with:
+          tag: ${{ steps.metadata.outputs.tag }}
+          commit: ${{ steps.verified.outputs.sha }}
+          bodyFile: release-body.txt
+          artifacts: release-artifacts/*.exe,release-artifacts/*.dmg,release-artifacts/*.deb,release-artifacts/SHA256SUMS,release-artifacts/validation.json
+          artifactErrorsFailBuild: true
+          immutableCreate: true
+          makeLatest: true
+          prerelease: false
+          draft: false
+          allowUpdates: false
+          token: ${{ github.token }}

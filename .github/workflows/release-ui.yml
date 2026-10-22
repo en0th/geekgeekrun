@@ -120,7 +120,7 @@ jobs:
         with:
           node-version: '24'
           package-manager-cache: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: package-validation-*
           merge-multiple: true
@@ -143,12 +143,12 @@ jobs:
         with:
           node-version: '24'
           package-manager-cache: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: binary-geekgeekrun-ui-*
           merge-multiple: true
           path: release-artifacts
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: package-validation-*
           merge-multiple: true
@@ -170,12 +170,14 @@ jobs:
           JS
         id: metadata
       - name: Publish validated release
-        uses: ncipollo/release-action@v1
+        uses: ncipollo/release-action@339a81892b84b4eeb0f6e744e4574d79d0d9b8dd # v1
         with:
           repo: geekgeekrun
           prerelease: ${{ github.event_name == 'push' || inputs.prerelease || false }}
           draft: ${{ inputs.draft || false }}
           allowUpdates: false
+          artifactErrorsFailBuild: true
+          immutableCreate: ${{ !inputs.draft }}
           artifacts: release-artifacts/*.exe,release-artifacts/*.dmg,release-artifacts/*.deb
           tag: ${{ steps.metadata.outputs.tag }}
           commit: ${{ steps.metadata.outputs.sha }}
