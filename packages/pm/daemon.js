@@ -32,7 +32,7 @@ const split2 = require('split2');
 const fs = require('fs')
 const { tmpdir } = require('os')
 const { randomUUID } = require('crypto')
-const { isSuccessfulTaskExit } = require('./task-exit.cjs')
+const { isSuccessfulTaskExit, requiresManualTaskRestart } = require('./task-exit.cjs')
 const { forceStopOwnedWorker } = require('./process-tree.cjs')
 const { writeJsonAtomicSync } = require('@geekgeekrun/utils/atomic-file.cjs')
 
@@ -493,7 +493,8 @@ function startWorker({ workerId, command, args, env, ownerSocket }, restartCount
         return
       }
 
-      const shouldRestart = !shuttingDown && !workerInfo.stopping && !isSuccessfulTaskExit(workerId, code) && !noAutoRestartExitCodeSet.has(code)
+      const shouldRestart = !shuttingDown && !workerInfo.stopping && !isSuccessfulTaskExit(workerId, code) &&
+        !requiresManualTaskRestart(workerId, code) && !noAutoRestartExitCodeSet.has(code)
       // 使用当前的 restartCount 加1，而不是从 workerInfo 中取（因为可能已经被删除）
       const restartCount = (workerInfo.restartCount || 0) + 1;
 

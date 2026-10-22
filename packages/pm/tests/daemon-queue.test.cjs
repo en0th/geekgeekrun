@@ -27,6 +27,41 @@ test('an unreadable persisted task history is preserved when a later task finish
   } finally { d.close() }
 })
 
+test('the real supervisor never retries browser pauses or unknown sends, including without a launcher exit-code list', async () => {
+  const fs = require('node:fs'), vm = require('node:vm'), { transformSync } = require('esbuild')
+  const { requiresManualTaskRestart, isResumableTaskExit } = require('../task-exit.cjs')
+  const enumFile = path.join(__dirname, '../../ui/src/common/enums/auto-start-chat.ts')
+  const compiled = transformSync(fs.readFileSync(enumFile, 'utf8'), { loader: 'ts', format: 'cjs' }).code
+  const module = { exports: {} }; vm.runInNewContext(compiled, { module })
+  const enums = module.exports.AUTO_CHAT_ERROR_EXIT_CODE
+  const source = fs.readFileSync(path.join(__dirname, '../../ui/src/main/features/run-common.ts'), 'utf8')
+  const start = source.indexOf('GEEKGEEKRUND_NO_AUTO_RESTART_EXIT_CODE: [')
+  const end = source.indexOf("].join(',')", start) + "].join(',')".length
+  assert.ok(start > 0 && end > start)
+  const expression = source.slice(source.indexOf('[', start), end)
+  const list = vm.runInNewContext(expression, { AUTO_CHAT_ERROR_EXIT_CODE: enums, extraNoAutoRestartExitCodes: [] }).split(',').map(Number)
+  assert.ok(list.includes(101), 'new GUI workers must also be safe with an older daemon')
+  assert.ok(list.includes(87))
+  assert.equal(isResumableTaskExit(AUTO, 101), true)
+  assert.equal(isResumableTaskExit(AUTO, 87), false)
+  assert.equal(requiresManualTaskRestart(FOLLOW, 101), false)
+  assert.equal(requiresManualTaskRestart(AUTO, 1), false)
+  const d = await startDaemon()
+  try {
+    for (const code of [101, 87]) {
+      // Deliberately omit the caller's list: the daemon must enforce pause policy.
+      await d.start(AUTO, { FAKE_KIND: 'finite', FAKE_MS: '50', FAKE_EXIT: String(code) }, [`--run-record-id=${code}`, '--run-mode=collect'])
+      const state = await d.waitForStatus(value => !value.workers.length && value.history.some(h => h.workerId === AUTO && h.code === code && h.outcome === 'failed'))
+      const history = state.history.find(h => h.workerId === AUTO && h.code === code)
+      assert.equal(history.runMode, 'collect'); assert.equal(history.runRecordId, code)
+      assert.ok(d.events.some(event => event.type === 'worker-exited' && event.code === code && !event.restarting))
+    }
+    await sleep(2200)
+    assert.deepEqual(await d.running(), []); assert.deepEqual(await d.queued(), [])
+    assert.equal((await d.status()).history.filter(h => h.workerId === AUTO).length, 2)
+  } finally { d.close() }
+})
+
 async function startDaemon(sliceMs = 60000, extraEnv = {}) {
   const pipeName = `ggr-test-${randomUUID()}`
   const child = spawn(process.execPath, [path.join(__dirname, '../daemon.js')], {
