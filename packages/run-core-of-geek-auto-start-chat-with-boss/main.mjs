@@ -80,6 +80,18 @@ const main = async () => {
     } catch (err) {
       if (shutdown.isStopping()) return
       if (err instanceof Error) {
+        if (err.message === 'AUTO_CHAT_SECURITY_CHECK') {
+          console.error('BOSS需要人工安全验证，任务已暂停；请完成验证并更新登录状态后重新运行')
+          await closeBrowserWindow?.()
+          process.exit(AUTO_CHAT_ERROR_EXIT_CODE.LOGIN_STATUS_UNCONFIRMED)
+          return
+        }
+        if (/AUTO_CHAT_(NO_MATCH_BATCH_LIMIT|LIST_STALLED|DETAIL_NOT_READY|NO_USABLE_SOURCE|COLLECT_MODE_CHAT_BLOCKED|UNMATCHED_JOB_CHAT_BLOCKED|REQUIRED_CONDITION_CHAT_BLOCKED)/.test(err.message)) {
+          console.error(err.detail || '岗位页面、来源或发送条件未能确认，任务已停止；请检查页面与条件后重新运行')
+          await closeBrowserWindow?.()
+          process.exit(err.message.includes('NO_MATCH_BATCH_LIMIT') ? AUTO_CHAT_ERROR_EXIT_CODE.NO_MATCHING_JOBS : AUTO_CHAT_ERROR_EXIT_CODE.JOB_PAGE_NOT_READY)
+          return
+        }
         if (['AUTO_CHAT_BROWSER_UNAVAILABLE', 'AUTO_CHAT_MESSAGE_SEND_UNCONFIRMED'].includes(err.message)) {
           console.error(err.detail || '浏览器或连接异常，任务已暂停')
           await closeBrowserWindow?.()
