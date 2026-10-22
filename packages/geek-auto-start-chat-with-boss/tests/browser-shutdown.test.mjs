@@ -11,7 +11,7 @@ test('stopping during browser launch awaits and closes the newly owned browser b
   let launch, finishClose
   const calls = [], owned = { name: 'owned fixture' }
   const context = vm.createContext({ puppeteer: {}, browser: null, page: null,
-    browserOpening: null, browserClosing: null, jobRequestBudgetMonitor: null, jobResponseMonitor: null,
+    browserOpening: null, browserClosing: null, jobRequestBudgetMonitor: null, jobResponseMonitor: null, browserHealthMonitor: null,
     runBudget: null, runInBackground: true, console,
     launchTaskBrowser: () => new Promise(resolve => { launch = resolve }),
     closeOwnedBrowser: browser => new Promise(resolve => { calls.push(browser); finishClose = resolve }) })

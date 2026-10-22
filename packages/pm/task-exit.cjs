@@ -4,4 +4,4 @@ exports.isSuccessfulTaskExit = (workerId, code) =>
   code === 0 || (workerId === AUTO_CHAT_WORKER && code === 92)
 
 exports.isResumableTaskExit = (workerId, code) =>
-  workerId === AUTO_CHAT_WORKER && [88, 89, 91, 93, 94, 95, 96, 97, 99, 100].includes(code)
+  workerId === AUTO_CHAT_WORKER && [88, 89, 91, 93, 94, 95, 96, 97, 99, 100, 101].includes(code)

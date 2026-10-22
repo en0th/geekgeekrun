@@ -6,6 +6,7 @@ const require = createRequire(import.meta.url)
 const { CDPSessionEvent } = require('puppeteer')
 import { createRunBudget } from '../run-budget.mjs'
 import { attachJobRequestBudget } from '../job-request-budget.mjs'
+import { beginChatConfirmation } from '../browser-health.mjs'
 
 const list = 'https://www.zhipin.com/wapi/zpgeek/search/joblist.json?query=Python'
 const detail = 'https://www.zhipin.com/wapi/zpgeek/job/detail.json?jobId=test'
@@ -87,4 +88,15 @@ test('lost interception and failed attachment fail closed; disposing is silent',
   assert.equal(other.budget.snapshot().stopped, false)
   const failed = fixture({ send: method => { if (method === 'Fetch.enable') throw Error('unsupported') } })
   await assert.rejects(attachJobRequestBudget(failed.page, failed.budget), /RUN_BUDGET_UNAVAILABLE/)
+})
+
+test('a disconnected browser retains transport or unconfirmed-send diagnostics instead of masquerading as a lost budget listener', async () => {
+  for (const pending of [false, true]) {
+    const f = fixture(); f.page.browser = () => ({ connected: false })
+    if (pending) beginChatConfirmation(f.page)
+    const monitor = await attachJobRequestBudget(f.page, f.budget)
+    f.session.emit(CDPSessionEvent.Disconnected)
+    await assert.rejects(f.budget.guard(() => 1), pending ? /MESSAGE_SEND_UNCONFIRMED/ : /BROWSER_UNAVAILABLE/)
+    monitor.dispose()
+  }
 })

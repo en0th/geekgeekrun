@@ -5,6 +5,7 @@ import vm from 'node:vm'
 import { classifyBossLoginResponse, bossLoginError } from '../../utils/boss-login.mjs'
 import { bindRunAccount } from '../run-account.mjs'
 import { isSecurityCheckUrl } from '../security-check.mjs'
+import { taskBrowserError } from '../browser-health.mjs'
 
 // Run the actual login prefix, stopping before source browsing or any outreach.
 const source = fs.readFileSync(new URL('../index.mjs', import.meta.url), 'utf8')
@@ -13,7 +14,7 @@ const prefix = source.slice(start, source.indexOf('  const computedSourceList = 
 function run({ url = 'https://www.zhipin.com/web/geek/job', body, timeout = false, onLogin = async () => {} }) {
   const calls = []
   const ctx = vm.createContext({
-    classifyBossLoginResponse, bossLoginError, bindRunAccount, isSecurityCheckUrl,
+    classifyBossLoginResponse, bossLoginError, bindRunAccount, isSecurityCheckUrl, taskBrowserError,
     runAccountId: null, browser: {}, recommendJobPageUrl: 'https://www.zhipin.com/web/geek/job',
     sleep: async () => {}, storeStorage: async () => calls.push('store'),
     writeStorageFile: async () => calls.push('clear'), autoStartChatEventBus: { emit() {} },
@@ -61,5 +62,11 @@ test('confirmed identity precedes history hooks and successful page storage', as
 test('a page readiness timeout becomes a stable unconfirmed-login error', async () => {
   const current = run({ body: { code: 0 }, timeout: true })
   await assert.rejects(current.promise, /LOGIN_STATUS_UNKNOWN/)
+  assert.deepEqual(current.calls, ['document-ready'])
+})
+
+test('an initial navigation left blank is diagnosed without clearing the saved login', async () => {
+  const current = run({ url: 'about:blank', body: null })
+  await assert.rejects(current.promise, error => error.message === 'AUTO_CHAT_BROWSER_UNAVAILABLE' && error.diagnostic.reason === 'blank')
   assert.deepEqual(current.calls, ['document-ready'])
 })

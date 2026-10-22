@@ -2,6 +2,7 @@ import { jobResponseKind } from './boss-job-responses.mjs'
 import { budgetStateError } from './run-budget.mjs'
 import { createRequire } from 'node:module'
 import { isCompanyJobsDocument } from './company-source.mjs'
+import { taskBrowserError, taskPageError } from './browser-health.mjs'
 // puppeteer-extra loads Puppeteer through require(). Its CDP event names are Symbols;
 // the separately loaded ESM copy exports different Symbols for the same event.
 const { CDPSessionEvent } = createRequire(import.meta.url)('puppeteer')
@@ -11,7 +12,10 @@ export async function attachJobRequestBudget(page, budget) {
   let session
   let disposed = false
   const unavailable = () => budgetStateError('岗位请求预算监听已中断，任务已暂停；请检查浏览器后恢复，累计用量会保留')
-  const disconnected = () => { if (!disposed) budget.fail(unavailable()) }
+  const disconnected = () => {
+    if (!disposed) budget.fail(page.isClosed?.() || page.browser?.()?.connected === false
+      ? taskPageError(page, taskBrowserError('connection')) : unavailable())
+  }
   async function paused({ requestId, request }) {
     if (disposed) return
     try {

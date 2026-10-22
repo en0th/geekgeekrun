@@ -21,6 +21,7 @@ export enum AUTO_CHAT_ERROR_EXIT_CODE {
   JSON_STORAGE_UNAVAILABLE = 98,
   BACKGROUND_WINDOW_UNAVAILABLE = 99,
   PAGE_FILTER_NOT_APPLIED = 100,
+  BROWSER_UNAVAILABLE = 101,
 }
 
 // a long-running task left its turn to a queued one; packages/pm/daemon.js requeues it

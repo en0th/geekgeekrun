@@ -80,6 +80,12 @@ const main = async () => {
     } catch (err) {
       if (shutdown.isStopping()) return
       if (err instanceof Error) {
+        if (['AUTO_CHAT_BROWSER_UNAVAILABLE', 'AUTO_CHAT_MESSAGE_SEND_UNCONFIRMED'].includes(err.message)) {
+          console.error(err.detail || '浏览器或连接异常，任务已暂停')
+          await closeBrowserWindow?.()
+          process.exit(err.message.includes('SEND_UNCONFIRMED') ? AUTO_CHAT_ERROR_EXIT_CODE.MESSAGE_SEND_UNCONFIRMED : AUTO_CHAT_ERROR_EXIT_CODE.BROWSER_UNAVAILABLE)
+          return
+        }
         if (err.message.includes('AUTO_CHAT_PAGE_FILTER_NOT_APPLIED')) {
           console.error(err.detail || err.message)
           await closeBrowserWindow?.()

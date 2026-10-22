@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import vm from 'node:vm'
 import { ExpiringBlockSet } from '../job-safety.mjs'
+import { finishChatConfirmation } from '../browser-health.mjs'
 
 // Exercise the shipped checkpoints with browser/IPC effects isolated.
 const source = fs.readFileSync(new URL('../index.mjs', import.meta.url), 'utf8')
@@ -12,7 +13,7 @@ const resumeCode = source.slice(source.indexOf('  const resumeFrom ='), source.i
 function context(successLimit = 20, noMatchLimit = 30) {
   const events = []
   const ctx = vm.createContext({
-    perSourceSuccessLimit: successLimit, noMatchStreakLimit: noMatchLimit,
+    perSourceSuccessLimit: successLimit, noMatchStreakLimit: noMatchLimit, finishChatConfirmation,
     blockJobNotSuit: new ExpiringBlockSet(), blockBossNotActive: new ExpiringBlockSet(), blockBossNotNewChat: new Set(),
     positionFingerprint: '', computedSourceList: [{ type: 'recommend' }, { type: 'search' }],
     autoStartChatEventBus: { emit: (type, data) => events.push({ type, ...data }) }

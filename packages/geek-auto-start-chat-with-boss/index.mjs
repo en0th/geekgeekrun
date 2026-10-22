@@ -66,6 +66,7 @@ import { closeOwnedBrowser } from './browser-cleanup.mjs'
 import { applyPageFilters } from './page-filters.mjs'
 import { waitForCurrentJobList } from './job-list-ready.mjs'
 import { activateCompanySource, applyCompanyPageFilters, assertCompanyPlatformFilters, isCompanyJobsDocument } from './company-page.mjs'
+import { watchTaskBrowser, taskBrowserError, beginChatConfirmation, finishChatConfirmation } from './browser-health.mjs'
 const flattedCityList = []
 ;(cityGroupData?.zpData?.cityGroup ?? []).forEach(it => {
   const firstChar = it.firstChar
@@ -112,12 +113,17 @@ export const autoStartChatEventBus = new EventEmitter()
  */
 let puppeteer
 let jobResponseMonitor = null
+let browserHealthMonitor = null
 let jobRequestBudgetMonitor = null
 const checkJobResponses = () => {
   runBudget?.assertTime()
+  browserHealthMonitor?.assertHealthy()
   return jobResponseMonitor?.assertHealthy() ?? Promise.resolve()
 }
-const guardJobResponses = action => jobResponseMonitor ? jobResponseMonitor.guard(action) : action()
+const guardJobResponses = action => {
+  const guarded = () => jobResponseMonitor ? jobResponseMonitor.guard(action) : action()
+  return browserHealthMonitor ? browserHealthMonitor.guard(guarded) : guarded()
+}
 let StealthPlugin
 let LaodengPlugin
 let AnonymizeUaPlugin
@@ -647,6 +653,7 @@ async function toRecommendPage (hooks) {
   await page.waitForFunction(() => {
     return document.readyState === 'complete'
   }, { timeout: 30 * 1000, polling: 100 }).catch(() => {
+    if (/^(?:about:blank|chrome-error:|about:neterror)/.test(page.url())) throw taskBrowserError('blank')
     throw bossLoginError({ status: 'unknown', detail: 'BOSS页面未能完成加载，凭证已保留；请检查网络或在浏览器中完成验证' })
   })
   if (isSecurityCheckUrl(page.url())) {
@@ -666,8 +673,10 @@ async function toRecommendPage (hooks) {
     ? { body: { code: 7, message: 'BOSS要求重新登录' }, httpStatus: 401 }
     : await userInfoPromise
   const loginResult = classifyBossLoginResponse(httpStatus, userInfoResponse)
-  if (loginResult.status !== 'valid' && loginResult.status !== 'invalid')
+  if (loginResult.status !== 'valid' && loginResult.status !== 'invalid') {
+    if (/^(?:about:blank|chrome-error:|about:neterror)/.test(page.url())) throw taskBrowserError('blank')
     throw bossLoginError(loginResult)
+  }
   if (loginResult.status === 'valid') {
     await page.waitForFunction(({ recommendJobPageUrl }) => {
       return location.href.startsWith(recommendJobPageUrl) && document.readyState === 'complete'
@@ -1672,6 +1681,7 @@ async function toRecommendPage (hooks) {
             assertCompanyPlatformFilters(computedSourceList[currentSourceIndex], live.row, live.detail, filterCondition)
             if (live.row?.encryptJobId !== targetJobData.jobInfo.encryptId) throw new Error('AUTO_CHAT_COMPANY_SOURCE_NOT_CONFIRMED')
           }
+          beginChatConfirmation(page)
           await clickTaskElement(page, startChatButtonProxy)
 
           const waitAddFriendResponse = async () => {
@@ -1710,6 +1720,7 @@ async function toRecommendPage (hooks) {
               }
             )
             blockBossNotNewChat.add(targetJobData.jobInfo.encryptUserId)
+            finishChatConfirmation(page)
             const rotateSource = countSourceSuccess()
             autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'sent', detail: 'BOSS已确认开聊成功' })
             await storeStorage(page)
@@ -1896,6 +1907,12 @@ async function runBrowserLoop (hooks) {
     browser = launched.browser
     hooks.puppeteerLaunched?.call(browser)
     page = launched.page
+    browserHealthMonitor?.dispose()
+    browserHealthMonitor = watchTaskBrowser(browser, page, { onFailure: error => {
+      runBudget?.fail(error)
+      autoStartChatEventBus.emit('TASK_PROGRESS', { detail: error.detail, state: 'blocked' })
+      if (error.diagnostic) console.debug('BOSS_BROWSER_DIAGNOSTIC', JSON.stringify(error.diagnostic))
+    } })
     jobRequestBudgetMonitor?.dispose()
     jobRequestBudgetMonitor = await attachJobRequestBudget(page, runBudget)
     jobResponseMonitor?.dispose()
@@ -1946,7 +1963,7 @@ async function runBrowserLoop (hooks) {
       blockBossNotActive,
       blockBossNotNewChat
     })
-    await toRecommendPage(hooks)
+    await browserHealthMonitor.guard(() => toRecommendPage(hooks))
     // goto search
 
     // ;await browser.close()
@@ -1995,6 +2012,8 @@ async function waitForVerification () {
 export function closeBrowserWindow () {
   if (browserClosing) return browserClosing
   try { runBudget?.pause() } catch { /* The stopped budget is saved independently. */ }
+  browserHealthMonitor?.dispose()
+  browserHealthMonitor = null
   jobRequestBudgetMonitor?.dispose()
   jobRequestBudgetMonitor = null
   jobResponseMonitor?.dispose()
