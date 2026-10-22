@@ -4,6 +4,10 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { requiredPlatforms } from './validate-package-reports.mjs'
 
+// Publication maintenance may advance after testing; application and build inputs cannot.
+const publicationFiles = new Set(['.github/workflows/publish-validated-release.yml',
+  'scripts/release/verify-publication.mjs', 'scripts/ci/tests/publication.test.mjs'])
+
 export async function verifyPublication({ request, repository, ref, workflowSha, sha, runId }) {
   assert.match(repository, /^[\w.-]+\/[\w.-]+$/)
   for (const hash of [workflowSha, sha]) assert.match(hash, /^[a-f\d]{40}$/)
@@ -15,7 +19,9 @@ export async function verifyPublication({ request, repository, ref, workflowSha,
   assert.equal(branch.commit.sha, workflowSha, 'Default branch moved; validate its current revision first')
   const comparison = await request(base + '/compare/' + sha + '...' + workflowSha)
   assert.equal(comparison.merge_base_commit.sha, sha, 'Candidate is not merged into the default branch')
-  assert.deepEqual(comparison.files, [], 'Default branch must have the identical validated source tree')
+  assert.ok(comparison.files.every(file => publicationFiles.has(file.filename) &&
+    (!file.previous_filename || publicationFiles.has(file.previous_filename))),
+  'Application or build inputs changed after candidate validation')
   const checks = await request(base + '/commits/' + workflowSha + '/check-runs?per_page=100')
   assert.ok(checks.check_runs.some(check => check.name === 'checks / Quality gate' &&
     check.app?.slug === 'github-actions' && check.status === 'completed' && check.conclusion === 'success'), 'Default branch Quality gate is required')
