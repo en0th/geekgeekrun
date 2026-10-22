@@ -4,7 +4,8 @@ const listPaths = new Set([
   '/wapi/zpgeek/search/joblist.json',
   '/wapi/zpgeek/pc/recommend/job/list.json'
 ])
-const scopeFields = ['query', 'city', 'salary', 'experience', 'degree', 'industry', 'scale', 'jobType', 'position', 'expectId', 'jobExpectId', 'sort']
+const scopeFields = ['query', 'city', 'salary', 'experience', 'degree', 'industry', 'scale', 'jobType', 'position', 'expectId', 'jobExpectId', 'sort',
+  'brandId', 'encryptBrandId', 'companyId', 'encryptCompanyId']
 const scopeValue = value => [...new Set((Array.isArray(value) ? value : String(value ?? '').split(','))
   .map(String).map(value => value.trim()).filter(value => value && value !== '0'))].sort().join(',')
 
