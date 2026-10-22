@@ -163,6 +163,7 @@ export const markAsNotSuitOpOptions: RunDataEnumOption[] = [
 ]
 
 export const jobSourceOptions: RunDataEnumOption[] = [
+  { value: 4, label: '公司品牌岗位' },
   { value: 1, label: '期望职位' },
   { value: 2, label: '推荐职位' },
   { value: 3, label: '搜索' }

@@ -188,3 +188,34 @@ test('daily salaries round trip through the production import and query engine',
     assert.deepEqual([legacy.salaryLow, legacy.salaryHigh, legacy.salaryMonth, legacy.salaryUnit], [10, 20, 13, 'month'])
   } finally { await ds.destroy() }
 })
+
+test('company-scoped storage ignores unrelated preloads and saves only explicit reviewed or accepted details', { skip }, async () => {
+  const { EventEmitter } = require('node:events')
+  const Plugin = require('../dist/index.js').default
+  const { JobInfo } = require('../dist/entity/JobInfo.js')
+  for (const collectOnlyMatched of [false, true]) {
+    const plugin = new Plugin(':memory:', { captureNetworkDetails: false, collectOnlyMatched })
+    plugin.runRecordId = 99
+    const ds = await plugin.initPromise; ds.setOptions({ logging: false })
+    try {
+      const events = hooks(), page = new EventEmitter()
+      plugin.apply(events); events.pageGotten.call(page)
+      const detail = { jobInfo: { encryptId: 'company-job', encryptUserId: 'boss', jobName: '工程师',
+        positionName: '软件开发', degreeName: '本科', experienceName: '1-3年', postDescription: '岗位说明', salaryDesc: '10-20K' },
+        bossInfo: { name: '示例招聘者', title: 'HR', activeTimeDesc: '今日活跃' },
+        brandComInfo: { encryptBrandId: 'company-brand', brandName: '示例公司', customerBrandName: '示例公司',
+          scaleName: '100-499人', industryName: '互联网', stageName: 'A轮', labels: [] } }
+      assert.equal(page.listenerCount('response'), 0)
+      page.emit('response', { url: () => 'https://www.zhipin.com/wapi/zpgeek/job/detail.json', json: async () => ({ code: 0,
+        zpData: { ...detail, jobInfo: { ...detail.jobInfo, encryptId: 'unrelated-preload' } } }) })
+      assert.equal(await ds.getRepository(JobInfo).count(), 0)
+      await events.jobDetailIsGetFromRecommendList.promise(structuredClone(detail))
+      assert.equal(await ds.getRepository(JobInfo).count(), collectOnlyMatched ? 0 : 1)
+      if (collectOnlyMatched) await events.jobMatchedForCollection.promise(structuredClone(detail))
+      assert.equal(await ds.getRepository(JobInfo).count(), 1)
+      assert.equal(ds.driver.databaseConnection.prepare('SELECT count(*) AS n FROM job_run_observation WHERE runRecordId=99').get().n, 1)
+      assert.equal(ds.driver.databaseConnection.prepare('SELECT count(*) AS n FROM chat_startup_log').get().n, 0)
+      assert.equal(ds.driver.databaseConnection.prepare('SELECT count(*) AS n FROM mark_as_not_suit_log').get().n, 0)
+    } finally { await ds.destroy() }
+  }
+})

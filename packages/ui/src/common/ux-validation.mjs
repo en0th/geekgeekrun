@@ -50,7 +50,9 @@ export function normalizeCache(value) {
       d.sourceList.every(
         (s) =>
           s &&
-          ["search", "expect", "recommend"].includes(s.type) &&
+          ["search", "expect", "recommend", "company"].includes(s.type) &&
+          (s.type !== 'company' || (Array.isArray(s.children) && s.children.every(c => c && typeof c.brandId === 'string' &&
+            (c.keyword === undefined || typeof c.keyword === 'string')))) &&
           (s.type !== "search" ||
             (Array.isArray(s.children) &&
               s.children.every((c) => c && typeof c.keyword === "string"))),

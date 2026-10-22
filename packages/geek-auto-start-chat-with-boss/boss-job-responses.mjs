@@ -1,11 +1,13 @@
 import { classifyBossLoginResponse, bossLoginError } from '@geekgeekrun/utils/boss-login.mjs'
+import { isCompanyJobsDocument } from './company-source.mjs'
 
 const listPaths = new Set([
   '/wapi/zpgeek/search/joblist.json',
-  '/wapi/zpgeek/pc/recommend/job/list.json'
+  '/wapi/zpgeek/pc/recommend/job/list.json',
+  '/wapi/zpgeek/brand/job/querylist.json'
 ])
 const scopeFields = ['query', 'city', 'salary', 'experience', 'degree', 'industry', 'scale', 'jobType', 'position', 'expectId', 'jobExpectId', 'sort',
-  'brandId', 'encryptBrandId', 'companyId', 'encryptCompanyId']
+  'brandId', 'encryptBrandId', 'companyId', 'encryptCompanyId', 'positionLv1']
 const scopeValue = value => [...new Set((Array.isArray(value) ? value : String(value ?? '').split(','))
   .map(String).map(value => value.trim()).filter(value => value && value !== '0'))].sort().join(',')
 
@@ -64,7 +66,12 @@ export function watchJobResponses(page, { bodyTimeoutMs = 15000, onBlocked = () 
   }
   function onResponse(response) {
     const kind = jobResponseKind(response.url())
-    if (disposed || !kind) return
+    if (disposed) return
+    if (!kind) {
+      if (isCompanyJobsDocument(response.url()) && [401, 403, 429].includes(response.status()))
+        block(classifyJobResponse(response.status(), null))
+      return
+    }
     if ([401, 403, 429].includes(response.status())) {
       block(classifyJobResponse(response.status(), null, kind))
       return
@@ -115,7 +122,9 @@ export function watchJobResponses(page, { bodyTimeoutMs = 15000, onBlocked = () 
               const lastPage = latestList.page
               const consecutive = Number.isSafeInteger(lastPage) && lastPage > 0 &&
                 listPages.size === lastPage && [...listPages.keys()].every(page => page >= 1 && page <= lastPage)
-              latestList.ids = consecutive ? [...listPages].sort(([a], [b]) => a - b).flatMap(([, ids]) => ids) : null
+              latestList.ids = path === '/wapi/zpgeek/brand/job/querylist.json'
+                ? listPages.get(lastPage) || null
+                : consecutive ? [...listPages].sort(([a], [b]) => a - b).flatMap(([, ids]) => ids) : null
             }
             onListResponse({ path, page: pageNumber,
               query: parameters.query ?? null, city: parameters.city ?? null,
@@ -127,6 +136,9 @@ export function watchJobResponses(page, { bodyTimeoutMs = 15000, onBlocked = () 
           } catch { /* Observability must not change response validation. */ }
         }
         if (!['available', 'empty'].includes(result.status)) block(result)
+        else if (kind === 'list' && listRequest?.path === '/wapi/zpgeek/brand/job/querylist.json' &&
+          (!listRequest.parameters.brandId || body.zpData.jobList.some(row => !row?.encryptJobId || row.encryptBrandId !== listRequest.parameters.brandId)))
+          block({ status: 'unknown', detail: '公司列表包含无法确认归属的岗位，任务已暂停' })
         // A response header can arrive while filters are being applied, then finish
         // decoding after readiness has armed the new scope. Use the current rule.
         else if (kind === 'list' && expectedList && !expectedList(response.request?.()))

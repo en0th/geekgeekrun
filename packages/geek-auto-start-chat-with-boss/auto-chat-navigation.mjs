@@ -29,6 +29,11 @@ export class NoMatchBatchGuard {
 }
 export async function readListSnapshot(page) {
   return page.evaluate(() => {
+    const root = document.querySelector('.page-company-position')?.__vue__
+    const company = Array.isArray(root?.jobList) ? root : root?.$children?.find(child => Array.isArray(child.jobList))
+    if (company && Array.isArray(company.jobList)) return { ids: company.jobList.map(row => row.encryptJobId),
+      hasMore: typeof company.brandJobInfo?.hasMore === 'boolean' ? company.brandJobInfo.hasMore : company.currentPage * company.pageSize < company.totalCount,
+      mode: 'paged', page: company.currentPage, brandId: company.encryptBrandId, loading: !!company.jobLoading, loggedIn: company.$store?.getters?.isLogin === true }
     const view = document.querySelector('.page-jobs-main')?.__vue__
     if (!Array.isArray(view?.jobList) || typeof view.hasMore !== 'boolean') return null
     return { ids: view.jobList.map(row => row.encryptJobId), hasMore: view.hasMore }
@@ -38,8 +43,26 @@ export async function loadNextJobBatch({ page, list, timeoutMs = 15000, pause = 
   await checkResponses()
   const before = await readListSnapshot(page)
   if (!before) throw new Error('AUTO_CHAT_LIST_STALLED')
+  if (before.mode === 'paged' && !before.loggedIn) throw new Error('AUTO_CHAT_COMPANY_SOURCE_NOT_CONFIRMED')
   if (!before.hasMore) return { hasMore: false }
   const known = new Set(before.ids)
+  if (before.mode === 'paged') {
+    await page.evaluate(({ brandId, nextPage }) => {
+      const root = document.querySelector('.page-company-position')?.__vue__
+      const v = Array.isArray(root?.jobList) ? root : root?.$children?.find(child => Array.isArray(child.jobList))
+      if (v?.encryptBrandId !== brandId || typeof v.onCurrentPageChange !== 'function') throw Error('AUTO_CHAT_COMPANY_SOURCE_NOT_CONFIRMED')
+      v.onCurrentPageChange(nextPage)
+    }, { brandId: before.brandId, nextPage: before.page + 1 })
+    const deadline = now() + timeoutMs
+    while (now() < deadline) {
+      await pause(100)
+      await checkResponses()
+      const next = await readListSnapshot(page)
+      if (!next || !next.loggedIn || next.brandId !== before.brandId) throw new Error('AUTO_CHAT_COMPANY_SOURCE_NOT_CONFIRMED')
+      if (!next.loading && next.page === before.page + 1 && (next.ids.some(id => id && !known.has(id)) || !next.hasMore)) return next
+    }
+    throw new Error('AUTO_CHAT_LIST_STALLED')
+  }
   const box = await list.boundingBox()
   if (!box) throw new Error('AUTO_CHAT_LIST_STALLED')
   const height = await page.evaluate('window.innerHeight')
@@ -73,7 +96,9 @@ export async function openJobCardForReview({ page, list, index, jobId, timeoutMs
   }
   try {
     const ready = await page.waitForFunction(expectedId => {
-      const selected = document.querySelector('.page-jobs-main')?.__vue__?.currentJob
+      const root = document.querySelector('.page-company-position')?.__vue__
+      const company = Array.isArray(root?.jobList) ? root : root?.$children?.find(child => Array.isArray(child.jobList))
+      const selected = (document.querySelector('.page-jobs-main')?.__vue__ || company)?.currentJob
       const detail = document.querySelector('.job-detail-box')?.__vue__?.data
       return String(selected?.encryptJobId || selected?.encryptId || '') === String(expectedId) &&
         String(detail?.jobInfo?.encryptId || '') === String(expectedId)

@@ -28,7 +28,7 @@ export function jobComparisonScope(config) {
   boss.jobSourceList = normalizeJobSources(boss.jobSourceList)
   // Recommendation/expectation sources also depend on mutable platform-side
   // preferences. The local config cannot prove their complete query identity.
-  if (!boss.jobSourceList.length || boss.jobSourceList.some(source => source.type !== 'search')) return null
+  if (!boss.jobSourceList.length || boss.jobSourceList.some(source => !['search', 'company'].includes(source.type))) return null
   boss.autoChatRunMode = settings.runMode
   boss.collectOnlyMatchingJobs = settings.collectOnlyMatchingJobs
   const scope = canonical({ boss, common: config['common-job-condition-config.json'],

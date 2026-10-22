@@ -37,6 +37,7 @@ export enum JobSource {
   expect = 1,
   recommend = 2,
   search = 3,
+  company = 4,
 }
 
 export enum CombineRecommendJobFilterType {

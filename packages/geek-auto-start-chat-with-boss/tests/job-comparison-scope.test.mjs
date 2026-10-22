@@ -46,3 +46,17 @@ test('implicit recommendations cannot claim a complete search identity from loca
   a['boss.json'].jobSourceList.push({ type: 'expect', enabled: true })
   assert.equal(jobComparisonScope(a), null)
 })
+
+test('company comparison binds to brand and company keyword while ignoring presentation labels and URL tracking', () => {
+  const a = config(), b = config(), brand = '0123456789abcdef1nRz'
+  a['boss.json'].jobSourceList = [{ type: 'company', enabled: true, children: [{ enabled: true, brandId: brand, keyword: 'Java' }] }]
+  b['boss.json'].jobSourceList = [{ type: 'company', enabled: true, children: [{ enabled: true,
+    brandId: `https://www.zhipin.com/gongsi/${brand}.html?ka=tracking`, keyword: ' Java ', label: '备注' }] }]
+  assert.match(jobComparisonScope(a), /^v1:/)
+  assert.equal(jobComparisonScope(a), jobComparisonScope(b))
+  b['boss.json'].jobSourceList[0].children[0].brandId = 'fedcba98765432101nRz'
+  assert.notEqual(jobComparisonScope(a), jobComparisonScope(b))
+  b['boss.json'].jobSourceList[0].children[0].brandId = brand
+  b['boss.json'].jobSourceList[0].children[0].keyword = 'Python'
+  assert.notEqual(jobComparisonScope(a), jobComparisonScope(b))
+})
