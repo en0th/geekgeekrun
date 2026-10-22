@@ -1654,15 +1654,6 @@ async function toRecommendPage (hooks) {
             hooks
           })
           await sleepWithRandomDelay(1000)
-          if (computedSourceList[currentSourceIndex].type === 'company') {
-            const live = await page.evaluate(() => {
-              const root = document.querySelector('.page-company-position')?.__vue__
-              const v = Array.isArray(root?.jobList) ? root : root?.$children?.find(child => Array.isArray(child.jobList))
-              return { row: v?.currentJob, detail: document.querySelector('.job-detail-box')?.__vue__?.data }
-            })
-            assertCompanyPlatformFilters(computedSourceList[currentSourceIndex], live.row, live.detail, filterCondition)
-            if (live.row?.encryptJobId !== targetJobData.jobInfo.encryptId) throw new Error('AUTO_CHAT_COMPANY_SOURCE_NOT_CONFIRMED')
-          }
           const startChatButtonInnerHTML = await page.evaluate('document.querySelector(".job-detail-box .op-btn.op-btn-chat")?.innerHTML.trim()')
 
           await hooks.newChatWillStartup?.promise(targetJobData)
@@ -1672,6 +1663,15 @@ async function toRecommendPage (hooks) {
           //#region click the chat button
           await checkJobResponses()
           runBudget?.checkpoint()
+          if (computedSourceList[currentSourceIndex].type === 'company') {
+            const live = await page.evaluate(() => {
+              const root = document.querySelector('.page-company-position')?.__vue__
+              const v = Array.isArray(root?.jobList) ? root : root?.$children?.find(child => Array.isArray(child.jobList))
+              return { row: v?.currentJob, detail: document.querySelector('.job-detail-box')?.__vue__?.data }
+            })
+            assertCompanyPlatformFilters(computedSourceList[currentSourceIndex], live.row, live.detail, filterCondition)
+            if (live.row?.encryptJobId !== targetJobData.jobInfo.encryptId) throw new Error('AUTO_CHAT_COMPANY_SOURCE_NOT_CONFIRMED')
+          }
           await clickTaskElement(page, startChatButtonProxy)
 
           const waitAddFriendResponse = async () => {

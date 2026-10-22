@@ -245,3 +245,23 @@ test('a confirmed empty company combination advances the shipped filter loop wit
   assert.deepEqual(inspected, [])
   assert.equal(progress.filter(item => item.detail?.includes('没有岗位')).length, 2)
 })
+
+test('the shipped final click rechecks company and job after the last asynchronous checkpoint', async t => {
+  const code = fs.readFileSync(new URL('../index.mjs', import.meta.url), 'utf8')
+  const start = code.indexOf('          await checkJobResponses()', code.indexOf('          const sourceUrlBeforeGreet ='))
+  const end = code.indexOf('          const waitAddFriendResponse =', start)
+  assert.ok(start > 0 && end > start)
+  for (const mode of ['changed-brand', 'changed-job', 'same']) {
+    const f = fixture(t, { wrapped: true }); let clicks = 0
+    const context = { page: f.page, computedSourceList: [source], currentSourceIndex: 0, filterCondition: {},
+      targetJobData: detail('first'), runBudget: null, assertCompanyPlatformFilters, startChatButtonProxy: {},
+      checkJobResponses: async () => {
+        if (mode === 'changed-brand') f.view.currentJob = row('first', other)
+        if (mode === 'changed-job') { f.view.currentJob = row('different'); f.view.jobDetail = detail('different') }
+      }, clickTaskElement: async () => { clicks++ },
+    }
+    const run = () => vm.runInNewContext('(async () => {' + code.slice(start, end) + '})()', context)
+    if (mode === 'same') { await run(); assert.equal(clicks, 1) }
+    else { await assert.rejects(run(), /COMPANY_SOURCE_NOT_CONFIRMED/); assert.equal(clicks, 0) }
+  }
+})
