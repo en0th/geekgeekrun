@@ -50,9 +50,10 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ${{ inputs.artifact_prefix }}-node-regression-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .ci-reports/*.xml
+          path: .ci-reports/regression.xml
+          include-hidden-files: true
           retention-days: 14
-          if-no-files-found: warn
+          if-no-files-found: error
 
   electron_native:
     name: Electron native SQLite
@@ -79,9 +80,10 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ${{ inputs.artifact_prefix }}-electron-native-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .ci-reports/*.xml
+          path: .ci-reports/electron-native.xml
+          include-hidden-files: true
           retention-days: 14
-          if-no-files-found: warn
+          if-no-files-found: error
 
   windows_checks:
     name: Windows host validation
@@ -121,9 +123,14 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ${{ inputs.artifact_prefix }}-windows-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .ci-reports/*
+          path: |
+            .ci-reports/regression.xml
+            .ci-reports/electron-native.xml
+            .ci-reports/browser-smoke.json
+            .ci-reports/electron-stop-smoke.json
+          include-hidden-files: true
           retention-days: 14
-          if-no-files-found: warn
+          if-no-files-found: error
 
   quality_gate:
     name: Quality gate

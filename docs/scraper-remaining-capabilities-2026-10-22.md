@@ -50,6 +50,7 @@ Node.js 的 Windows `kill('SIGTERM')` 会强制终止子进程，不执行 POSIX
 - 真实浏览器与预算监听联动验收发现 CDP 会话断开可能先于 Page 关闭事件，补上统一诊断入口。此时没有继续释放动作，也不会将未知发送结果降为普通可恢复暂停。
 - 新增 `Windows host validation`：Windows 2025 上运行两端类型检查、完整 Node 回归、生产构建、真实 Chrome 离线窗口/详情检查/只收集、Electron 原生 SQLite，以及完整 Electron 主进程的 IPC 退出测试。既有 Linux 与 macOS 检查保留。
 - `checks / Quality gate` 同时要求三组成功，Windows 失败、取消或跳过均不能通过。PR、master、合并队列和发布前验证继续调用同一 reusable workflow，报告按平台隔离。
+- 实际 Windows 检查已完成 469 项 Node 回归、31 项 Electron 原生回归、Chrome 155 离线窗口收集和完整 Electron 39 主进程退出。核验时发现上传动作默认忽略隐藏的 `.ci-reports` 目录，已改为允许隐藏文件、仅上传四类明确报告，并在报告缺失时失败；避免“步骤成功但没有验收附件”。
 
 浏览器验收使用临时 profile、内存 SQLite 和两张离线岗位卡片：一条符合实习/学历/品牌/城市/行业/规模条件，另一条被拒绝；只保存一条观察，发送和标记记录均为 0。验证最小化下换卡与岗位 ID 确认、显示同一验证窗口、页面关闭暂停以及结果待确认停止。BOSS 域名被阻断并断言请求数为 0，未读取真实 cookie/localStorage。
 

@@ -45,6 +45,12 @@ test('Windows validates full contracts, native SQLite and real task windows befo
   assert.ok(commands.indexOf('node scripts/ci/browser-smoke.mjs') < commands.findIndex(command => command.includes('install-app-deps')))
   assert.equal(quality.jobs.quality_gate.steps[0].env.WINDOWS_RESULT, '${{ needs.windows_checks.result }}')
   assert.match(quality.jobs.quality_gate.steps[0].run, /WINDOWS_RESULT/)
+  for (const name of ['node_checks', 'electron_native', 'windows_checks']) {
+    const upload = quality.jobs[name].steps.find(step => step.uses?.startsWith('actions/upload-artifact@'))
+    assert.equal(upload.with['include-hidden-files'], true)
+    assert.equal(upload.with['if-no-files-found'], 'error')
+    assert.ok(upload.with.path.trim().split('\n').every(file => /^\.ci-reports\/[a-z-]+\.(xml|json)$/.test(file)))
+  }
 })
 
 test('the full regression command includes configuration durability and task execution contracts', () => {
