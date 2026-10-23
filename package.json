@@ -11,7 +11,12 @@
     "typecheck": "pnpm --filter geekgeekrun-ui typecheck",
     "test": "node scripts/ci/run-tests.mjs",
     "test:ci": "node scripts/ci/run-tests.mjs --require-native",
-    "test:electron": "node scripts/ci/run-tests.mjs --electron"
+    "test:electron": "node scripts/ci/run-tests.mjs --electron",
+    "build:ai": "pnpm --filter @recovered/zhijue-ai-sdk build",
+    "mobile:dev": "pnpm --filter geekgeekrun-mobile dev",
+    "mobile:build": "pnpm build:ai && pnpm --filter geekgeekrun-mobile build",
+    "mobile:test": "pnpm --filter @recovered/zhijue-ai-sdk test && pnpm --filter geekgeekrun-mobile test",
+    "mobile:sync": "pnpm mobile:build && pnpm --filter geekgeekrun-mobile native:sync"
   },
   "author": "geekgeekrun",
   "license": "AGPL-3.0-only",
@@ -36,7 +41,7 @@
     "typescript": "5.3.3"
   },
   "volta": {
-    "node": "20.16.0"
+    "node": "24.22.0"
   },
   "engines": {
     "pnpm": ">=8.15.9 <9.0.0"

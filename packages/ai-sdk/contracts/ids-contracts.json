@@ -1,0 +1,768 @@
+{
+  "schema_version": 1,
+  "source_path": "/Users/abc/Documents/deepseek-harness/zj/HBuilder.app/Pandora/apps/__UNI__49240F0/www/app-service.js",
+  "source_sha256": "85df0d8ca64906e303f261512d32fb695450ec70dcc6862aedcee796533da79e",
+  "scope": "Static ID provenance and explicit SDK mock design. Source facts, unknown server associations, and stricter SDK safeguards are distinct.",
+  "namespaces": [
+    {
+      "name": "AppUserId",
+      "meaning": "App用户资料userId；没有与ZP userId数值等同证据",
+      "evidence_ids": [
+        "SDI034"
+      ]
+    },
+    {
+      "name": "AiConversationId",
+      "meaning": "create_conversation.data.id；普通AI conversation_id/query conversationId",
+      "evidence_ids": [
+        "SDI005"
+      ]
+    },
+    {
+      "name": "AiMessageId",
+      "meaning": "delta add v.id；任务messageId/message_id与任务卡M.id join，parent也属AI消息",
+      "evidence_ids": [
+        "SDI006"
+      ]
+    },
+    {
+      "name": "AiTaskId",
+      "meaning": "具体selector选出的task.id或兼容别名；query taskId",
+      "evidence_ids": [
+        "SDI010"
+      ]
+    },
+    {
+      "name": "AiTaskResultId",
+      "meaning": "result/list行id；flat task_result_id=R.id，read.id=Number(R.id)",
+      "evidence_ids": [
+        "SDI011"
+      ]
+    },
+    {
+      "name": "DailyReportId",
+      "meaning": "by-id query id；不是普通AI messageId",
+      "evidence_ids": [
+        "SDI018"
+      ]
+    },
+    {
+      "name": "PendingResultId",
+      "meaning": "pending响应raw.id，提交时命名为messageId；与某个R.id同一性未知",
+      "evidence_ids": [
+        "SDI024"
+      ]
+    },
+    {
+      "name": "PendingJobId",
+      "meaning": "P.content.job_info/jobInfo.jobId||job_id；不自动当作records.zpJobId",
+      "evidence_ids": [
+        "SDI021"
+      ]
+    },
+    {
+      "name": "PendingBossId",
+      "meaning": "P.content.job_info/jobInfo.bossId||boss_id；不自动等于后续peer",
+      "evidence_ids": [
+        "SDI021"
+      ]
+    },
+    {
+      "name": "DeliveryRecordId",
+      "meaning": "delivery/list行id；不用于IM peer或岗位join",
+      "evidence_ids": [
+        "SDI029"
+      ]
+    },
+    {
+      "name": "DeliveryZpJobId",
+      "meaning": "record.zpJobId/snapshot.jobId按具体优先级取值；与投递输入岗位跨表关系未知",
+      "evidence_ids": [
+        "SDI028"
+      ]
+    },
+    {
+      "name": "RecordBossUid",
+      "meaning": "route初始peer取record.zpBossUid||snapshot.bossId",
+      "evidence_ids": [
+        "SDI031"
+      ]
+    },
+    {
+      "name": "BossPeerUid",
+      "meaning": "ImPage最终currentBossId；可能被二次查询snapshot.bossId覆盖；to.uid",
+      "evidence_ids": [
+        "SDI033"
+      ]
+    },
+    {
+      "name": "ZpUserId",
+      "meaning": "H5 token response.userId -> authInfo.zpUserId -> from.uid",
+      "evidence_ids": [
+        "SDI034"
+      ]
+    },
+    {
+      "name": "BossClientMessageId",
+      "meaning": "主动发送clientMid/tempID；真正wire mid=cmid=tempID",
+      "evidence_ids": [
+        "SDI040"
+      ]
+    },
+    {
+      "name": "BossServerMessageId",
+      "meaning": "扩展PUBACK.mid或history.mid；不从P/M/T/R生成",
+      "evidence_ids": [
+        "SDI041"
+      ]
+    },
+    {
+      "name": "MqttPacketId",
+      "meaning": "messageIdentifier，两字节传输ID，先关联原PUBLISH",
+      "evidence_ids": [
+        "SDI045"
+      ]
+    },
+    {
+      "name": "BossLocatorMessageId",
+      "meaning": "route.msgId用于定位已有消息；不生成新cmid",
+      "evidence_ids": [
+        "SDI058"
+      ]
+    },
+    {
+      "name": "LocalAiConnectionId",
+      "meaning": "ni()默认21字符随机本地scope键，body不发送",
+      "evidence_ids": [
+        "SDI054"
+      ]
+    },
+    {
+      "name": "LocalAiConversationKey",
+      "meaning": "local_<connectionId>在创建真实C之前用作本地消息map键",
+      "evidence_ids": [
+        "SDI053"
+      ]
+    },
+    {
+      "name": "AiRoundId",
+      "meaning": "retry选择origin user/assistant轮次使用round_id；不是通用message/task或IM ID转换",
+      "evidence_ids": [
+        "SDI055"
+      ]
+    },
+    {
+      "name": "JobUiRowId",
+      "meaning": "workspace W.id用于UI选择/去重，可能优先encryptId再jobId/id；不是结果R.id",
+      "evidence_ids": [
+        "SDI056"
+      ]
+    },
+    {
+      "name": "RecommendationSessionId",
+      "meaning": "job sessionId/session_id用于recId/归因，不当作AI conversation或BOSS chatId",
+      "evidence_ids": [
+        "SDI057"
+      ]
+    },
+    {
+      "name": "MqttClientId",
+      "meaning": "Yje配置的dhh5-随机16位十六进制；不是peer UID/cmid/packetId",
+      "evidence_ids": [
+        "SDI060"
+      ]
+    }
+  ],
+  "namespace_boundary": "These labels separate client provenance and usage; they do not prove distinct backend SQL tables or that real numbers can never coincide. Fixture gives different values deliberately.",
+  "confirmed_or_conditional_client_edges": [
+    {
+      "from": "create_conversation.data.id",
+      "to": "C",
+      "kind": "client_normalization",
+      "transform": "positive safe integer via Gh/Sc",
+      "evidence_ids": [
+        "SDI005"
+      ]
+    },
+    {
+      "from": "delta(o=add).v.id",
+      "to": "server AI message.id",
+      "kind": "client_copy",
+      "transform": "message reducer accepts truthy id; SDK must retain source namespace",
+      "evidence_ids": [
+        "SDI006"
+      ]
+    },
+    {
+      "from": "task.messageId||message_id",
+      "to": "M.id",
+      "kind": "client_join_predicate",
+      "transform": "Number(left||0)===Number(right)",
+      "evidence_ids": [
+        "SDI009",
+        "SDI010"
+      ]
+    },
+    {
+      "from": "selected task.id",
+      "to": "result/list query.taskId",
+      "kind": "client_request",
+      "transform": "workspace primary id selector; hydration alias selector differs",
+      "evidence_ids": [
+        "SDI010",
+        "SDI011"
+      ]
+    },
+    {
+      "from": "R.id",
+      "to": "flat jobPart.task_result_id",
+      "kind": "client_copy",
+      "transform": "raw unchanged; nested jobs can lose outer R.id",
+      "evidence_ids": [
+        "SDI011",
+        "SDI012"
+      ]
+    },
+    {
+      "from": "raw.task_result_id||taskResultId||raw.id",
+      "to": "result/read body.id",
+      "kind": "conditional_client_request",
+      "transform": "Number(...||0); only explicit flat path proves Number(R.id)",
+      "evidence_ids": [
+        "SDI013"
+      ]
+    },
+    {
+      "from": "M.id + selected job IDs",
+      "to": "hidden agent_job_chat part.message_id + job_ids",
+      "kind": "client_copy",
+      "transform": "does not send task/result/pending ID or mode; top-level parent/cid determined separately",
+      "evidence_ids": [
+        "SDI014",
+        "SDI015",
+        "SDI004"
+      ]
+    },
+    {
+      "from": "D",
+      "to": "daily-report/by-id query.id",
+      "kind": "client_request",
+      "transform": "separate report lookup",
+      "evidence_ids": [
+        "SDI018",
+        "SDI024"
+      ]
+    },
+    {
+      "from": "detail.pendingConfirmedTaskResultIdList",
+      "to": "pending-delivery-jobs query.ids",
+      "kind": "client_request",
+      "transform": "join(\",\"); no per-item equality check on returned P.id",
+      "evidence_ids": [
+        "SDI019",
+        "SDI024"
+      ]
+    },
+    {
+      "from": "P.raw.id",
+      "to": "sendConfirmedResume.body.messageId",
+      "kind": "client_request",
+      "transform": "P.raw.id ? Number(P.raw.id) : undefined; source lacks finite/safe integer validation",
+      "evidence_ids": [
+        "SDI024"
+      ]
+    },
+    {
+      "from": "P.content.job_info||jobInfo",
+      "to": "sendConfirmedResume.body.jobDetail",
+      "kind": "client_normalization",
+      "transform": "Rmt; preflight Mmt requires Number(jobId)>0 && Number(bossId)>0",
+      "evidence_ids": [
+        "SDI021",
+        "SDI022"
+      ]
+    },
+    {
+      "from": "job IDs in workspace rows",
+      "to": "delivery/listByJobIds body.ids",
+      "kind": "client_request",
+      "transform": "response status map key Number(row.jobSnapshot.jobId), value row.status",
+      "evidence_ids": [
+        "SDI016"
+      ]
+    },
+    {
+      "from": "record.zpJobId||snapshot.jobId",
+      "to": "records enrichment join key S",
+      "kind": "client_join_predicate",
+      "transform": "positive finite Number keys; matching responseRow S only replaces snapshot",
+      "evidence_ids": [
+        "SDI028",
+        "SDI029"
+      ]
+    },
+    {
+      "from": "record.zpBossUid||snapshot.bossId",
+      "to": "route.friendId",
+      "kind": "client_copy",
+      "transform": "Number; initial peer only",
+      "evidence_ids": [
+        "SDI031",
+        "SDI032"
+      ]
+    },
+    {
+      "from": "snapshot.jobId??record.zpJobId",
+      "to": "route.jobId",
+      "kind": "client_copy",
+      "transform": "Number, different priority from record join S",
+      "evidence_ids": [
+        "SDI031"
+      ]
+    },
+    {
+      "from": "route.friendId",
+      "to": "ImPage.currentBossId initial",
+      "kind": "client_copy",
+      "transform": "Number(route.friendId)||0; optional job lookup may override",
+      "evidence_ids": [
+        "SDI043"
+      ]
+    },
+    {
+      "from": "lookup firstRow.jobSnapshot.bossId??row.zpBossUid",
+      "to": "ImPage.currentBossId final",
+      "kind": "conditional_client_copy",
+      "transform": "ge=Number(...); only ge<=0 rejects here; no finite/safeInteger check. NaN can assign then later !currentBossId fails; no source check first row belongs requested jobId",
+      "evidence_ids": [
+        "SDI033"
+      ]
+    },
+    {
+      "from": "currentBossId",
+      "to": "store.userInfo.zpUid -> peer.uid -> TechwolfMessage.to.uid",
+      "kind": "client_copy",
+      "transform": "direct active setter chain; route friendSource is not propagated by this store path",
+      "evidence_ids": [
+        "SDI037",
+        "SDI038",
+        "SDI039",
+        "SDI040"
+      ]
+    },
+    {
+      "from": "token/h5 response.userId",
+      "to": "authInfo.zpUserId -> TechwolfMessage.from.uid",
+      "kind": "client_copy",
+      "transform": "Number then active factory setter",
+      "evidence_ids": [
+        "SDI034",
+        "SDI040"
+      ]
+    },
+    {
+      "from": "lastMsgId+Date.now()",
+      "to": "clientMid -> tempID -> wire.mid/cmid",
+      "kind": "client_generation",
+      "transform": "factory uses tempID; intermediate random mid/cmid is not active wire source",
+      "evidence_ids": [
+        "SDI038",
+        "SDI039",
+        "SDI040"
+      ]
+    },
+    {
+      "from": "ACK.messageIdentifier",
+      "to": "original PUBLISH",
+      "kind": "client_transport_join",
+      "transform": "_sentMessages[packetId]",
+      "evidence_ids": [
+        "SDI045"
+      ]
+    },
+    {
+      "from": "truthy ACK.cmid",
+      "to": "pending timer/offline cleanup key",
+      "kind": "client_cleanup_key",
+      "transform": "source does not compare ACK.cmid to original message.cmid",
+      "evidence_ids": [
+        "SDI046"
+      ]
+    },
+    {
+      "from": "ACK.mid",
+      "to": "SDK delivery event original message.mid",
+      "kind": "client_copy",
+      "transform": "replace mid, preserve original message.cmid; Xje UI only sets status=1",
+      "evidence_ids": [
+        "SDI046",
+        "SDI038"
+      ]
+    }
+  ],
+  "unknown_edges": [
+    {
+      "from": "R.id",
+      "to": "specific P.id",
+      "status": "unknown server association",
+      "rule": "Require explicit caller runtime association; never cast/copy R.id to confirmation messageId."
+    },
+    {
+      "from": "R.taskId",
+      "to": "requested T",
+      "status": "not validated by client",
+      "rule": "May validate returned taskId when present, otherwise keep provenance; absence is not equality proof."
+    },
+    {
+      "from": "hidden agent_job_chat logical DONE",
+      "to": "pending row creation / delivery",
+      "status": "unknown server workflow",
+      "rule": "DONE is SSE completion only; query independently and require runtime association."
+    },
+    {
+      "from": "pending ids=L",
+      "to": "returned P.id",
+      "status": "client lacks output membership check",
+      "rule": "Do not assume request/order proves every returned row identity."
+    },
+    {
+      "from": "confirm input P/J/B",
+      "to": "later delivery record/zpJobId/zpBossUid",
+      "status": "unknown backend persistence/mapping",
+      "rule": "Independent GET plus explicit selectDeliveryRecordForConfirmation callback."
+    },
+    {
+      "from": "confirmation raw.response",
+      "to": "BOSS conversation/peer/clientMid",
+      "status": "no client dataflow",
+      "rule": "Confirmation caller consumes only code/message/result.status/statusMessage; no automatic IM send."
+    },
+    {
+      "from": "App userId",
+      "to": "Zp userId",
+      "status": "no equality proof",
+      "rule": "Fetch IM credentials separately; never use App identity as from.uid."
+    },
+    {
+      "from": "AI C/M/T/R/P",
+      "to": "BOSS cmid/mid/packetId",
+      "status": "no equality proof",
+      "rule": "New IM generation and ACK namespaces are independent."
+    }
+  ],
+  "runtime_callbacks": [
+    {
+      "name": "selectPendingForAiResult",
+      "required_before": "confirmDelivery",
+      "input": "{C,M,T,R,independentlyFetchedPendingRows,accountScope}",
+      "return": "A chosen pending raw row P plus caller supplied runtime provenance; fields remain open. Not a server response type.",
+      "closed_without_callback": true,
+      "unknown_edge": "R.id -> P.id",
+      "forbidden": "Return/cast R as P merely because both contain id/job_info."
+    },
+    {
+      "name": "selectDeliveryRecordForConfirmation",
+      "required_before": "continueBossChat",
+      "input": "{confirmationInputP,jobDetail,confirmationOutcome,independentlyFetchedDeliveryRows,accountScope}",
+      "return": "A chosen delivery record row plus runtime provenance; no invented confirm-response recordId/chatId field.",
+      "closed_without_callback": true,
+      "unknown_edge": "confirmation(P,J,B) -> record"
+    },
+    {
+      "name": "verifyPeerLookupForJob",
+      "required_before": "optional strict SDK peer override",
+      "input": "{requestedDeliveryJobId,lookupRows,initialPeer,accountScope}",
+      "return": "Verified row/peer or explicit runtime attestation; do not accept an unrelated first row silently.",
+      "closed_without_callback_if_unverifiable": true,
+      "source_boundary": "App only takes first row and does not validate job membership; this SDK check is stricter design."
+    }
+  ],
+  "confirmation_contract": {
+    "operation": "partnersZpGeekSendConfirmedResumePost",
+    "method": "POST",
+    "path": "/wapi/partners/zp/geek/sendConfirmedResume",
+    "body": {
+      "messageId": "P.raw.id?Number(P.raw.id):undefined",
+      "jobDetail": {
+        "jobId": "Number(jobInfo.jobId||jobInfo.job_id)||undefined",
+        "bossId": "Number(jobInfo.bossId||jobInfo.boss_id)||undefined",
+        "title": "String(jobInfo.title||\"\").trim()",
+        "brand": "String(jobInfo.brand||\"\").trim()",
+        "salary": "String(jobInfo.salary||\"\").trim()",
+        "cityName": "String(jobInfo.cityName||\"\").trim()",
+        "experienceName": "String(jobInfo.experienceName||\"\").trim()",
+        "degreeName": "String(jobInfo.degreeName||\"\").trim()",
+        "description": "String(jobInfo.description||\"\").trim()",
+        "companyStage": "String(jobInfo.companyStage||\"\").trim()",
+        "companyScale": "String(jobInfo.companyScale||\"\").trim()",
+        "industryName": "String(jobInfo.industryName||\"\").trim()",
+        "jobUrl": "String(jobInfo.jobUrl||\"\").trim()",
+        "skills": "Array.isArray(skills)?skills.filter(Boolean):[]",
+        "welfare": "Array.isArray(welfare)?welfare.filter(Boolean):[]",
+        "positionName": "String(jobInfo.positionName||jobInfo.title||\"\").trim()",
+        "activeTime": "Number(jobInfo.activeTime||jobInfo.actTime)||undefined"
+      }
+    },
+    "client_preflight": "selected snapshot nonempty and all jobDetail.jobId/bossId Number>0; no finite/safeInteger guard on messageId",
+    "options": {
+      "returnEnvelope": true,
+      "hideErrorToast": true
+    },
+    "consumed_response": [
+      "code",
+      "message",
+      "result.status",
+      "result.statusMessage"
+    ],
+    "success": "raw.code===0 && status in [ADD_FRIEND,DELIVERED]",
+    "not_sent": [
+      "taskId",
+      "task_result_id",
+      "conversationId",
+      "roundId",
+      "BOSS mid",
+      "BOSS cmid",
+      "attachmentId"
+    ],
+    "evidence_ids": [
+      "SDI021",
+      "SDI022",
+      "SDI024",
+      "SDI025"
+    ]
+  },
+  "pending_queries": [
+    {
+      "method": "GET",
+      "path": "/wapi/partners/v2/chat/result/recentAiPendingDelivery",
+      "query": "only finite positive startTime/endTime when provided; no implicit last24h default in page loader",
+      "response_consumed": "direct array or result array -> raw P; no membership/status/id validation at loader",
+      "evidence_ids": [
+        "SDI017",
+        "SDI023",
+        "SDI024"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/wapi/partners/v2/daily-report/by-id",
+      "query": {
+        "id": "valid reportId D"
+      },
+      "response_consumed": "detail.pendingConfirmedTaskResultIdList ?? []",
+      "then": {
+        "method": "GET",
+        "path": "/wapi/partners/v2/daily-report/pending-delivery-jobs",
+        "query": {
+          "ids": "L.join(\",\")"
+        }
+      },
+      "boundary": "reportId wins over time branch; UI filtered list is not the fresh by-id list; no returned P.id membership test",
+      "evidence_ids": [
+        "SDI018",
+        "SDI019",
+        "SDI024"
+      ]
+    }
+  ],
+  "delivery_queries": [
+    {
+      "method": "GET",
+      "path": "/wapi/user/geek/delivery/list",
+      "query": {
+        "deliveryBy": "manual -> MANUAL; auto -> AUTO; else omitted",
+        "deliveryStatus": "ADD_FRIEND,DELIVERED at observed q(P) F(P) call",
+        "viewed": "omitted at observed default call; helper supports delivered=false or viewed=true branches"
+      },
+      "evidence_ids": [
+        "SDI026",
+        "SDI030"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/wapi/user/geek/delivery/listByJobIds",
+      "body": {
+        "ids": "array of relevant job IDs",
+        "includeDeleted": "true only observed ImPage lookup branch"
+      },
+      "response_consumed": [
+        "jobSnapshot.jobId",
+        "status",
+        "statusMessage",
+        "zpJobId",
+        "zpBossUid",
+        "jobSnapshot.bossId"
+      ],
+      "warning": "POST is a read/status query here; use each consumer key/priority, not one global alias rule",
+      "evidence_ids": [
+        "SDI027",
+        "SDI016",
+        "SDI029",
+        "SDI033"
+      ]
+    }
+  ],
+  "boss_context": {
+    "chatId": "No exact chatId/chat_id/ChatId spelling in same-hash full script. Current active client context uses account zpUserId and currentBossId; no conversion from AI conversation_id. Server chat/database identity remains unknown.",
+    "route": {
+      "jobId": "Number(snapshot.jobId??record.zpJobId??0)",
+      "friendId": "Number(record.zpBossUid||snapshot.bossId||0)",
+      "friendSource": 0
+    },
+    "override": "With route jobId, POST listByJobIds {ids:[jobId],includeDeleted:true}; first row ge=Number(snapshot.bossId??row.zpBossUid); only ge<=0 rejects before assignment to currentBossId (no finite/safeInteger check); failure/invalid lookup can retain route friendId.",
+    "wire": {
+      "from.uid": "token/h5 response.userId",
+      "to.uid": "final currentBossId -> store.userInfo.zpUid -> peer.uid",
+      "mid": "clientMid/tempID before ACK",
+      "cmid": "clientMid/tempID",
+      "server mid": "extended ACK.mid",
+      "jobId": "not set by active text protobuf factory",
+      "AI or pending IDs": "not set by active text protobuf factory"
+    },
+    "history": {
+      "method": "POST",
+      "path": "/wapi/chat/history",
+      "body": {
+        "userId": "zpUserId",
+        "friendId": "final currentBossId",
+        "identity": 0,
+        "userSource": 0,
+        "friendSource": 0,
+        "pageSize": 10,
+        "maxMsgId": "only >0 on pagination"
+      },
+      "response_boundary": "caller code0 consumes messageList/hasMore/minMsgId; code1000 has special friendship/history UI; 502/503/504 gateway path can continue realtime"
+    },
+    "credential_bootstrap": [
+      {
+        "method": "GET",
+        "path": "/wapi/user/auth/zp/chat/token/h5",
+        "query": {
+          "forceRefresh": false
+        },
+        "fields": [
+          "userId",
+          "token"
+        ]
+      },
+      {
+        "method": "GET",
+        "path": "/wapi/user/auth/zp/chat/ticket/h5",
+        "query": {
+          "forceRefresh": false
+        },
+        "fields": [
+          "webTicket2",
+          "productId"
+        ]
+      }
+    ],
+    "evidence_ids": [
+      "SDI031",
+      "SDI043",
+      "SDI033",
+      "SDI034",
+      "SDI042",
+      "SDI035",
+      "SDI036",
+      "SDI040"
+    ]
+  },
+  "sdk_guard_design": {
+    "is_source_behavior": false,
+    "rules": [
+      "Keep provenance-branded IDs; no implicit cast between M/T/R/P/report/job/peer/cmid/mid/packetId.",
+      "Require explicit runtime callbacks for R->P and confirmation->record; fail closed when unavailable.",
+      "Validate positive safe integer App HTTP IDs before producing JSON; preserve BOSS int64 as bigint/decimal strings in an actual protocol adapter rather than unsafe Number roundtrip.",
+      "Reject duplicate pending IDs before explicit batch; source UI snapshot may send duplicate rows, so this is stricter design.",
+      "Require connected and explicit user caller action for IM send; never make ACK/read/delivery followups automatic side effects of AI content.",
+      "Match ACK packetId AND ACK.cmid to original publish before reporting correlated send confirmation; source lacks the latter equality guard.",
+      "Do not treat SSE EOF, HTTP200, ordinary accepted code4/200, ADD_FRIEND, socket send, PUBACK, and read receipt as one success flag."
+    ]
+  },
+  "outcome_layers": [
+    {
+      "layer": "HTTP",
+      "app_rule": "Transport HTTP success alone is not task/delivery/IM success. Ordinary numeric 401 rejected first; raw preserved.",
+      "evidence_ids": [
+        "SDI002"
+      ]
+    },
+    {
+      "layer": "SSE",
+      "app_rule": "main logical DONE only in fallback after known event branches; EOF alone does not prove task succeeded.",
+      "evidence_ids": [
+        "SDI005",
+        "SDI007"
+      ]
+    },
+    {
+      "layer": "task/results",
+      "app_rule": "task/list and result/list are independent REST reads; source joins task to M, but no verified R->pending edge.",
+      "evidence_ids": [
+        "SDI009",
+        "SDI010",
+        "SDI011"
+      ]
+    },
+    {
+      "layer": "result/read",
+      "app_rule": "Read receipt only; cannot be used as pending creation or confirmation.",
+      "evidence_ids": [
+        "SDI013"
+      ]
+    },
+    {
+      "layer": "confirmation",
+      "app_rule": "Fmt requires exact raw.code===0 AND raw.result.status in ADD_FRIEND,DELIVERED. ADD_FRIEND is accepted by UI without proving attachment receipt. Stops batch on first error; no automatic IM navigation/send.",
+      "evidence_ids": [
+        "SDI024"
+      ]
+    },
+    {
+      "layer": "delivery/status",
+      "app_rule": "listByJobIds status is server observation keyed by jobSnapshot.jobId; FAILED/statusMessage used for failure UI. Not BOSS ACK.",
+      "evidence_ids": [
+        "SDI016"
+      ]
+    },
+    {
+      "layer": "IM initialization",
+      "app_rule": "ensureSdkReady initiates connect; ready is not CONNACK. UI text send explicitly needs connected.",
+      "evidence_ids": [
+        "SDI037",
+        "SDI044",
+        "SDI043"
+      ]
+    },
+    {
+      "layer": "MQTT",
+      "app_rule": "packetId correlates PUBLISH; only remainingLength18 decodes cmid/mid extension. Plain PUBACK cannot finish high-level delivery callback.",
+      "evidence_ids": [
+        "SDI041",
+        "SDI045",
+        "SDI046"
+      ]
+    },
+    {
+      "layer": "IM delivery event",
+      "app_rule": "lc clears timer by truthy ACK.cmid and emits original message with mid=ACK.mid, but lacks cmid equality guard; UI only marks status1 by original cmid. 60s timeout emits send-error, page handler is empty.",
+      "evidence_ids": [
+        "SDI046",
+        "SDI048",
+        "SDI047",
+        "SDI038"
+      ]
+    },
+    {
+      "layer": "IM read",
+      "app_rule": "Separate messageRead event marks READ2; status1/ACK is not read or confirmation of resume attachment.",
+      "evidence_ids": [
+        "SDI038",
+        "SDI049"
+      ]
+    }
+  ],
+  "fixture": "fixtures/e2e.json; mock-only fields limited to consumed source fields, metadata for harness clearly separated; not server observed schema"
+}
