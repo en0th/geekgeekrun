@@ -108,6 +108,7 @@ export function createWorkspace() {
     state.currentContact = null;
     state.workModeSignal = "";
     state.connection = "未连接";
+    state.userName = "求职者";
   }
   function persist() {
     if (!runtime || !isNative()) return;
@@ -222,24 +223,37 @@ export function createWorkspace() {
   }
   async function restore() {
     if (!isNative() || !state.origin) return;
+    const origin = state.origin;
+    let ownedVersion = scopeVersion;
+    const clearOwnedVault = () => {
+      const version = ownedVersion;
+      vaultQueue = vaultQueue
+        .catch(() => {})
+        .then(() => {
+          if (version === scopeVersion) return MobileBridge.clearSession();
+        });
+      return vaultQueue;
+    };
     try {
       const saved = await MobileBridge.readSession();
+      if (ownedVersion !== scopeVersion || origin !== state.origin) return;
       if (!saved.value) return;
       const parsed = JSON.parse(saved.value) as {
         origin: string;
         session: AuthSession;
       };
-      if (apiOrigin(parsed.origin) !== apiOrigin(state.origin)) return;
-      configure(state.origin);
+      if (apiOrigin(parsed.origin) !== apiOrigin(origin)) return;
+      configure(origin);
+      ownedVersion = scopeVersion;
       if (parsed.session.expiresAt <= Date.now()) {
-        await MobileBridge.clearSession();
+        await clearOwnedVault();
         return;
       }
       runtime!.sessions.setSession(parsed.session);
       state.demo = false;
       state.notice = "已恢复本机登录，可手动刷新数据";
     } catch {
-      await MobileBridge.clearSession().catch(() => {});
+      await clearOwnedVault().catch(() => {});
     }
   }
   async function openVerification(phone: string) {
