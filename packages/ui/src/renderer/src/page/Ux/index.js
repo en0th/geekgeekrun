@@ -467,6 +467,10 @@ export default Vue.defineComponent({
       sourceRotationOpen = ref(false),
       runBudgetOpen = ref(false),
       platformFiltersOpen = ref(false),
+      extraConditionsOpen = ref(false),
+      companyConditionsOpen = ref(false),
+      browserOptionsOpen = ref(false),
+      runModeSelectionKey = ref(0),
       policyExceptionsOpen = ref(false),
       activeAutoSection = ref("job-run-mode");
     // the 找岗位 configuration is a step-by-step form; this is the step on screen
@@ -759,7 +763,7 @@ export default Vue.defineComponent({
         ...children,
       ]);
     // a collapsible section; the whole header row toggles it, its tip sits right after the title
-    function disclosure(title, state, id, children, titleTip) {
+    function disclosure(title, state, id, children, titleTip, summary) {
       const toggle = () => (state.value = !state.value);
       return h(
         "section",
@@ -775,6 +779,7 @@ export default Vue.defineComponent({
                 class: "ux-disclosure-toggle",
                 "aria-expanded": state.value,
                 "aria-controls": id,
+                "aria-describedby": summary ? id + "-summary" : undefined,
               },
               [
                 h(
@@ -808,6 +813,7 @@ export default Vue.defineComponent({
               state.value ? "已展开，收起" : "已收起，展开",
             ),
           ]),
+          summary ? h("p", { id: id + "-summary", class: "ux-disclosure-summary" }, summary) : null,
           state.value
             ? h(
                 "div",
@@ -1971,6 +1977,7 @@ export default Vue.defineComponent({
     }
 
     function needsCompanyList(d) {
+      if (d.runMode === "collect") return false;
       return ["city", "salary", "experience"].some(
         (key) =>
           (key === "city"
@@ -2137,6 +2144,9 @@ export default Vue.defineComponent({
     }
     function focusError(e) {
       if (e.field === "run-budget") runBudgetOpen.value = true;
+      if (["requiredConditions", "hrRule", "regexType", "regexDesc", "categories", "description"].includes(e.field))
+        extraConditionsOpen.value = true;
+      if (["regexExclude", "excluded"].includes(e.field)) companyConditionsOpen.value = true;
       if (e.action === "model") {
         navigate("settings");
         settingTab.value = "ai";
@@ -2839,7 +2849,7 @@ export default Vue.defineComponent({
             ? inlineExamples(obj, key, label, exampleWords)
             : null,
         ]);
-        (["experience", "activity"].includes(key)
+        (key === "experience"
           ? basicFilters
           : ["categories", "description"].includes(key)
             ? keywordFilters
@@ -2868,9 +2878,32 @@ export default Vue.defineComponent({
           h("h3", note ? [title, tip(note, title)] : title),
           h("div", { class: "ux-form-row" }, items),
         ]);
+      const summaryDraft = sharedMode ? d : effective();
+      const facts = Object.fromEntries(templateFacts(summaryDraft));
+      const extraSummary = [
+        ...["职位分类", "岗位描述包含", "求职类型", "公司人数", "学历要求", "必需行业", "融资阶段", "岗位/JD屏蔽词", "招聘者活跃"]
+          .filter(key => !["不限", "无", undefined].includes(facts[key]))
+          .map(key => key + "：" + facts[key]),
+        summaryDraft.hr ? "只看人事发布" : "",
+        summaryDraft.regexLogic === 2 ? "名称、分类和描述满足其中一项即可" : "",
+        (summaryDraft.regexMode && (summaryDraft.regexType || summaryDraft.regexDesc)) ||
+          summaryDraft.legacyPatterns?.categories || summaryDraft.legacyPatterns?.description
+          ? "正在沿用高级分类或描述规则" : "",
+        !sharedMode && draft.value.skipUnparseableSalaryJob !== false ? "跳过面议或无法识别薪资的岗位" : "",
+        summaryDraft.legacyNeedsReview?.length ? "有旧条件待确认" : "",
+      ].filter(Boolean).join("；");
+      const companySummaryText = [
+        ...[["只看公司", summaryDraft.companies], ["排除公司", summaryDraft.excluded]]
+          .filter(([key]) => !["不限", "无", undefined].includes(facts[key]))
+          .map(([key, values]) => key + "：" + (values?.length
+            ? values.slice(0, 3).join("、") + (values.length > 3 ? ` 等 ${values.length} 家` : "") : facts[key])),
+        summaryDraft.regexMode && summaryDraft.regexExclude ? "排除公司沿用高级规则" : "",
+      ].filter(Boolean).join("；");
       return [
-        group("岗位关键词", [titleField, ...keywordFilters, keywordLogic]),
-        group("投递前必需条件", [
+        group("基本条件", [titleField, ...otherFields, ...basicFilters]),
+        disclosure("更多筛选条件", extraConditionsOpen, "extra-conditions", [
+          group("岗位关键词", [...keywordFilters, keywordLogic]),
+          group("必须符合的条件", [
           field("求职类型", tags(required, "jobNatures", JOB_NATURE_OPTIONS, { allowCreate: false, "aria-label": "求职类型" }),
             "留空不限；选定后，类型不符合或无法确认的岗位会略过。", false, "requiredConditions"),
           field("公司人数", inline([
@@ -2882,18 +2915,11 @@ export default Vue.defineComponent({
           field("公司行业", tags(required, "industries", [], { "aria-label": "必需公司行业", placeholder: "输入行业关键词，回车添加" }), "包含任一关键词即可。"),
           field("融资阶段", tags(required, "financingStages", ["未融资", "不需要融资", "天使轮", "A轮", "B轮", "C轮", "D轮及以上", "已上市"], { "aria-label": "必需融资阶段" }), "按岗位给出的阶段匹配。"),
           field("岗位/JD屏蔽词", tags(required, "excludedWords", [], { "aria-label": "岗位和描述屏蔽词", placeholder: "输入不接受的词，回车添加" }), "岗位名称或描述包含任一词就略过；按字面匹配，忽略大小写。不受上方“满足其中一项”影响。"),
-        ], "这些条件会在投递或按条件收集前逐条核对；不符合或信息缺失时只略过，不在BOSS标记。"),
-        group("工作地点与待遇", [
-          ...otherFields,
-          ...basicFilters,
-          ...moreFilters,
-          skipUnparseableSalary,
-        ]),
-        group(
-          "公司偏好",
-          companyFilters,
-          "公司名按关键词匹配；“不看”优先，留空不限制。",
-        ),
+          ], "这些条件会在打招呼或按条件收集前逐条核对；不符合或信息缺失时只略过，不在BOSS标记。"),
+          group("其他偏好", [...moreFilters, skipUnparseableSalary]),
+        ], "收起后已设置的条件仍然生效。", extraSummary || "学历、求职类型、行业、屏蔽词等，按需设置。"),
+        disclosure("公司偏好", companyConditionsOpen, "company-conditions", companyFilters,
+          "公司名按关键词匹配；“不看”优先，留空不限制。", companySummaryText || "不限公司；可设置想看或不看的公司。"),
       ];
     }
     // 开始前确认: one line on what the run will do, then only the settings this run mode uses
@@ -2986,15 +3012,21 @@ export default Vue.defineComponent({
     }
     function checkFacts() {
       const rows = checkFactRows();
-      return h("details", { class: "ux-check-facts" }, [
-        h("summary", [
-          h("span", "本次使用的配置"),
-          h("span", { class: "ux-hint" }, rows.length + " 项，展开核对"),
-        ]),
-        h(
-          "dl",
-          rows.flatMap(([k, v]) => [h("dt", k), h("dd", v || "—")]),
-        ),
+      const mainKeys = checks.value === "follow"
+        ? ["会话范围", "消息来源", "发送间隔"]
+        : ["职位来源", "目标岗位", "工作城市", "期望薪资", "默认处理方式"];
+      const mainRows = rows.filter(([key]) => mainKeys.includes(key));
+      const otherRows = rows.filter(([key]) => !mainKeys.includes(key) && key !== "运行方式");
+      const list = values => h("dl", values.flatMap(([key, value]) => [h("dt", key), h("dd", value || "—")]));
+      return h("div", { class: "ux-check-overview" }, [
+        list(mainRows),
+        otherRows.length ? h("details", { class: "ux-check-facts" }, [
+          h("summary", [
+            h("span", "其他条件与运行设置"),
+            h("span", { class: "ux-hint" }, otherRows.length + " 项，展开核对"),
+          ]),
+          list(otherRows),
+        ]) : null,
       ]);
     }
     const strategies = [
@@ -3008,7 +3040,7 @@ export default Vue.defineComponent({
       search: ["搜索结果", "BOSS顶部搜索框找到的岗位。"],
       recommend: ["推荐职位", "BOSS“推荐”列表中的岗位。"],
       expect: ["按BOSS求职期望推荐", "BOSS已设置的求职期望对应的岗位。"],
-      company: ["公司品牌岗位", "从指定品牌的公司招聘页查看岗位，逐条核对品牌 ID。"],
+      company: ["指定公司的岗位", "粘贴BOSS公司主页链接，查找这家公司发布的岗位。"],
     };
     function moveItem(list, index, delta) {
       const next = index + delta;
@@ -3124,10 +3156,10 @@ export default Vue.defineComponent({
               "source",
             )
           : null,
-        company?.enabled ? field('公司主页 / 品牌 ID', h('div', [
+        company?.enabled ? field('公司主页', h('div', [
           ...(company.children || []).map((row, index) => h('div', { class: 'ux-search-row' }, [
             check(row, 'enabled', '使用', { 'aria-label': '使用公司 ' + (index + 1) }),
-            input(row, 'brandId', { placeholder: 'BOSS公司主页链接或 encryptBrandId', 'aria-label': '公司主页或品牌ID ' + (index + 1) }),
+            input(row, 'brandId', { placeholder: '粘贴BOSS公司主页链接', 'aria-label': '公司主页或品牌ID ' + (index + 1) }),
             input(row, 'label', { placeholder: '备注名称（可选）', 'aria-label': '公司备注 ' + (index + 1) }),
             input(row, 'keyword', { placeholder: '公司内搜索（可选）', 'aria-label': '公司内搜索 ' + (index + 1) }),
             orderButtons(company.children, index, '公司 ' + (index + 1)),
@@ -3135,7 +3167,7 @@ export default Vue.defineComponent({
           ])),
           button('添加公司', () => { (company.children ||= []).push({ enabled: true, brandId: '', keyword: '', label: '' }); changed(); }, { size: 'small', plain: true }),
           hint('城市、薪资、经验和学历按公司页面筛选；行业与规模按该品牌资料核验。求职条件和只收集规则继续生效。'),
-        ]), '品牌 ID 用于确认公司身份；公司名称备注只用于展示。', true, 'company-source') : null,
+        ]), '自动核对公司身份；也支持已有的品牌 ID。备注名称只用于展示。', true, 'company-source') : null,
         disclosure(
           "BOSS页面筛选（已设置 " +
             (d.platformMode === 2
@@ -3253,11 +3285,12 @@ export default Vue.defineComponent({
       const d = draft.value;
       const b = d.runBudget;
       if (!b || typeof b !== "object" || Array.isArray(b))
-        return group("本次运行预算", [
+        return h("section", { class: "ux-run-mode-option", role: "alert" }, [
+          h("h3", "自动暂停上限需重新设置"),
           hint("运行预算配置无效，请重新设置后开始。"),
           button("重置运行预算", () => { d.runBudget = { ...DEFAULT_RUN_BUDGET }; changed(); }, { plain: true }),
         ]);
-      return disclosure("本次运行预算", runBudgetOpen, "run-budget", [
+      return disclosure("自动暂停上限", runBudgetOpen, "run-budget", [
         ...[
           ["requests", "岗位接口请求上限", "次（含详情）"],
           ["detailRequests", "其中详情请求上限", "次"],
@@ -3272,7 +3305,14 @@ export default Vue.defineComponent({
         ]))),
         explain("失败、重试和重复请求也计入。0 表示不限制，留空使用默认值；达到任一上限即暂停，调整上限后可恢复，累计用量不会归零。"),
         explain("运行时间包含等待和定时休息，不含手动暂停、排队、安全验证及浏览器重启间隔。"),
-      ], budgetFact(d));
+      ], budgetFact(d), (() => {
+        try {
+          const limits = normalizeRunBudget(b);
+          return [limits.activeMinutes ? `累计最多运行 ${limits.activeMinutes} 分钟` : "不限制运行时间",
+            limits.requests || limits.detailRequests ? "读取量达到上限也会暂停" : "",
+            "暂停后保留已收集的岗位和进度。"].filter(Boolean).join("；");
+        } catch { return "上限设置有误，请展开修改。"; }
+      })());
     }
     function platformControls() {
       const d = draft.value,
@@ -4442,15 +4482,13 @@ export default Vue.defineComponent({
     }
     // ---- 找岗位 configuration steps ----
     function autoSteps(d = draft.value) {
-      const all = isCollectAll(d);
       return [
         { id: "job-run-mode", label: "运行方式" },
         { id: "job-preferences", label: "职位筛选与来源" },
-        {
+        ...(d.runMode === "collect" ? [] : [{
           id: "job-policy",
           label: "处理方式",
-          skipped: all ? "收集全部岗位，无需配置" : "",
-        },
+        }]),
       ];
     }
     // the step a validation field belongs to; null for fields outside the 找岗位 form
@@ -4462,6 +4500,7 @@ export default Vue.defineComponent({
     // a step that became skipped (e.g. after switching to collect everything) shows the next one
     function currentStepId(steps = autoSteps()) {
       const at = steps.findIndex((s) => s.id === autoStep.value);
+      if (at < 0) return [...steps].reverse().find(step => !step.skipped).id;
       if (at >= 0 && !steps[at].skipped) return steps[at].id;
       return (
         steps.slice(Math.max(0, at)).find((s) => !s.skipped) ||
@@ -4497,6 +4536,7 @@ export default Vue.defineComponent({
     // the 找岗位 steps as an Element Plus step bar; which steps exist, their state and where a
     // click goes stay as they were (autoSteps / autoProgress / goStep)
     function stepBar(steps, current, sections) {
+      const currentIndex = steps.findIndex(step => step.id === current);
       const states = steps.map((step) => {
         const section = sections.find((x) => x.id === step.id);
         const done = section ? section.checks.every((c) => c.done) : true;
@@ -4504,11 +4544,13 @@ export default Vue.defineComponent({
           ? "skipped"
           : step.id === current
             ? "current"
-            : done
+            : steps.indexOf(step) < currentIndex && done
               ? "done"
-              : "missing";
+              : !done && validationAttempted.value
+                ? "missing"
+                : "upcoming";
       });
-      const elStatus = { current: "process", done: "success", missing: "error", skipped: "wait" };
+      const elStatus = { current: "process", done: "success", missing: "error", skipped: "wait", upcoming: "wait" };
       // states read from the standard step icons (✓ / current number / ✕); only a skipped
       // step spells out why it is skipped
       return E(
@@ -4785,22 +4827,15 @@ export default Vue.defineComponent({
               : `其余条件不限，已启用 ${sourceCount} 个来源`;
           })(),
         },
-        {
+        ...(d.runMode === "collect" ? [] : [{
           id: "job-policy",
           label: "处理方式",
-          skipped: collectAll,
-          checks: collectAll
-            ? []
-            : [{ label: "默认处理方式", done: Boolean(d.strategy) }],
+          checks: [{ label: "默认处理方式", done: Boolean(d.strategy) }],
           extra: (() => {
             const n = Object.values(d.overrides || {}).filter(Boolean).length;
-            return collectAll
-              ? "收集全部岗位，无需配置"
-              : n
-                ? `单独处理 ${n} 种情况`
-                : "全部按默认方式处理";
+            return n ? `单独处理 ${n} 种情况` : "全部按默认方式处理";
           })(),
-        },
+        }]),
       ];
       const all = sections.flatMap((section) => section.checks);
       const done = all.filter((c) => c.done).length;
@@ -4930,45 +4965,49 @@ export default Vue.defineComponent({
           "切换到自动打招呼",
           "切换",
         );
-        if (!ok) return;
+        if (!ok) {
+          // The browser already changed the radio before the async confirmation.
+          // Recreate this control from the unchanged mode, including native checked state.
+          runModeSelectionKey.value++;
+          return;
+        }
         writeFlag("ux-chat-mode-confirmed", true);
       }
       update(d, "runMode", v);
-      // collect-everything drops two steps from the flow; say so instead of letting them vanish
+      // Keep existing conditions for switching back; only their applicability changes.
       if (v === "collect" && isCollectAll(d))
         R.message({
           type: "info",
-          message: "收集全部岗位：求职条件与处理方式两步已跳过，只需选择职位来源。",
+          message: "收集全部岗位：无需填写求职条件，只需选择职位来源。",
           duration: 4000,
         });
     }
     function runModeCard() {
       const d = draft.value;
       const collect = d.runMode === "collect";
-      const modeText = !collect
-        ? "看完岗位详情后，给符合条件的岗位打招呼；不符合的，按“处理方式”那一步的设置处理。"
-        : d.collectOnlyMatchingJobs !== false
-          ? "只把符合求职条件的岗位详情存进资料库，不打招呼，也不在BOSS上标记不合适。"
-          : "遇到的岗位全部存进资料库，不看求职条件，不打招呼，也不标记；不用填求职条件和处理方式。";
       return card(
-        "运行方式",
+        "你想怎样找岗位？",
         [
-          withTip(
-            E(
+          E(
               "ElRadioGroup",
               {
+                key: runModeSelectionKey.value,
+                class: "ux-mode-choices",
                 modelValue: collect ? "collect" : "chat",
                 "onUpdate:modelValue": (v) => switchRunMode(d, v),
                 "aria-label": "运行方式",
               },
               () => [
-                E("ElRadioButton", { value: "chat" }, () => "自动打招呼"),
-                E("ElRadioButton", { value: "collect" }, () => "只收集岗位数据"),
+                E("ElRadio", { value: "collect", class: "ux-mode-choice" }, () => [
+                  h("strong", "先收集岗位"),
+                  h("span", "把岗位存到资料库，方便比较和筛选。不发送消息，不标记不合适。"),
+                ]),
+                E("ElRadio", { value: "chat", class: "ux-mode-choice" }, () => [
+                  h("strong", "自动打招呼"),
+                  h("span", "查看详情后，向符合条件的招聘者发送BOSS招呼语。不符合的岗位按你的设置处理。"),
+                ]),
               ],
             ),
-            modeText,
-            "运行方式",
-          ),
           // what a greeting actually contains, so nothing goes out unread
           !collect
             ? h("p", { class: "ux-hint ux-greet-source" }, [
@@ -4977,17 +5016,24 @@ export default Vue.defineComponent({
             : null,
           collect
             ? h("div", { class: "ux-run-mode-option" }, [
-                check(
-                  d,
-                  "collectOnlyMatchingJobs",
-                  "只收集符合求职条件的岗位",
-                ),
+                field("收集范围", E("ElRadioGroup", {
+                  class: "ux-collect-scope",
+                  modelValue: d.collectOnlyMatchingJobs !== false,
+                  "onUpdate:modelValue": value => update(d, "collectOnlyMatchingJobs", value),
+                  "aria-label": "收集范围",
+                }, () => [
+                  E("ElRadio", { value: true }, () => "只收集符合条件的岗位"),
+                  E("ElRadio", { value: false }, () => "收集全部岗位（不按求职条件筛选）"),
+                ])),
+                hint("收集后可在“资料库 → 职位”中查看和比较。" + (isCollectAll(d)
+                  ? "当前会收集来源中的全部岗位，不按求职条件筛选。"
+                  : "不符合条件的岗位直接略过。")),
               ])
             : null,
-          h("div", { class: "ux-run-mode-option" }, [
+          disclosure("浏览器显示方式", browserOptionsOpen, "browser-options", [
             check(d, "runInBackground", "后台运行浏览器"),
             hint("自动任务使用最小化窗口，不主动切到前台；登录或需要安全验证时会显示窗口。关闭后使用普通窗口。"),
-          ]),
+          ], undefined, d.runInBackground !== false ? "后台查找，不打断你；需要登录或验证时会显示窗口。" : "查找时显示浏览器窗口。"),
         ],
         { id: "job-run-mode", class: "ux-card ux-run-mode" },
       );
