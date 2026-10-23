@@ -1,6 +1,7 @@
 /* Task-oriented UI migrated from the accepted prototype. All execution uses native IPC. */
 import { toast } from "../../features/Toast";
 import { isSuccessfulTaskExit, isResumableTaskExit } from "@geekgeekrun/pm/task-exit.cjs";
+import { checkpointRecovery, assertCheckpointCanResume } from "../../../../common/task-recovery.mjs";
 import { experienceSelectionLabels, experienceSelectionCodes, matchesExperience, escapeKeyword, keywordPattern, allKeywordPattern, normalizeRequiredJobConditions, requiredJobConditionReasons, JOB_NATURE_OPTIONS, DEGREE_OPTIONS } from "@geekgeekrun/geek-auto-start-chat-with-boss/job-filter-config.mjs";
 import { parseSalaryDetails, matchesSalaryDetails } from "@geekgeekrun/utils/job-values.cjs";
 import { normalizeCitySelection, matchesCitySelection } from "@geekgeekrun/geek-auto-start-chat-with-boss/city-filter.mjs";
@@ -3925,7 +3926,13 @@ export default Vue.defineComponent({
       return !last || String(last.runRecordId) === String(r.runRecordId) ? r : null;
     }
     // why it is paused: the way its last part ended
+    function autoRecovery(r = pausedAutoRun()) {
+      return checkpointRecovery(r, { history: taskStore.taskHistory });
+    }
     function pauseReason(r) {
+      const recovery = autoRecovery(r);
+      if (recovery.reason === "send-unconfirmed") return "上次发送结果尚未确认，请先在BOSS会话中核对。此任务不能直接继续。";
+      if (!recovery.canResume) return "暂时无法确认任务能否安全继续，请查看任务详情。";
       if (r?.progress?.budget?.stopped && r.progress.detail) return r.progress.detail;
       const last = taskStore.taskHistory.find(
         (t) => t.workerId === workerIds.auto && String(t.runRecordId) === String(r?.runRecordId),
@@ -3936,6 +3943,12 @@ export default Vue.defineComponent({
     async function resumeTask() {
       const r = pausedAutoRun();
       if (!r) return;
+      try {
+        assertCheckpointCanResume(r, { runRecordId: r.runRecordId, runMode: draft.value.runMode, history: taskStore.taskHistory });
+      } catch (error) {
+        R.message({ type: "warning", message: error.message });
+        return;
+      }
       if (
         r.runMode !== "collect" &&
         !(await confirmBox(
@@ -4012,16 +4025,19 @@ export default Vue.defineComponent({
               button("终止", () => terminateTask(task), { ...small, type: "danger", plain: !size }),
             ]
           : [button("停止", () => stop(task), { ...small, type: "danger", plain: !size, loading: stopping.value })];
-      if (paused)
+      if (paused) {
+        const recovery = autoRecovery();
         return [
-          button("继续运行", resumeTask, {
+          recovery.canResume ? button("继续运行", resumeTask, {
             ...small,
             type: "primary",
             loading: starting.value,
             title: "从暂停的位置接着运行，计数和日志接着累计",
-          }),
-          button("终止", () => terminateTask(task), { ...small, type: "danger", plain: !size }),
+          }) : button(recovery.reason === "send-unconfirmed" ? "去BOSS核对" : "查看处理建议",
+            () => recovery.reason === "send-unconfirmed" ? openBossForRecovery() : openTaskDetail(workerIds.auto), { ...small, type: "primary" }),
+          button("结束本次任务", () => terminateTask(task), { ...small, type: "danger", plain: !size }),
         ];
+      }
       return [
         button("重新启动", () => restartTask(task), {
           ...small,
@@ -4029,6 +4045,10 @@ export default Vue.defineComponent({
           title: "按当前配置开始一次新的运行",
         }),
       ];
+    }
+    async function openBossForRecovery() {
+      await window.electron.ipcRenderer.invoke("open-site-with-boss-cookie", { url: "https://www.zhipin.com/web/geek/chat" });
+      R.message({ type: "info", message: "请在BOSS会话中核对上次发送结果。这次任务保持停止，已保存的数据会保留。" });
     }
     // counts over the whole run, across restarts
     const liveCount = (live, key) => (live?.base?.[key] || 0) + (live?.progress?.[key] || 0);
@@ -4137,7 +4157,9 @@ export default Vue.defineComponent({
         task === "auto" &&
         pausedAutoRun() &&
         !(await confirmBox(
-          "有一个已暂停的找岗位任务。开始新的运行会终止它（移到历史记录，不能再恢复）。如果只是想接着运行，请点“恢复”。",
+          autoRecovery().reason === "send-unconfirmed"
+            ? "请先在BOSS会话中核对上次发送结果，避免重复发送。确认新建会结束原任务，保留已有数据；新任务按当前方式和条件运行。"
+            : "有一个已暂停的找岗位任务。开始新的运行会结束它，已有数据会保留。如果只是想接着运行，请点“继续运行”。",
           "开始新的运行",
           "终止并开始",
           { danger: true },
@@ -4618,15 +4640,17 @@ export default Vue.defineComponent({
       if (!r) return null;
       const p = r.progress || {};
       const collect = r.runMode === "collect";
+      const recovery = autoRecovery(r);
       return h("section", { class: "ux-paused-banner", role: "status" }, [
         h("div", { class: "ux-paused-banner-head" }, [
           h("span", { class: "ux-live-dot is-waiting", "aria-hidden": "true" }),
-          h("strong", "找岗位任务已暂停"),
+          h("strong", recovery.reason === "send-unconfirmed" ? "先核对上次发送结果" : "找岗位任务已暂停"),
           h("span", { class: "ux-hint" }, pauseReason(r)),
         ]),
         h("p", [
           `已查看 ${p.viewed || 0}，${collect ? "已收集 " + (p.collected || 0) : "已打招呼 " + (p.sent || 0)}，已跳过 ${p.skipped || 0}`,
-          tip("可以先改配置再点“继续运行”：会从停下的地方接着找，处理过的岗位不会再处理。"),
+          tip(recovery.canResume ? "可以先改配置再点“继续运行”：会从停下的地方接着找，处理过的岗位不会再处理。"
+            : "本次运行不能直接继续。核对和处理问题后，可结束本次任务，再按需要新建；已保存的数据会保留。"),
         ]),
         inline([
           ...taskControls("auto", { paused: true }),
@@ -5222,7 +5246,7 @@ export default Vue.defineComponent({
       // a paused 找岗位 run (stopped, not terminated)
       const pausedHere = workerId === workerIds.auto && !runningEntry && !queueEntry ? pausedAutoRun() : null;
       const status = pausedHere
-        ? ["已暂停", "warning"]
+        ? [autoRecovery(pausedHere).reason === "send-unconfirmed" ? "待核对发送结果" : "已暂停", "warning"]
         : runningEntry
         ? runningEntry.yielding
           ? ["准备让位", "info"]
@@ -5299,10 +5323,11 @@ export default Vue.defineComponent({
         ]),
         pausedHere
           ? h("div", { class: "ux-task-paused-note" }, [
-              h("strong", "已暂停"),
+              h("strong", autoRecovery(pausedHere).reason === "send-unconfirmed" ? "待核对发送结果" : "已暂停"),
               h("span", pauseReason(pausedHere)),
               tip(
-                "点“恢复”会从停下的地方接着找，处理过的岗位不会再处理，数字和日志接着累计。可以先改配置再恢复。点“终止”就结束这次运行，放进历史记录。",
+                autoRecovery(pausedHere).canResume ? "继续运行会从停下的地方接着找，数字和日志接着累计。结束本次任务后不能再继续，已有数据会保留。"
+                  : "请先处理提示中的问题；发送结果未确认时不能直接继续。已有数据和进度会保留。",
               ),
             ])
           : null,
@@ -5451,6 +5476,8 @@ export default Vue.defineComponent({
       稍后继续: "info",
       排队中: "info",
       已暂停: "warning",
+      待核对发送结果: "warning",
+      需要处理: "warning",
       "出错，等待重启": "danger",
       已终止: "info",
       已完成: "success",
@@ -5549,8 +5576,8 @@ export default Vue.defineComponent({
                 : taskOf(row.workerId)
                   ? taskControls(taskOf(row.workerId), {
                       size: "small",
-                      running: row.status !== "已暂停",
-                      paused: row.status === "已暂停",
+                      running: !["已暂停", "待核对发送结果", "需要处理"].includes(row.status),
+                      paused: ["已暂停", "待核对发送结果", "需要处理"].includes(row.status),
                     })
                   : button("停止", () => ipc("stop-task", row.workerId), { link: true, type: "danger", size: "small" })
               : newest[row.workerId] === row.key && taskOf(row.workerId)
@@ -8793,11 +8820,12 @@ export default Vue.defineComponent({
         if (!task) return;
         const completed = isSuccessfulTaskExit(message.workerId, message.code);
         const resumable = isResumableTaskExit(message.workerId, message.code);
+        const unconfirmed = task === "auto" && message.code === 87;
         running.value[task] = Boolean(message.restarting);
         if (taskProgress.value[task]) {
           taskProgress.value[task].state = message.restarting
             ? "retrying"
-            : resumable
+            : resumable || unconfirmed
               ? "blocked"
               : requestedStop[task] || completed
                 ? "stopped"
@@ -8809,6 +8837,8 @@ export default Vue.defineComponent({
               ? exitCodeLabels[92]
               : requestedStop[task] || completed
               ? "任务已停止，实际累计统计保留"
+              : unconfirmed
+                ? "上次发送结果尚未确认，请先在BOSS会话中核对。此任务不能直接继续。"
               : resumable
                 ? taskProgress.value[task].detail
                 : "请修复问题后重新开始；不会从原位置续跑";
@@ -8827,18 +8857,18 @@ export default Vue.defineComponent({
             R.message({ type: "success", title: name + "已结束", message: "任务已正常结束。" });
         } else
           R.message({
-            type: resumable ? "warning" : "error",
+            type: resumable || unconfirmed ? "warning" : "error",
             title:
-              task === "auto"
-                ? name + "已暂停"
+              unconfirmed ? "先核对上次发送结果" : task === "auto"
+                ? name + (resumable ? "已暂停" : "异常结束")
                 : name + (resumable ? "已停止" : "异常结束"),
             message:
               (labels[message.code] || "退出码 " + message.code) +
-              (task === "auto"
+              (unconfirmed ? "。请先在BOSS核对，此任务不能直接继续，已有数据会保留。" : task === "auto" && resumable
                 ? "。处理后可在任务列表中恢复。"
                 : "。请修复后重新开始。"),
             action:
-              task === "auto"
+              unconfirmed ? { label: "去BOSS核对", onClick: openBossForRecovery } : task === "auto"
                 ? { label: "查看任务", onClick: () => openTaskDetail(workerIds.auto) }
                 : undefined,
           });

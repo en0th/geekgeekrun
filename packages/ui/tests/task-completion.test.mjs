@@ -13,7 +13,7 @@ function exit(exitCode) {
     window: { electron: { ipcRenderer: { on: (event, callback) => { ctx.exit = callback } } } },
     workerIds: { auto: 'geekAutoStartWithBossMain' }, running: { value: { auto: true } },
     taskProgress: { value: { auto: progress } }, requestedStop: {}, exitCodeLabels: { 92: '所有职位来源已轮换完成，任务正常结束', 95: '城市筛选未能确认' },
-    R: { message: info => messages.push(info) }, openTaskDetail() {} })
+    R: { message: info => messages.push(info) }, openTaskDetail() {}, openBossForRecovery() {} })
   vm.runInContext(code, ctx)
   ctx.exit(null, { workerId: 'geekAutoStartWithBossMain', code: exitCode, restarting: false })
   return { messages, progress }
@@ -35,4 +35,13 @@ test('verification and budget failures keep their reason and allow resume', () =
     assert.equal(result.progress.detail, '已保存岗位信息')
     assert.equal(result.messages[0].type, 'warning')
   }
+})
+
+test('an unconfirmed send never receives a normal resume suggestion', () => {
+  const result = exit(87)
+  assert.equal(result.progress.state, 'blocked')
+  assert.equal(result.progress.sent, 0)
+  assert.equal(result.messages[0].action.label, '去BOSS核对')
+  assert.doesNotMatch(result.messages[0].message, /可在任务列表中恢复/)
+  assert.match(result.messages[0].message, /不能直接继续/)
 })

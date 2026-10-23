@@ -116,8 +116,13 @@ const runAutoChat = async () => {
   let skipCurrentFilterNextTime = false
   // the run rotated through every source and finished: nothing left to resume
   let runCompleted = false
-  const saveResume = () => {
-    if (!runRecordId) return
+  let messageSendPending = resumed && saved?.messageSendPending === true
+  const saveResume = ({ exitCode, pending = messageSendPending, required = false }:
+    { exitCode?: number; pending?: boolean; required?: boolean } = {}) => {
+    if (!runRecordId) {
+      if (required) throw new Error('无法记录本次发送状态，任务已停止')
+      return
+    }
     if (runCompleted) {
       discardAutoChatResume()
       return
@@ -127,11 +132,19 @@ const runAutoChat = async () => {
       runRecordId: Number(runRecordId),
       runMode,
       savedAt: Date.now(),
+      exitCode,
+      messageSendPending: pending,
       skipCurrentFilter: skipCurrentFilterNextTime,
       runState: exportRunState(),
       progress: { ...rest, log: log.slice(-100) }
-    })
+    }, { required })
   }
+  // Persist synchronously before a click can send, and after confirmed DB storage.
+  // This survives a window close, a manual pause and a process killed without an exit hook.
+  autoStartChatEventBus.on('CHAT_CONFIRMATION', (pending: boolean) => {
+    saveResume({ pending, required: true })
+    messageSendPending = pending
+  })
   const resumeSaver = setInterval(saveResume, 5 * 1000)
   saveForShutdown = saveResume
   // the stop notice names what the last list was filtered by, not a fixed guess
@@ -143,9 +156,9 @@ const runAutoChat = async () => {
   }
   autoStartChatEventBus.on('RUN_POSITION', saveResume)
   // every way out of the process (stop, error, yield) leaves the latest state behind
-  process.on('exit', () => {
+  process.on('exit', (exitCode) => {
     clearInterval(resumeSaver)
-    saveResume()
+    saveResume({ exitCode })
   })
 
   // BOSS asked for a verification: pause and let the user pass it in the open window

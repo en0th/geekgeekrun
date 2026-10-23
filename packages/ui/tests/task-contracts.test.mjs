@@ -80,7 +80,7 @@ const runnerModule = await compile('../src/main/features/run-common.ts',
    export const sendToDaemon=f.send,daemonEE=f.events,saveAndGetCurrentRunRecord=f.saveRecord;
    export const app={isPackaged:true},runtimeFolderPath='/fixture',storageFilePath='/fixture';
    export const readConfigFile=()=>({}),createBudgetStore=()=>({save(){}}),writeTaskConfigSnapshot=()=>'/fixture/snapshot';
-   export const readRunSettings=()=>({runMode:'collect'}),normalizeJobSources=()=>[],initializeAutoChatResume=()=>{};`)
+   export const readRunSettings=()=>({runMode:'collect'}),normalizeJobSources=()=>[],initializeAutoChatResume=()=>{},readAutoChatResume=()=>f.resume;`)
 
 function taskFixture(t, reply) {
   const requests = [], commands = []
