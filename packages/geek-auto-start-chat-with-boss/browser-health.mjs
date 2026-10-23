@@ -19,6 +19,7 @@ export function taskPageError(page, error) {
 const reasons = {
   executable: ['launch', '未找到可执行的浏览器，任务已暂停；请在浏览器设置中重新选择已安装的 Chrome 或 Edge 后恢复'],
   launch: ['launch', '浏览器启动失败，任务已暂停；请检查所选浏览器是否可正常打开、版本是否可用后恢复'],
+  'launch-timeout': ['launch', '浏览器启动连接超时，任务已暂停；请确认浏览器可正常打开，检查后再继续'],
   connection: ['connection', '任务浏览器的连接或监听已中断，任务已暂停；请检查浏览器或代理设置后恢复'],
   closed: ['page', '任务浏览器页面已关闭，任务已暂停；可从任务列表恢复，重新打开浏览器'],
   crashed: ['page', '任务浏览器页面已崩溃，任务已暂停；请关闭占用较高的程序或更新浏览器后恢复'],
@@ -40,7 +41,8 @@ export function taskBrowserError(reason, { cause, httpStatus } = {}) {
 }
 export function browserLaunchError(cause) {
   const missing = cause?.code === 'ENOENT' || /could not find chrome|no executable was found|executable doesn't exist|browser was not found/i.test(cause?.message || '')
-  return taskBrowserError(missing ? 'executable' : 'launch', { cause })
+  const timeout = cause?.name === 'TimeoutError' || /timed?\s*out|timeout/i.test(cause?.message || '')
+  return taskBrowserError(missing ? 'executable' : timeout ? 'launch-timeout' : 'launch', { cause })
 }
 function requestError(text) {
   const reason = /ERR_(?:PROXY|TUNNEL)/.test(text) ? 'proxy' : /ERR_(?:CERT|SSL)/.test(text) ? 'certificate' : 'network'

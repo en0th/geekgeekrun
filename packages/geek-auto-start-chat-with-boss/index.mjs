@@ -1681,6 +1681,7 @@ async function toRecommendPage (hooks) {
             assertCompanyPlatformFilters(computedSourceList[currentSourceIndex], live.row, live.detail, filterCondition)
             if (live.row?.encryptJobId !== targetJobData.jobInfo.encryptId) throw new Error('AUTO_CHAT_COMPANY_SOURCE_NOT_CONFIRMED')
           }
+          autoStartChatEventBus.emit('CHAT_CONFIRMATION', true)
           beginChatConfirmation(page)
           await clickTaskElement(page, startChatButtonProxy)
 
@@ -1720,6 +1721,7 @@ async function toRecommendPage (hooks) {
               }
             )
             blockBossNotNewChat.add(targetJobData.jobInfo.encryptUserId)
+            autoStartChatEventBus.emit('CHAT_CONFIRMATION', false)
             finishChatConfirmation(page)
             const rotateSource = countSourceSuccess()
             autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'sent', detail: 'BOSS已确认开聊成功' })
@@ -1968,6 +1970,8 @@ async function runBrowserLoop (hooks) {
 
     // ;await browser.close()
   } catch (err) {
+    // Launch fails before the health monitor can record its allowlisted reason.
+    if (err?.diagnostic?.stage === 'launch') console.debug('BOSS_BROWSER_DIAGNOSTIC', JSON.stringify(err.diagnostic))
     // a verification page needs the user: keep the window open for them (see waitUntilSecurityCheckPassed)
     let onSecurityCheck = false
     try {

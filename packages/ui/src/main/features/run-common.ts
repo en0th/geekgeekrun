@@ -9,11 +9,13 @@ import path from 'node:path'
 import { readRunSettings } from '@geekgeekrun/geek-auto-start-chat-with-boss/run-settings.mjs'
 import { normalizeJobSources } from '@geekgeekrun/geek-auto-start-chat-with-boss/search-source.mjs'
 import { app } from 'electron'
-import { initializeAutoChatResume } from './task-resume'
+import { initializeAutoChatResume, readAutoChatResume } from './task-resume'
+import { assertCheckpointCanResume } from '../../common/task-recovery.mjs'
 
 interface DaemonStatus {
   workers?: { workerId: string; args?: string[] }[]
   queue?: { workerId: string; position: number; args?: string[] }[]
+  history?: { workerId: string; runRecordId?: number | null; code: number | null; endedAt: number }[]
 }
 
 export async function runCommon({
@@ -52,6 +54,8 @@ export async function runCommon({
   if (runningTask || queuedTask) {
     const commandlineArgs = minimist((runningTask ?? queuedTask)?.args ?? [])
     const runRecordId = Number(commandlineArgs['run-record-id'])
+    if (resumeRunRecordId && runRecordId !== resumeRunRecordId)
+      throw new Error('已有其他任务正在运行或排队，请重新加载任务列表。')
     console.log(runningTask ? '任务已在运行中' : '任务已在队列中')
     return {
       runRecordId,
@@ -60,6 +64,7 @@ export async function runCommon({
       queuePosition: queuedTask?.position ?? 0
     }
   }
+  const currentResume = mode === 'geekAutoStartWithBossMain' ? readAutoChatResume({ strict: true }) : null
   const currentRunRecord = resumeRunRecordId
     ? { id: resumeRunRecordId }
     : withRunRecord
@@ -91,6 +96,11 @@ export async function runCommon({
   }
   if (mode === 'geekAutoStartWithBossMain') {
     const config = Object.fromEntries(['boss.json', 'common-job-condition-config.json', 'target-company-list.json'].map(name => [name, readConfigFile(name)]))
+    if (resumeRunRecordId) assertCheckpointCanResume(currentResume, {
+      runRecordId: resumeRunRecordId,
+      runMode: readRunSettings(config['boss.json']).runMode,
+      history: daemonStatus?.history ?? []
+    })
     normalizeJobSources(config['boss.json'].jobSourceList)
     readRunSettings(config['boss.json'])
     subProcessEnv.GEEKGEEKRUN_TASK_CONFIG_FILE = writeTaskConfigSnapshot(

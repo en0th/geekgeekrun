@@ -6,6 +6,7 @@ import { transform } from 'esbuild'
 import { DEFAULT_RUN_BUDGET, MAX_RUN_BUDGET, normalizeRunBudget, readRunSettings } from '../../geek-auto-start-chat-with-boss/run-settings.mjs'
 import { normalizeJobSources } from '../../geek-auto-start-chat-with-boss/search-source.mjs'
 import { AUTO_CHAT_ERROR_EXIT_CODE } from '../../run-core-of-geek-auto-start-chat-with-boss/enums.mjs'
+import { assertCheckpointCanResume } from '../src/common/task-recovery.mjs'
 
 const source = fs.readFileSync(new URL('../src/renderer/src/page/Ux/index.js', import.meta.url), 'utf8')
 const flat = node => !node ? [] : Array.isArray(node) ? node.flatMap(flat) : [node, ...flat(node.children)]
@@ -33,12 +34,17 @@ test('resume saves the latest budget before dispatching and stops when saving fa
   const code = source.slice(start, source.indexOf('    // pause keeps', start))
   for (const saved of [true, false]) {
     const calls = []
-    const context = vm.createContext({ pausedAutoRun: () => ({ runMode: 'collect' }),
+    const context = vm.createContext({ pausedAutoRun: () => ({ runRecordId: 42, runMode: 'collect', messageSendPending: false, exitCode: 0 }),
+      assertCheckpointCanResume, draft: { value: { runMode: 'collect' } }, taskStore: { taskHistory: [] }, R: { message() {} },
+      preparing: { value: false }, starting: { value: false }, stopping: { value: false },
+      ensureBossLogin: async () => true, recoveryGuide: () => ({ canContinue: true }),
       save: async (_loud, task) => { calls.push('save:' + task); return saved },
-      startTask: async () => calls.push('start'), refreshResume: async () => calls.push('refresh') })
+      startTask: async (_task, _resume, id) => { assert.equal(id, 42); calls.push('start') },
+      refreshResume: async () => { calls.push('refresh'); return true } })
+    context.taskStore.getRunningTasks = async () => {}
     vm.runInContext(code, context)
     await context.resumeTask()
-    assert.deepEqual(calls, saved ? ['save:auto', 'start', 'refresh'] : ['save:auto'])
+    assert.deepEqual(calls, saved ? ['refresh', 'save:auto', 'start', 'refresh'] : ['refresh', 'save:auto'])
   }
 })
 
@@ -70,6 +76,7 @@ test('newly queued workers freeze budgets and declare both budget exits non-rest
     saveAndGetCurrentRunRecord: async () => ({ data: { id: 42 } }),
     process: { env: {}, argv: ['electron'] }, app: { isPackaged: true }, daemonEE: { on() {} },
     readConfigFile: name => config[name], readRunSettings, normalizeJobSources,
+    assertCheckpointCanResume, readAutoChatResume: () => ({ runRecordId: 42, runMode: 'chat', exitCode: 0, messageSendPending: false }),
     runtimeFolderPath: '/isolated-fixture', storageFilePath: '/isolated-fixture/storage', path: { join: (...parts) => parts.join('/') },
     createBudgetStore: (_folder, id) => ({ save: state => initializations.push({ id, state }) }),
     initializeAutoChatResume: (id, mode) => checkpoints.push({ id, mode }),

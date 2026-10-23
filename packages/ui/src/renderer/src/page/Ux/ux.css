@@ -1884,6 +1884,72 @@ html:not(.replica-child) body {
 .ux-run-mode .ux-hint {
   margin-bottom: 0;
 }
+.ux-mode-choices.el-radio-group {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  width: 100%;
+}
+.ux-mode-choice.el-radio {
+  height: auto;
+  min-width: 0;
+  margin: 0;
+  padding: 20px;
+  align-items: flex-start;
+  border: 1px solid var(--el-border-color);
+  border-radius: 8px;
+  white-space: normal;
+}
+.ux-mode-choice.el-radio.is-checked {
+  border-color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+}
+.ux-mode-choice .el-radio__input {
+  margin-top: 3px;
+}
+.ux-mode-choice .el-radio__label {
+  min-width: 0;
+  white-space: normal;
+  line-height: 1.6;
+}
+.ux-mode-choice strong,
+.ux-mode-choice .el-radio__label > span {
+  display: block;
+}
+.ux-mode-choice strong {
+  margin-bottom: 6px;
+  font-size: 16px;
+}
+.ux-mode-choice .el-radio__label > span {
+  color: var(--el-text-color-regular);
+  font-weight: 400;
+}
+.ux-collect-scope.el-radio-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.ux-collect-scope .el-radio {
+  height: auto;
+  margin: 6px 0;
+}
+.ux-collect-scope .el-radio__label {
+  white-space: normal;
+  line-height: 1.5;
+}
+.ux-disclosure-summary {
+  margin: 0;
+  padding: 0 16px 14px;
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 800px) {
+  .ux-mode-choices.el-radio-group {
+    grid-template-columns: 1fr;
+  }
+}
 
 /* task queue page */
 .ux-task-list {
@@ -2871,7 +2937,7 @@ html:not(.replica-child) body {
   margin: 0;
   font-weight: 400;
 }
-.ux-check-facts dl {
+.ux-check-overview dl {
   display: grid;
   grid-template-columns: max-content 1fr;
   gap: 6px 16px;
@@ -2879,12 +2945,18 @@ html:not(.replica-child) body {
   padding: 4px 14px 12px 34px;
   font-size: 13px;
 }
-.ux-check-facts dt {
+.ux-check-overview dt {
   color: var(--el-text-color-secondary);
 }
-.ux-check-facts dd {
+.ux-check-overview dd {
   margin: 0;
   word-break: break-word;
+}
+.ux-check-overview > dl {
+  margin-top: 16px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1.6;
 }
 /* 找岗位 page while its run is paused */
 .ux-paused-banner {
@@ -2893,6 +2965,55 @@ html:not(.replica-child) body {
   border: 1px solid var(--el-color-warning-light-5);
   border-radius: 8px;
   background: var(--el-color-warning-light-9);
+}
+.ux-recovery-card {
+  margin: 16px 0;
+  padding: 20px;
+  border: 1px solid var(--el-color-warning-light-5);
+  border-radius: 8px;
+  background: var(--el-color-warning-light-9);
+  line-height: 1.7;
+}
+.ux-recovery-card h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  line-height: 1.5;
+}
+.ux-recovery-message,
+.ux-recovery-next {
+  margin: 6px 0;
+  overflow-wrap: anywhere;
+}
+.ux-recovery-counts {
+  margin: 12px 0 8px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.ux-recovery-card > .ux-inline {
+  flex-wrap: wrap;
+  margin-top: 14px;
+  gap: 8px;
+}
+.ux-recovery-card .el-button + .el-button {
+  margin-left: 0;
+}
+.ux-recovery-details {
+  margin: 12px 0;
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.ux-recovery-details summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+.ux-task-usage {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  padding: 12px 16px;
+}
+.ux-task-detail-grid.is-paused {
+  grid-template-columns: 1fr;
 }
 .ux-paused-banner-head {
   display: flex;

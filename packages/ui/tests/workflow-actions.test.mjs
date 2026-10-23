@@ -9,12 +9,14 @@ const h = (tag, props, children) => {
   if (children === undefined && (typeof props !== 'object' || Array.isArray(props))) return { tag, props: {}, children: props }
   return { tag, props: props || {}, children }
 }
-function renderFooter({ at = 0, mode = 'chat', skipped = false, rail = false, errors = [], running = false } = {}) {
+function renderFooter({ at = 0, mode = 'chat', skipped = false, rail = false, errors = [], running = false, paused = null, guide = null } = {}) {
   const steps = [{ id: 'mode', label: '运行方式' }, { id: 'filters', label: '职位筛选与来源' }, { id: 'policy', label: '处理方式', skipped }]
   const context = vm.createContext({ h, button: (label, action, props) => ({ tag: 'button', label, action, props: props || {} }),
     autoSteps: () => steps, currentStepId: () => steps[at].id, otherTaskBusy: () => false,
     draft: { value: { runMode: mode } }, railCollapsed: { value: !rail }, preparing: { value: false }, starting: { value: false }, stopping: { value: false },
     running: { value: { auto: running } }, queued: { value: {} }, draftSaveError: { value: '' }, draftSaveState: { value: '已保存' }, errors: { value: errors },
+    pausedAutoRun: () => paused, resumeReadError: { value: '' }, resumeLoading: { value: false }, recoveryGuide: () => guide,
+    recoveryAction() {}, goStep() {},
     attachWorkflowFooter: () => {}, begin: () => {}, moveStep: () => {}, focusError: () => {}, save: () => {}, ArrowRight: 'ArrowRight' })
   vm.runInContext(source.slice(source.indexOf('    function footer(task)'), source.indexOf('    // another BOSS task')), context)
   return context.footer('auto')
@@ -48,4 +50,11 @@ test('a running task explains why another start is unavailable', () => {
   const start = b.find(x => x.label === '开始打招呼')
   assert.equal(start.props.disabled, true)
   assert.match(start.props.title, /运行或排队/)
+})
+
+test('a paused task keeps continuation as the footer action instead of silently starting over', () => {
+  const b = buttons(renderFooter({ paused: { runRecordId: 42 }, guide: { title: '已暂停', primaryAction: 'continue', primaryLabel: '继续运行' } }))
+  assert.equal(b.find(x => x.props.type === 'primary').label, '继续运行')
+  assert.ok(b.some(x => x.label === '新建任务' && x.props.type !== 'primary'))
+  assert.ok(!b.some(x => x.label === '开始打招呼' || x.label === '开始收集'))
 })

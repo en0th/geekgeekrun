@@ -35,7 +35,10 @@ test('launch failures become explicit pauses in both window modes and diagnostic
       return true
     })
   }
-  assert.equal(browserLaunchError(Error('Timed out waiting for the WS endpoint')).diagnostic.reason, 'launch')
+  const timeout = browserLaunchError(Object.assign(Error('Timed out waiting for the WS endpoint /private/token=secret'), { name: 'TimeoutError' }))
+  assert.deepEqual(timeout.diagnostic, { stage: 'launch', reason: 'launch-timeout' })
+  assert.equal(/secret|private|endpoint/.test(JSON.stringify(timeout)), false)
+  assert.equal(browserLaunchError(Error('Browser process failed')).diagnostic.reason, 'launch')
   assert.equal(taskBrowserError('launch', { cause: Error('/private/ERR_SECRET_CREDENTIAL') }).diagnostic.code, undefined)
 })
 

@@ -11,6 +11,9 @@ const viewport = { width: 1440, height: 760 }
 export async function launchTaskBrowser(puppeteer, { background = true } = {}) {
   const browser = await puppeteer.launch({
     headless: false,
+    // Owned tasks do not reconnect by debugger URL. Pipes avoid depending on
+    // Chrome printing a WebSocket endpoint during background startup.
+    pipe: true,
     handleSIGTERM: false,
     handleSIGINT: false,
     handleSIGHUP: false,

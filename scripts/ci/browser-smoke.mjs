@@ -27,7 +27,7 @@ const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || candidates.find(
 assert.ok(executablePath && fs.existsSync(executablePath), 'A real installed Chrome is required; browser verification cannot be skipped')
 const puppeteer = require('puppeteer')
 const runtime = fs.mkdtempSync(path.join(os.tmpdir(), 'ggr-browser-ci-'))
-const report = { platform: process.platform, scenarios: [], bossRequests: 0, collected: 0, skipped: 0, sent: 0, marked: 0 }
+const report = { platform: process.platform, launches: [], scenarios: [], bossRequests: 0, collected: 0, skipped: 0, sent: 0, marked: 0 }
 const reportPath = path.join(root, '.ci-reports/browser-smoke.json')
 try {
   for (const pendingChat of [false, true]) {
@@ -35,8 +35,15 @@ try {
     const budget = createRunBudget({ limits: { requests: 50, detailRequests: 20, activeMinutes: 0 } })
     try {
       const profile = fs.mkdtempSync(path.join(runtime, 'profile-'))
-      const task = await launchTaskBrowser({ launch: options => puppeteer.launch({ ...options, executablePath, userDataDir: profile }) })
+      const task = await launchTaskBrowser({ launch: async options => {
+        assert.equal(options.headless, false)
+        assert.equal(options.pipe, true)
+        const startedAt = Date.now()
+        try { return await puppeteer.launch({ ...options, executablePath, userDataDir: profile }) }
+        finally { report.launches.push({ transport: 'pipe', durationMs: Date.now() - startedAt }) }
+      } })
       browser = task.browser; const page = task.page
+      assert.equal(browser.wsEndpoint(), '', 'Task Chrome must connect through its owned pipe')
       report.browserVersion = await browser.version()
       monitor = watchTaskBrowser(browser, page, { onFailure: error => budget.fail(error) })
       budgetMonitor = await attachJobRequestBudget(page, budget, { onConnectionLost: () => monitor.connectionLost() })
@@ -98,7 +105,13 @@ try {
   }
   assert.equal(report.bossRequests, 0); assert.equal(report.collected, 1); assert.equal(report.skipped, 1)
   report.success = true
-} catch (error) { report.success = false; report.error = error.message; process.exitCode = 1 }
+} catch (error) {
+  report.success = false; report.error = error.message
+  // Launch diagnostics are allowlisted; never capture raw Chrome stderr or URLs.
+  if (error.diagnostic) report.diagnostic = error.diagnostic
+  if (error.detail) report.detail = error.detail
+  process.exitCode = 1
+}
 finally {
   fs.mkdirSync(path.dirname(reportPath), { recursive: true }); fs.writeFileSync(reportPath, JSON.stringify(report, null, 2))
   fs.rmSync(runtime, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 })

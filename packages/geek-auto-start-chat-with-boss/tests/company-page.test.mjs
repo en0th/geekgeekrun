@@ -254,15 +254,17 @@ test('the shipped final click rechecks company and job after the last asynchrono
   assert.ok(start > 0 && end > start)
   for (const mode of ['changed-brand', 'changed-job', 'same']) {
     const f = fixture(t, { wrapped: true }); let clicks = 0
+    const confirmations = []
     const context = { page: f.page, computedSourceList: [source], currentSourceIndex: 0, filterCondition: {},
       targetJobData: detail('first'), runBudget: null, assertCompanyPlatformFilters, startChatButtonProxy: {}, beginChatConfirmation,
+      autoStartChatEventBus: { emit: (event, pending) => { assert.equal(event, 'CHAT_CONFIRMATION'); confirmations.push(pending) } },
       checkJobResponses: async () => {
         if (mode === 'changed-brand') f.view.currentJob = row('first', other)
         if (mode === 'changed-job') { f.view.currentJob = row('different'); f.view.jobDetail = detail('different') }
       }, clickTaskElement: async () => { clicks++ },
     }
     const run = () => vm.runInNewContext('(async () => {' + code.slice(start, end) + '})()', context)
-    if (mode === 'same') { await run(); assert.equal(clicks, 1) }
-    else { await assert.rejects(run(), /COMPANY_SOURCE_NOT_CONFIRMED/); assert.equal(clicks, 0) }
+    if (mode === 'same') { await run(); assert.equal(clicks, 1); assert.deepEqual(confirmations, [true]) }
+    else { await assert.rejects(run(), /COMPANY_SOURCE_NOT_CONFIRMED/); assert.equal(clicks, 0); assert.deepEqual(confirmations, []) }
   }
 })
