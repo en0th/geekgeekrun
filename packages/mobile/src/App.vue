@@ -101,6 +101,15 @@ function dateTime(value: number) {
           s.currentContact ? s.currentContact.name : titles[s.tab]
         }}</strong>
       </div>
+      <button
+        v-if="s.tab === 'assistant' && !s.currentContact"
+        class="icon-button"
+        aria-label="开始新对话"
+        :disabled="!!s.busy"
+        @click="ws.newConversation"
+      >
+        <Icon name="plus" />
+      </button>
       <button class="mode-badge" @click="settingsOpen = true">
         <i :class="{ live: !s.demo }" />{{
           s.demo ? "体验模式" : s.loggedIn ? "已登录" : "待登录"

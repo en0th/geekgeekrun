@@ -367,3 +367,25 @@ test("native MQTT adapter forwards required upgrade headers and binary frames, c
   await tick();
   assert.equal(b.calls.filter((value) => value.url).length, 1);
 });
+
+test("AI context rejects unsafe numeric IDs and login errors keep actionable meaning", () => {
+  const state = { messages: [] };
+  assert.throws(
+    () =>
+      applyAiEvent(state, {
+        event: "create_conversation",
+        data: { id: "9007199254740993" },
+        done: false,
+        raw: { data: "" },
+      }),
+    /exceeds/,
+  );
+  assert.match(
+    errorMessage(Object.assign(new Error(), { code: 7002 })),
+    /验证码无效/,
+  );
+  assert.match(
+    errorMessage(Object.assign(new Error(), { status: 429 })),
+    /频繁/,
+  );
+});

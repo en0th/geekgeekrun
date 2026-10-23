@@ -33,7 +33,6 @@ import {
   deliveryContact,
   errorMessage,
   pendingCard,
-  positiveId,
   record,
   text,
 } from "./models.ts";
@@ -43,7 +42,9 @@ import { demoContacts, demoJobs, welcome } from "./demo.ts";
 type Runtime = ReturnType<typeof createAuthenticatedClient>;
 const stored = () => {
   try {
-    return JSON.parse(localStorage.getItem("geekgeekrun.config") || "{}");
+    return record(
+      JSON.parse(localStorage.getItem("geekgeekrun.config") || "{}"),
+    );
   } catch {
     return {};
   }
@@ -182,6 +183,7 @@ export function createWorkspace() {
     } catch (error) {
       if (owner === scopeVersion || label === "login") {
         state.error = errorMessage(error, write);
+        if (label === "chat") state.connection = "连接已断开";
         if (runtime) {
           state.loggedIn = runtime.sessions.authenticated;
           state.expiresAt = runtime.sessions.snapshot().expiresAt ?? 0;
@@ -344,8 +346,8 @@ export function createWorkspace() {
     const rows = requireRows(response, "messages/list");
     aiState.messages = rows;
     state.ai = aiLines(rows);
-    const last = rows.at(-1);
-    if (last?.id !== undefined) aiState.parentId = positiveId(last.id);
+    // History ordering is not verified. Keep the parent observed in this SSE
+    // round; never replace it with an assumed newest/oldest array element.
   }
   async function sendAI(input: string) {
     if (!input.trim()) return;
@@ -414,6 +416,16 @@ export function createWorkspace() {
       const rt = live();
       await canonical(rt, scopeVersion);
     });
+  }
+  function newConversation() {
+    if (state.busy) return;
+    aiState = { messages: [] };
+    state.ai = [{ id: "welcome", role: "assistant", text: welcome }];
+    state.tasks = [];
+    state.results = [];
+    state.workModeSignal = "";
+    state.error = "";
+    state.notice = "已开始新对话；先前的后台任务可能仍在运行";
   }
   async function refreshTasks() {
     await run("tasks", async () => {
@@ -608,6 +620,8 @@ export function createWorkspace() {
           from = record(m.from),
           to = record(m.to);
         if (![text(from.uid), text(to.uid)].includes(resolved.friendId)) return;
+        const identifiers = [text(m.mid), text(m.cmid)].filter(Boolean);
+        if (state.chat.some((line) => identifiers.includes(line.id))) return;
         state.chat.push({
           id: text(m.mid, crypto.randomUUID()),
           role: text(from.uid) === creds.zpUserId ? "user" : "assistant",
@@ -642,6 +656,7 @@ export function createWorkspace() {
         live();
         if (!im || !credentials || !peerId) throw new Error();
         const v = scopeVersion,
+          connectionVersion = chatVersion,
           handle = im.sendText({ to: peerId, text: input.trim() });
         const line: ChatLine = {
           id: handle.cmid,
@@ -651,7 +666,7 @@ export function createWorkspace() {
         };
         state.chat.push(line);
         const update = (status: string) => {
-          if (v !== scopeVersion) return;
+          if (v !== scopeVersion || connectionVersion !== chatVersion) return;
           const row = state.chat.find((item) => item.id === handle.cmid);
           if (row) row.status = status;
         };
@@ -712,6 +727,7 @@ export function createWorkspace() {
     sendAI,
     stopAI,
     refreshAI,
+    newConversation,
     refreshTasks,
     taskResults,
     refreshJobs,

@@ -1,4 +1,4 @@
-import { ProtocolError, scopedId } from "@recovered/zhijue-ai-sdk";
+import { ProtocolError, scopedId, idNumber } from "@recovered/zhijue-ai-sdk";
 import type { AiSseEvent, JsonRecord } from "@recovered/zhijue-ai-sdk";
 
 export const record = (value: unknown): JsonRecord =>
@@ -23,7 +23,9 @@ export function apiOrigin(input: string): string {
   return url.origin;
 }
 export function positiveId(value: unknown): string {
-  return scopedId("AiMessageId", value).value;
+  const id = scopedId("AiMessageId", value);
+  idNumber("AiMessageId", id);
+  return id.value;
 }
 export function messageText(input: unknown): string {
   const content = record(record(input).content);
@@ -188,6 +190,11 @@ export function aiLines(messages: JsonRecord[]): ChatLine[] {
 }
 export function errorMessage(error: unknown, write = false): string {
   const name = error instanceof Error ? error.name : "";
+  const code = record(error).code;
+  if (code === 7002) return "验证码无效或已过期，请重新获取";
+  if (code === 400403) return "此账号需要邀请码，请联系服务方";
+  if (code === 2002) return "账号暂不可用，请联系服务方";
+  if (record(error).status === 429) return "操作过于频繁，请稍后重试";
   if (name === "AbortError") return "已停止本次请求";
   if (
     [

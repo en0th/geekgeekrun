@@ -77,7 +77,12 @@ jobs:
       - run: pnpm mobile:build
       - run: pnpm --filter geekgeekrun-mobile exec cap sync android
       - name: Verify Android SDK 36 is installed
-        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+        run: |
+          ggr_android_sdk="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          ggr_sdkmanager="$ggr_android_sdk/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$ggr_sdkmanager"
+          "$ggr_sdkmanager" --sdk_root="$ggr_android_sdk" 'platforms;android-36' 'build-tools;35.0.0' 'build-tools;36.0.0'
+          echo "ANDROID_HOME=$ggr_android_sdk" >> "$GITHUB_ENV"
       - name: Build and lint APK
         working-directory: packages/mobile/android
         run: ./gradlew --no-daemon --console=plain assembleDebug assembleRelease lintRelease

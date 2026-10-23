@@ -88,7 +88,8 @@ public class MobileBridgePlugin extends Plugin {
             }
             request.removeHeader("Content-Type");body = multipart.build();
         } else if (!method.equals("GET") && !method.equals("HEAD")) {
-            body = RequestBody.create(MediaType.parse(headers.optString("content-type", "application/json")), call.getString("body", ""));
+            String contentType = headers.optString("content-type", "");
+            body = RequestBody.create(contentType.isEmpty() ? null : MediaType.parse(contentType), call.getString("body", ""));
         }
         return request.method(method, body).build();
     }
