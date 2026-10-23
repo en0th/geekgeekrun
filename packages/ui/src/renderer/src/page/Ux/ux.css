@@ -2966,6 +2966,55 @@ html:not(.replica-child) body {
   border-radius: 8px;
   background: var(--el-color-warning-light-9);
 }
+.ux-recovery-card {
+  margin: 16px 0;
+  padding: 20px;
+  border: 1px solid var(--el-color-warning-light-5);
+  border-radius: 8px;
+  background: var(--el-color-warning-light-9);
+  line-height: 1.7;
+}
+.ux-recovery-card h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  line-height: 1.5;
+}
+.ux-recovery-message,
+.ux-recovery-next {
+  margin: 6px 0;
+  overflow-wrap: anywhere;
+}
+.ux-recovery-counts {
+  margin: 12px 0 8px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.ux-recovery-card > .ux-inline {
+  flex-wrap: wrap;
+  margin-top: 14px;
+  gap: 8px;
+}
+.ux-recovery-card .el-button + .el-button {
+  margin-left: 0;
+}
+.ux-recovery-details {
+  margin: 12px 0;
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.ux-recovery-details summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+.ux-task-usage {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  padding: 12px 16px;
+}
+.ux-task-detail-grid.is-paused {
+  grid-template-columns: 1fr;
+}
 .ux-paused-banner-head {
   display: flex;
   align-items: center;

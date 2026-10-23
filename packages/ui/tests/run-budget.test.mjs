@@ -36,11 +36,15 @@ test('resume saves the latest budget before dispatching and stops when saving fa
     const calls = []
     const context = vm.createContext({ pausedAutoRun: () => ({ runRecordId: 42, runMode: 'collect', messageSendPending: false, exitCode: 0 }),
       assertCheckpointCanResume, draft: { value: { runMode: 'collect' } }, taskStore: { taskHistory: [] }, R: { message() {} },
+      preparing: { value: false }, starting: { value: false }, stopping: { value: false },
+      ensureBossLogin: async () => true, recoveryGuide: () => ({ canContinue: true }),
       save: async (_loud, task) => { calls.push('save:' + task); return saved },
-      startTask: async () => calls.push('start'), refreshResume: async () => calls.push('refresh') })
+      startTask: async (_task, _resume, id) => { assert.equal(id, 42); calls.push('start') },
+      refreshResume: async () => { calls.push('refresh'); return true } })
+    context.taskStore.getRunningTasks = async () => {}
     vm.runInContext(code, context)
     await context.resumeTask()
-    assert.deepEqual(calls, saved ? ['save:auto', 'start', 'refresh'] : ['save:auto'])
+    assert.deepEqual(calls, saved ? ['refresh', 'save:auto', 'start', 'refresh'] : ['refresh', 'save:auto'])
   }
 })
 

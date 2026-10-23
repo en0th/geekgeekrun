@@ -258,7 +258,7 @@ export default function initIpc() {
 
   // the paused 找岗位 run that 任务列表 → 恢复 goes on with (its progress feeds the dashboard)
   ipcMain.handle('get-auto-chat-resume', () => {
-    const state = readAutoChatResume()
+    const state = readAutoChatResume({ strict: true })
     if (!state) return null
     return {
       runRecordId: state.runRecordId,
@@ -266,6 +266,7 @@ export default function initIpc() {
       savedAt: state.savedAt,
       exitCode: state.exitCode,
       messageSendPending: state.messageSendPending,
+      recoveryReason: state.recoveryReason,
       progress: state.progress ?? {}
     }
   })
@@ -286,7 +287,7 @@ export default function initIpc() {
         (running ?? queued)?.args
           ?.find((a) => String(a).startsWith('--run-record-id='))
           ?.split('=')[1]
-      ) || readAutoChatResume()?.runRecordId
+      ) || readAutoChatResume({ strict: true })?.runRecordId
     // first, so nothing written while the task exits can bring the run back
     markAutoChatRunTerminated(runRecordId)
     if (running || queued) {
@@ -312,12 +313,15 @@ export default function initIpc() {
   })
   ipcMain.handle(
     'run-geek-auto-start-chat-with-boss',
-    async (_ev, options?: { resume?: boolean }) => {
+    async (_ev, options?: { resume?: boolean; runRecordId?: number }) => {
       const mode = 'geekAutoStartWithBossMain'
       let resumeRunRecordId: number | null = null
+      const checkpoint = readAutoChatResume({ strict: true })
       if (options?.resume) {
-        resumeRunRecordId = Number(readAutoChatResume()?.runRecordId) || null
+        resumeRunRecordId = Number(checkpoint?.runRecordId) || null
         if (!resumeRunRecordId) throw new Error('没有可以恢复的找岗位任务')
+        if (!Number.isSafeInteger(options.runRecordId) || options.runRecordId !== resumeRunRecordId)
+          throw new Error('任务信息已更新，请重新加载后再继续。')
       } else {
         // a new run replaces the paused one, which is terminated
         const status = (await sendToDaemon({ type: 'get-status' }, { needCallback: true })) as

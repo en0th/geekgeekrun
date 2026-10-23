@@ -117,10 +117,11 @@ const runAutoChat = async () => {
   // the run rotated through every source and finished: nothing left to resume
   let runCompleted = false
   let messageSendPending = resumed && saved?.messageSendPending === true
+  let recoveryReason: 'source-missing' | 'safety-guard' | undefined
   const saveResume = ({ exitCode, pending = messageSendPending, required = false }:
     { exitCode?: number; pending?: boolean; required?: boolean } = {}) => {
     if (!runRecordId) {
-      if (required) throw new Error('无法记录本次发送状态，任务已停止')
+      if (required) throw Object.assign(new Error('无法记录本次发送状态，任务已停止，请保留数据并检查任务记录。'), { code: 'GGR_FILE_WRITE_FAILED' })
       return
     }
     if (runCompleted) {
@@ -134,6 +135,7 @@ const runAutoChat = async () => {
       savedAt: Date.now(),
       exitCode,
       messageSendPending: pending,
+      recoveryReason,
       skipCurrentFilter: skipCurrentFilterNextTime,
       runState: exportRunState(),
       progress: { ...rest, log: log.slice(-100) }
@@ -369,6 +371,8 @@ const runAutoChat = async () => {
           )
         ) {
           const noMatch = err.message.includes('NO_MATCH_BATCH_LIMIT')
+          recoveryReason = /CHAT_BLOCKED/.test(err.message) ? 'safety-guard'
+            : err.message.includes('NO_USABLE_SOURCE') ? 'source-missing' : undefined
           // 继续任务 then starts after the filter combination that had nothing usable
           skipCurrentFilterNextTime = noMatch
           taskProgress.update(

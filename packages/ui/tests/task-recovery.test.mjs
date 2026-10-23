@@ -11,6 +11,7 @@ import { build, transform } from 'esbuild'
 import { checkpointRecovery, assertCheckpointCanResume } from '../src/common/task-recovery.mjs'
 import { readRunSettings } from '../../geek-auto-start-chat-with-boss/run-settings.mjs'
 import { normalizeJobSources } from '../../geek-auto-start-chat-with-boss/search-source.mjs'
+import { isJsonStorageError } from '../../utils/atomic-json.mjs'
 import { AUTO_CHAT_ERROR_EXIT_CODE } from '../../run-core-of-geek-auto-start-chat-with-boss/enums.mjs'
 
 const AUTO = 'geekAutoStartWithBossMain'
@@ -87,6 +88,29 @@ test('confirmation metadata remains blocked after loading the real checkpoint in
   assert.equal(checkpointRecovery(load().readAutoChatResume()).canResume, true)
 })
 
+test('unreadable or malformed progress remains intact and cannot be treated as an empty task', t => {
+  const { folder, load } = resumeStorage(t), storage = load(), file = path.join(folder, 'auto-chat-resume.json')
+  assert.equal(storage.readAutoChatResume({ strict: true }), null)
+  for (const text of ['{"private":"fixture-private-text', JSON.stringify(checkpoint({ progress: 'invalid' }))]) {
+    fs.writeFileSync(file, text)
+    assert.throws(() => storage.readAutoChatResume({ strict: true }), error => {
+      assert.equal(error.code, 'GGR_JSON_INVALID')
+      assert.doesNotMatch(error.message, /fixture-private-text/)
+      return true
+    })
+    assert.equal(fs.readFileSync(file, 'utf8'), text)
+  }
+  fs.rmSync(file); fs.mkdirSync(file)
+  assert.throws(() => storage.readAutoChatResume({ strict: true }), error => error.code === 'GGR_FILE_READ_FAILED')
+  assert.equal(fs.statSync(file).isDirectory(), true)
+})
+
+test('a stopped safety guard cannot be bypassed by ordinary continuation', () => {
+  const state = checkpoint({ exitCode: 89, recoveryReason: 'safety-guard' })
+  assert.equal(checkpointRecovery(state).canResume, false)
+  assert.throws(() => assertCheckpointCanResume(state, { runRecordId: 42, runMode: 'collect' }), /不能直接继续/)
+})
+
 const worker = fs.readFileSync(new URL('../src/main/flow/GEEK_AUTO_START_CHAT_WITH_BOSS_MAIN/index.ts', import.meta.url), 'utf8')
 const workerSave = await transform(worker.slice(worker.indexOf('  let messageSendPending ='), worker.indexOf('  const resumeSaver =')), { loader: 'ts' })
 function checkpointRecorder(storage) {
@@ -109,8 +133,14 @@ test('the shipped click path records pending first and refuses to click if the r
   assert.equal(clicks, 1)
   fs.rmSync(path.join(folder, 'auto-chat-resume.json'))
   fs.mkdirSync(path.join(folder, 'auto-chat-resume.json'))
-  await assert.rejects(vm.runInContext('(async()=>{' + beforeClick + '})()', ctx))
+  await assert.rejects(vm.runInContext('(async()=>{' + beforeClick + '})()', ctx), error => error.code === 'GGR_FILE_WRITE_FAILED' && isJsonStorageError(error))
   assert.equal(clicks, 1)
+  fs.rmSync(path.join(folder, 'auto-chat-resume.json'), { recursive: true })
+  const marker = path.join(folder, 'auto-chat-terminated.json'), text = '{"private":"fixture-marker-text'
+  fs.writeFileSync(marker, text)
+  await assert.rejects(vm.runInContext('(async()=>{' + beforeClick + '})()', ctx), error => error.code === 'GGR_JSON_INVALID' && isJsonStorageError(error))
+  assert.equal(clicks, 1)
+  assert.equal(fs.readFileSync(marker, 'utf8'), text)
 })
 
 test('pending clears only after the shipped confirmed-storage hook succeeds', async t => {
@@ -138,7 +168,9 @@ test('the actual renderer refuses blocked or changed-mode continuation before sa
   for (const [state, mode] of [[checkpoint({ messageSendPending: true }), 'collect'], [checkpoint(), 'chat']]) {
     const calls = []
     const ctx = vm.createContext({ pausedAutoRun: () => state, assertCheckpointCanResume,
-      draft: { value: { runMode: mode } }, taskStore: { taskHistory: [] }, R: { message: info => calls.push(info.message) },
+      draft: { value: { runMode: mode } }, taskStore: { taskHistory: [], getRunningTasks: async () => {} },
+      preparing: { value: false }, starting: { value: false }, stopping: { value: false }, refreshResume: async () => true,
+      R: { message: info => calls.push(info.message) },
       save: () => assert.fail('blocked continuation cannot save'), startTask: () => assert.fail('blocked continuation cannot dispatch') })
     vm.runInContext(code, ctx); await ctx.resumeTask()
     assert.equal(calls.length, 1)
