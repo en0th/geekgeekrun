@@ -1,7 +1,7 @@
 // Rows of the 任务列表 table: one per run, running / queued / paused ones and the ended ones.
 // They live in a temporary table rebuilt from the daemon's state before each query, so the
 // table gets the same search, filters, statistics and export as the data tables.
-import { readAutoChatResume } from '../../../../../features/task-resume'
+import { readAutoChatResume, isAutoChatRunTerminated } from '../../../../../features/task-resume'
 import { checkpointRecovery } from '../../../../../../common/task-recovery.mjs'
 import {
   AUTO_CHAT_WORKER_ID,
@@ -166,8 +166,8 @@ export function taskRunRows(context: TaskRunsContext, now = Date.now()) {
     else run.firstStartedAt = Math.min(run.firstStartedAt, t.startedAt)
   }
   for (const [key, t] of ended) {
-    // 找岗位 runs reach the history only by being terminated (a stop is a pause); a run that
-    // rotated through every source finished successfully
+    // A missing checkpoint does not mean the user terminated the run.
+    // Only the explicit termination marker earns that label.
     const auto = t.workerId === AUTO_CHAT_WORKER_ID
     const rotatedAll = auto && t.code === 92
     row({
@@ -176,7 +176,7 @@ export function taskRunRows(context: TaskRunsContext, now = Date.now()) {
       workerId: t.workerId,
       runRecordId: t.runRecordId,
       runMode: t.runMode,
-      status: rotatedAll ? '已完成' : auto ? '已终止' : OUTCOME_LABELS[t.outcome] ?? t.outcome,
+      status: rotatedAll ? '已完成' : auto ? isAutoChatRunTerminated(t.runRecordId) ? '已终止' : '已停止' : OUTCOME_LABELS[t.outcome] ?? t.outcome,
       startedAt: t.firstStartedAt,
       endedAt: t.endedAt,
       note: t.code

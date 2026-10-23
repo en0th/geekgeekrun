@@ -13,18 +13,30 @@ const TERMINATED_FILE_NAME = 'auto-chat-terminated.json'
 const terminatedFilePath = () => path.join(storageFilePath, TERMINATED_FILE_NAME)
 const TERMINATED_KEEP = 200
 
-function terminatedRunIds(folder = storageFilePath): number[] {
+function terminatedRunIds(folder = storageFilePath, { strict = false } = {}): number[] {
+  let text: string
   try {
-    const list = JSON.parse(fs.readFileSync(path.join(folder, TERMINATED_FILE_NAME), 'utf8'))
+    text = fs.readFileSync(path.join(folder, TERMINATED_FILE_NAME), 'utf8')
+  } catch (error) {
+    if (strict && (error as NodeJS.ErrnoException).code !== 'ENOENT')
+      throw Object.assign(new Error('暂时无法确认任务结束记录，请检查数据目录；原文件已保留。'), { code: 'GGR_FILE_READ_FAILED' })
+    return []
+  }
+  try {
+    const list = JSON.parse(text)
+    if (strict && (!Array.isArray(list) || list.some(value =>
+      !['number', 'string'].includes(typeof value) || !Number.isSafeInteger(Number(value)) || Number(value) <= 0)))
+      throw new Error('invalid termination record')
     return Array.isArray(list) ? list.map(Number).filter((n) => n > 0) : []
   } catch {
+    if (strict) throw Object.assign(new Error('任务结束记录无法确认，请保留原文件并检查数据目录。'), { code: 'GGR_JSON_INVALID' })
     return []
   }
 }
 
-export function isAutoChatRunTerminated(runRecordId: unknown) {
+export function isAutoChatRunTerminated(runRecordId: unknown, { strict = false } = {}) {
   const id = Number(runRecordId)
-  return id > 0 && terminatedRunIds().includes(id)
+  return id > 0 && terminatedRunIds(storageFilePath, { strict }).includes(id)
 }
 
 /** remember that this run was terminated */
@@ -47,6 +59,7 @@ export interface AutoChatResumeState {
   exitCode?: number
   // Written before the actual click and cleared only after confirmed storage.
   messageSendPending?: boolean
+  recoveryReason?: 'source-missing' | 'safety-guard'
   // the run stopped because its filter combination had nothing usable: go on after it
   skipCurrentFilter?: boolean
   // from exportRunState() of the worker core
@@ -71,17 +84,32 @@ export function initializeAutoChatResume(runRecordId: number, runMode: string, f
   if (ids.includes(runRecordId)) writeJsonAtomicSync(path.join(folder, TERMINATED_FILE_NAME), ids.filter(id => id !== runRecordId))
 }
 
-export function readAutoChatResume(): AutoChatResumeState | null {
+export function readAutoChatResume({ strict = false } = {}): AutoChatResumeState | null {
+  let text: string
   try {
-    const state = JSON.parse(fs.readFileSync(filePath(), 'utf8'))
-    if (!state || !Number(state.runRecordId)) return null
+    text = fs.readFileSync(filePath(), 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    if (strict) throw Object.assign(new Error('任务进度暂时无法读取，请检查数据目录后重试；原文件已保留。'), { code: 'GGR_FILE_READ_FAILED' })
+    return null
+  }
+  try {
+    const state = JSON.parse(text)
+    if (!state || typeof state !== 'object' || Array.isArray(state) ||
+      !['number', 'string'].includes(typeof state.runRecordId) || !Number.isSafeInteger(Number(state.runRecordId)) ||
+      Number(state.runRecordId) <= 0 || !['chat', 'collect'].includes(state.runMode)) throw new Error('invalid checkpoint')
+    const record = (value: unknown) => value !== null && typeof value === 'object' && !Array.isArray(value)
+    if ((state.progress !== undefined && !record(state.progress)) ||
+      (state.runState !== undefined && !record(state.runState))) throw new Error('invalid checkpoint')
     // a leftover of a terminated run: clean it up
-    if (isAutoChatRunTerminated(state.runRecordId)) {
+    if (isAutoChatRunTerminated(state.runRecordId, { strict })) {
       discardAutoChatResume()
       return null
     }
     return state
   } catch {
+    // Never forward JSON.parse messages: they can contain private file contents.
+    if (strict) throw Object.assign(new Error('任务进度文件无法确认，原文件已保留。请保留现有数据，检查后重新读取。'), { code: 'GGR_JSON_INVALID' })
     return null
   }
 }
@@ -96,14 +124,16 @@ export function discardAutoChatResume() {
 }
 
 export function writeAutoChatResume(state: AutoChatResumeState, { required = false } = {}) {
-  if (isAutoChatRunTerminated(state.runRecordId)) {
+  if (isAutoChatRunTerminated(state.runRecordId, { strict: required })) {
     if (required) throw new Error('AUTO_CHAT_TASK_STOPPING')
     return
   }
   try {
     writeJsonAtomicSync(filePath(), state)
   } catch (err) {
-    if (required) throw err
+    if (required) throw Object.assign(new Error('无法确认任务进度已保存，已停止后续操作。请检查数据目录的空间和读写权限。'), {
+      code: 'GGR_FILE_WRITE_FAILED', atomicCommitted: Boolean((err as { atomicCommitted?: boolean }).atomicCommitted)
+    })
     console.error('cannot save the resume state', err)
   }
 }

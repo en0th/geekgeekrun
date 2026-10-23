@@ -8,10 +8,11 @@ const codeOf = value => Number.isSafeInteger(value) && value >= 0 ? value : null
 // History also protects checkpoints written by versions without confirmation metadata.
 export function checkpointRecovery(checkpoint, { history = [] } = {}) {
   const id = Number(checkpoint?.runRecordId)
-  if (!Number.isSafeInteger(id) || id <= 0)
+  if (!['number', 'string'].includes(typeof checkpoint?.runRecordId) || !Number.isSafeInteger(id) || id <= 0)
     return { canResume: false, reason: 'missing', code: null }
   if (!['chat', 'collect'].includes(checkpoint.runMode) ||
     (checkpoint.messageSendPending !== undefined && typeof checkpoint.messageSendPending !== 'boolean') ||
+    (checkpoint.recoveryReason !== undefined && !['source-missing', 'safety-guard'].includes(checkpoint.recoveryReason)) ||
     (checkpoint.exitCode != null && codeOf(checkpoint.exitCode) === null))
     return { canResume: false, reason: 'unconfirmed-checkpoint', code: null }
   const startedAt = checkpoint.progress?.startedAt
@@ -23,6 +24,8 @@ export function checkpointRecovery(checkpoint, { history = [] } = {}) {
     ? savedCode : historyCode ?? savedCode
   if (checkpoint.messageSendPending === true || code === 87)
     return { canResume: false, reason: 'send-unconfirmed', code: 87 }
+  if (checkpoint.recoveryReason === 'safety-guard')
+    return { canResume: false, reason: 'safety-guard', code }
   if (code === 92) return { canResume: false, reason: 'completed', code }
   const canResume = code === 0 || code === 90 || knownSetupExits.has(code) || isResumableTaskExit(AUTO, code)
     || (code === null && (checkpoint.messageSendPending === false || checkpoint.runMode === 'collect'))
@@ -34,7 +37,7 @@ export function assertCheckpointCanResume(checkpoint, { runRecordId, runMode, hi
   if (!checkpoint || Number(checkpoint.runRecordId) !== Number(runRecordId) || recovery.reason === 'missing')
     throw new Error('没有可以继续的找岗位任务，请重新加载任务列表。')
   if (!recovery.canResume)
-    throw new Error(recovery.reason === 'send-unconfirmed'
+    throw new Error(recovery.reason === 'safety-guard' ? '保护检查已阻止不应发生的操作，此任务不能直接继续。请保留数据并反馈问题。' : recovery.reason === 'send-unconfirmed'
       ? '上次发送结果尚未确认，请先在BOSS会话中核对。此任务不能直接继续；已保存的数据会保留。'
       : '无法确认这次任务是否可以安全继续。请查看任务详情，保留现有数据，确认后新建任务。')
   if (!['chat', 'collect'].includes(checkpoint.runMode) || (runMode && checkpoint.runMode !== runMode))

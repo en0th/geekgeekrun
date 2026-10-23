@@ -125,22 +125,29 @@ export interface TaskHistoryEntry {
 }
 
 export const useTaskManagerStore = defineStore('taskManager', () => {
+  const ready = ref(false)
   const runningTasks = ref<RunningTask[]>([])
   // BOSS tasks run one at a time; the rest wait here in order
   const taskQueue = ref<QueuedTask[]>([])
   const taskHistory = ref<TaskHistoryEntry[]>([])
   async function getRunningTasks() {
     const { ipcRenderer } = electron
-    const res = await ipcRenderer.invoke('get-task-manager-list')
-    runningTasks.value = res.workers ?? []
-    taskQueue.value = res.queue ?? []
-    taskHistory.value = res.history ?? []
+    try {
+      const res = await ipcRenderer.invoke('get-task-manager-list')
+      runningTasks.value = res.workers ?? []
+      taskQueue.value = res.queue ?? []
+      taskHistory.value = res.history ?? []
+      ready.value = true
+    } catch (error) {
+      ready.value = false
+      throw error
+    }
   }
   const throttledGetRunningTasks = throttle(getRunningTasks, 2000)
   // Polling is throttled; start/stop guards must await a fresh daemon snapshot.
   setInterval(() => throttledGetRunningTasks()?.catch(() => {}), 2 * 1000)
   getRunningTasks().catch(() => {})
-  return { runningTasks, taskQueue, taskHistory, getRunningTasks }
+  return { ready, runningTasks, taskQueue, taskHistory, getRunningTasks }
 })
 
 /** a request to open a data table with filters, e.g. from a task history row */

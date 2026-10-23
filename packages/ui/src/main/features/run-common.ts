@@ -54,6 +54,8 @@ export async function runCommon({
   if (runningTask || queuedTask) {
     const commandlineArgs = minimist((runningTask ?? queuedTask)?.args ?? [])
     const runRecordId = Number(commandlineArgs['run-record-id'])
+    if (resumeRunRecordId && runRecordId !== resumeRunRecordId)
+      throw new Error('已有其他任务正在运行或排队，请重新加载任务列表。')
     console.log(runningTask ? '任务已在运行中' : '任务已在队列中')
     return {
       runRecordId,
@@ -62,6 +64,7 @@ export async function runCommon({
       queuePosition: queuedTask?.position ?? 0
     }
   }
+  const currentResume = mode === 'geekAutoStartWithBossMain' ? readAutoChatResume({ strict: true }) : null
   const currentRunRecord = resumeRunRecordId
     ? { id: resumeRunRecordId }
     : withRunRecord
@@ -93,7 +96,7 @@ export async function runCommon({
   }
   if (mode === 'geekAutoStartWithBossMain') {
     const config = Object.fromEntries(['boss.json', 'common-job-condition-config.json', 'target-company-list.json'].map(name => [name, readConfigFile(name)]))
-    if (resumeRunRecordId) assertCheckpointCanResume(readAutoChatResume(), {
+    if (resumeRunRecordId) assertCheckpointCanResume(currentResume, {
       runRecordId: resumeRunRecordId,
       runMode: readRunSettings(config['boss.json']).runMode,
       history: daemonStatus?.history ?? []
