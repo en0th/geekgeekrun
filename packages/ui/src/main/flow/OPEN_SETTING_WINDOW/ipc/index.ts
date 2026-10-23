@@ -264,6 +264,8 @@ export default function initIpc() {
       runRecordId: state.runRecordId,
       runMode: state.runMode,
       savedAt: state.savedAt,
+      exitCode: state.exitCode,
+      messageSendPending: state.messageSendPending,
       progress: state.progress ?? {}
     }
   })

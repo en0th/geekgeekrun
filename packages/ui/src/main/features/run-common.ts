@@ -9,11 +9,13 @@ import path from 'node:path'
 import { readRunSettings } from '@geekgeekrun/geek-auto-start-chat-with-boss/run-settings.mjs'
 import { normalizeJobSources } from '@geekgeekrun/geek-auto-start-chat-with-boss/search-source.mjs'
 import { app } from 'electron'
-import { initializeAutoChatResume } from './task-resume'
+import { initializeAutoChatResume, readAutoChatResume } from './task-resume'
+import { assertCheckpointCanResume } from '../../common/task-recovery.mjs'
 
 interface DaemonStatus {
   workers?: { workerId: string; args?: string[] }[]
   queue?: { workerId: string; position: number; args?: string[] }[]
+  history?: { workerId: string; runRecordId?: number | null; code: number | null; endedAt: number }[]
 }
 
 export async function runCommon({
@@ -91,6 +93,11 @@ export async function runCommon({
   }
   if (mode === 'geekAutoStartWithBossMain') {
     const config = Object.fromEntries(['boss.json', 'common-job-condition-config.json', 'target-company-list.json'].map(name => [name, readConfigFile(name)]))
+    if (resumeRunRecordId) assertCheckpointCanResume(readAutoChatResume(), {
+      runRecordId: resumeRunRecordId,
+      runMode: readRunSettings(config['boss.json']).runMode,
+      history: daemonStatus?.history ?? []
+    })
     normalizeJobSources(config['boss.json'].jobSourceList)
     readRunSettings(config['boss.json'])
     subProcessEnv.GEEKGEEKRUN_TASK_CONFIG_FILE = writeTaskConfigSnapshot(

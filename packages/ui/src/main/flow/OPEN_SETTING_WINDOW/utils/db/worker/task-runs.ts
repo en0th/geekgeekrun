@@ -2,6 +2,7 @@
 // They live in a temporary table rebuilt from the daemon's state before each query, so the
 // table gets the same search, filters, statistics and export as the data tables.
 import { readAutoChatResume } from '../../../../../features/task-resume'
+import { checkpointRecovery } from '../../../../../../common/task-recovery.mjs'
 import {
   AUTO_CHAT_WORKER_ID,
   EXIT_CODE_LABELS,
@@ -141,14 +142,15 @@ export function taskRunRows(context: TaskRunsContext, now = Date.now()) {
   if (pausedKey && !open.has(pausedKey)) {
     open.add(pausedKey)
     const progress = (resume!.progress ?? {}) as { startedAt?: number }
-    const code = lastAuto?.code ?? 0
+    const recovery = checkpointRecovery(resume, { history })
+    const code = recovery.code ?? 0
     row({
       key: pausedKey,
       phase: 'current',
       workerId: AUTO_CHAT_WORKER_ID,
       runRecordId: resume!.runRecordId,
       runMode: resume!.runMode,
-      status: '已暂停',
+      status: recovery.reason === 'send-unconfirmed' ? '待核对发送结果' : recovery.canResume ? '已暂停' : '需要处理',
       startedAt: progress.startedAt ?? lastAuto?.startedAt,
       endedAt: resume!.savedAt,
       note: code ? firstPart(EXIT_CODE_LABELS[code] ?? `退出码 ${code}`) : '手动暂停',

@@ -44,6 +44,9 @@ export interface AutoChatResumeState {
   runRecordId: number
   runMode: string
   savedAt: number
+  exitCode?: number
+  // Written before the actual click and cleared only after confirmed storage.
+  messageSendPending?: boolean
   // the run stopped because its filter combination had nothing usable: go on after it
   skipCurrentFilter?: boolean
   // from exportRunState() of the worker core
@@ -58,7 +61,7 @@ export function initializeAutoChatResume(runRecordId: number, runMode: string, f
     throw new Error('无法初始化任务检查点：运行编号或方式无效')
   const now = Date.now()
   writeJsonAtomicSync(path.join(folder, FILE_NAME), {
-    runRecordId, runMode, savedAt: now, runState: {},
+    runRecordId, runMode, savedAt: now, runState: {}, messageSendPending: false,
     progress: { startedAt: now, viewed: 0, collected: 0, sent: 0, skipped: 0, marked: 0,
       state: 'queued', detail: '等待任务启动', runRecordId }
   })
@@ -92,11 +95,15 @@ export function discardAutoChatResume() {
   }
 }
 
-export function writeAutoChatResume(state: AutoChatResumeState) {
-  if (isAutoChatRunTerminated(state.runRecordId)) return
+export function writeAutoChatResume(state: AutoChatResumeState, { required = false } = {}) {
+  if (isAutoChatRunTerminated(state.runRecordId)) {
+    if (required) throw new Error('AUTO_CHAT_TASK_STOPPING')
+    return
+  }
   try {
     writeJsonAtomicSync(filePath(), state)
   } catch (err) {
+    if (required) throw err
     console.error('cannot save the resume state', err)
   }
 }
