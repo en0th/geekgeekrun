@@ -1,0 +1,33 @@
+{
+  "name": "geekgeekrun-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vue-tsc --noEmit && vite build",
+    "test": "node --test test/*.test.mjs",
+    "native:sync": "cap sync",
+    "android:debug": "cd android && ./gradlew assembleDebug",
+    "ios:open": "cap open ios",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "@recovered/zhijue-ai-sdk": "workspace:*",
+    "@capacitor/core": "8.5.3",
+    "@capacitor/android": "8.5.3",
+    "@capacitor/ios": "8.5.3",
+    "vue": "3.5.44",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/browser": "8.0.5"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.3",
+    "@vitejs/plugin-vue": "6.0.10",
+    "vite": "8.3.5",
+    "vue-tsc": "3.1.8",
+    "typescript": "5.9.3",
+    "esbuild": "0.28.2"
+  }
+}

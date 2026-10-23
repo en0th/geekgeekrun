@@ -1,0 +1,1448 @@
+{
+  "schema_version": 1,
+  "synthetic": true,
+  "source_path": "/Users/abc/Documents/deepseek-harness/zj/HBuilder.app/Pandora/apps/__UNI__49240F0/www/app-service.js",
+  "source_sha256": "85df0d8ca64906e303f261512d32fb695450ec70dcc6862aedcee796533da79e",
+  "execution": "Fixture only: no network, login, real tokens, app execution, actual chat or delivery. All response objects are minimal synthetic examples of fields consumed by source, not recovered complete server schemas.",
+  "harness_metadata_boundary": "tokens/id_bindings/callbacks/policies/expected fields describe the test harness; they are not sent as API body or asserted server fields.",
+  "id_tokens": {
+    "app_user": {
+      "namespace": "AppUserId",
+      "value": 10101
+    },
+    "conversation_C": {
+      "namespace": "AiConversationId",
+      "value": 20101
+    },
+    "user_message_U": {
+      "namespace": "AiMessageId",
+      "value": 20201
+    },
+    "task_message_M": {
+      "namespace": "AiMessageId",
+      "value": 20301
+    },
+    "latest_parent_A": {
+      "namespace": "AiMessageId",
+      "value": 20302
+    },
+    "task_T": {
+      "namespace": "AiTaskId",
+      "value": 30101
+    },
+    "ai_result_R": {
+      "namespace": "AiTaskResultId",
+      "value": 30201
+    },
+    "report_D": {
+      "namespace": "DailyReportId",
+      "value": 40101
+    },
+    "pending_P": {
+      "namespace": "PendingResultId",
+      "value": 40201
+    },
+    "pending_job_J": {
+      "namespace": "PendingJobId",
+      "value": 50101
+    },
+    "pending_boss_B": {
+      "namespace": "PendingBossId",
+      "value": 50201
+    },
+    "delivery_record_K": {
+      "namespace": "DeliveryRecordId",
+      "value": 60101
+    },
+    "record_zp_job_Z": {
+      "namespace": "DeliveryZpJobId",
+      "value": 60201
+    },
+    "record_boss_initial": {
+      "namespace": "RecordBossUid",
+      "value": 60301
+    },
+    "boss_peer_final": {
+      "namespace": "BossPeerUid",
+      "value": 70301
+    },
+    "zp_self": {
+      "namespace": "ZpUserId",
+      "value": 70401
+    },
+    "boss_client_cmid": {
+      "namespace": "BossClientMessageId",
+      "value": 1700000000007
+    },
+    "boss_server_mid": {
+      "namespace": "BossServerMessageId",
+      "value": 1700001000009
+    },
+    "mqtt_packet_id": {
+      "namespace": "MqttPacketId",
+      "value": 17
+    },
+    "boss_locator_mid": {
+      "namespace": "BossLocatorMessageId",
+      "value": 1700000500011
+    }
+  },
+  "all_distinct_id_rule": "Each logical token has a different value; echoes/copies within one token may repeat. Real IDs can coincide numerically, so a runtime SDK still needs provenance brands.",
+  "runtime_callbacks": [
+    {
+      "name": "selectPendingForAiResult",
+      "required_before": "confirmDelivery",
+      "input": "{C,M,T,R,independentlyFetchedPendingRows,accountScope}",
+      "return": "A chosen pending raw row P plus caller supplied runtime provenance; fields remain open. Not a server response type.",
+      "closed_without_callback": true,
+      "unknown_edge": "R.id -> P.id",
+      "forbidden": "Return/cast R as P merely because both contain id/job_info."
+    },
+    {
+      "name": "selectDeliveryRecordForConfirmation",
+      "required_before": "continueBossChat",
+      "input": "{confirmationInputP,jobDetail,confirmationOutcome,independentlyFetchedDeliveryRows,accountScope}",
+      "return": "A chosen delivery record row plus runtime provenance; no invented confirm-response recordId/chatId field.",
+      "closed_without_callback": true,
+      "unknown_edge": "confirmation(P,J,B) -> record"
+    }
+  ],
+  "steps": [
+    {
+      "id": "ai_send",
+      "kind": "http_sse",
+      "operation_name": "chatUserSay",
+      "request": {
+        "method": "POST",
+        "path": "/wapi/partners/v2/chat/userSay",
+        "body": {
+          "content": {
+            "content_type": "text",
+            "parts": [
+              {
+                "content_type": "text",
+                "text": "查找合适的模拟岗位"
+              }
+            ]
+          },
+          "metadata": {
+            "platform": "APP",
+            "system_hints": [
+              "deep_job_match"
+            ]
+          },
+          "agent_hint": {
+            "conversionType": "DOUZI"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "events": [
+          {
+            "event": "create_conversation",
+            "data": {
+              "id": 20101
+            }
+          },
+          {
+            "event": "delta",
+            "data": {
+              "o": "add",
+              "v": {
+                "id": 20201,
+                "conversation_id": 20101,
+                "author": {
+                  "role": "user"
+                },
+                "content": {
+                  "content_type": "text",
+                  "parts": [
+                    {
+                      "content_type": "text",
+                      "text": "查找合适的模拟岗位"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "event": "delta",
+            "data": {
+              "o": "add",
+              "v": {
+                "id": 20301,
+                "conversation_id": 20101,
+                "author": {
+                  "role": "assistant"
+                },
+                "content": {
+                  "content_type": "multi_part",
+                  "parts": []
+                },
+                "metadata": {
+                  "style": "deep_job_match"
+                }
+              }
+            }
+          },
+          {
+            "event": "delta",
+            "data": {
+              "o": "add",
+              "v": {
+                "id": 20302,
+                "conversation_id": 20101,
+                "author": {
+                  "role": "assistant"
+                },
+                "content": {
+                  "content_type": "text",
+                  "parts": [
+                    {
+                      "content_type": "text",
+                      "text": "离线模拟回复"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "event": null,
+            "data": "[DONE]"
+          }
+        ],
+        "wire": "event: create_conversation\ndata: {\"id\":20101}\n\nevent: delta\ndata: {\"o\":\"add\",\"v\":{\"id\":20201,\"conversation_id\":20101,\"author\":{\"role\":\"user\"},\"content\":{\"content_type\":\"text\",\"parts\":[{\"content_type\":\"text\",\"text\":\"查找合适的模拟岗位\"}]}}}\n\nevent: delta\ndata: {\"o\":\"add\",\"v\":{\"id\":20301,\"conversation_id\":20101,\"author\":{\"role\":\"assistant\"},\"content\":{\"content_type\":\"multi_part\",\"parts\":[]},\"metadata\":{\"style\":\"deep_job_match\"}}}\n\nevent: delta\ndata: {\"o\":\"add\",\"v\":{\"id\":20302,\"conversation_id\":20101,\"author\":{\"role\":\"assistant\"},\"content\":{\"content_type\":\"text\",\"parts\":[{\"content_type\":\"text\",\"text\":\"离线模拟回复\"}]}}}\n\ndata: [DONE]\n\n"
+      },
+      "id_bindings": [],
+      "evidence_ids": [
+        "SDI003",
+        "SDI004",
+        "SDI005",
+        "SDI006"
+      ],
+      "policy": "new conversation omits parent/cid; require fallback logical DONE, not EOF; DONE does not prove task/pending/delivery success"
+    },
+    {
+      "id": "task_list",
+      "kind": "http_json",
+      "operation_name": "chatTasksList",
+      "request": {
+        "method": "GET",
+        "path": "/wapi/partners/v2/chat/task/list",
+        "query": {
+          "conversationId": 20101
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "result": [
+            {
+              "id": 30101,
+              "messageId": 20301,
+              "status": "SUCCESS"
+            }
+          ]
+        }
+      },
+      "id_bindings": [
+        {
+          "pointer": "/request/query/conversationId",
+          "token": "conversation_C",
+          "namespace": "AiConversationId",
+          "codec": "number"
+        }
+      ],
+      "evidence_ids": [
+        "SDI008",
+        "SDI009",
+        "SDI010"
+      ]
+    },
+    {
+      "id": "task_results",
+      "kind": "http_json",
+      "operation_name": "chatResultsList",
+      "request": {
+        "method": "GET",
+        "path": "/wapi/partners/v2/chat/result/list",
+        "query": {
+          "taskId": 30101
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "result": [
+            {
+              "id": 30201,
+              "taskId": 30101,
+              "content": {
+                "job_info": {
+                  "jobId": 50101,
+                  "bossId": 50201,
+                  "title": "模拟岗位",
+                  "brand": "模拟公司"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "id_bindings": [
+        {
+          "pointer": "/request/query/taskId",
+          "token": "task_T",
+          "namespace": "AiTaskId",
+          "codec": "number"
+        }
+      ],
+      "evidence_ids": [
+        "SDI011"
+      ]
+    },
+    {
+      "id": "read_result",
+      "kind": "http_json",
+      "operation_name": "chatResultRead",
+      "request": {
+        "method": "POST",
+        "path": "/wapi/partners/v2/chat/result/read",
+        "body": {
+          "id": 30201
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0
+        }
+      },
+      "id_bindings": [
+        {
+          "pointer": "/request/body/id",
+          "token": "ai_result_R",
+          "namespace": "AiTaskResultId",
+          "codec": "number"
+        }
+      ],
+      "evidence_ids": [
+        "SDI013"
+      ],
+      "policy": "read receipt only; does not authorize or create pending"
+    },
+    {
+      "id": "pending_query",
+      "kind": "http_json",
+      "operation_name": "chatRecentPendingDeliveries",
+      "request": {
+        "method": "GET",
+        "path": "/wapi/partners/v2/chat/result/recentAiPendingDelivery",
+        "query": {
+          "startTime": 1700000000000,
+          "endTime": 1700086400000
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "result": [
+            {
+              "id": 40201,
+              "content": {
+                "job_info": {
+                  "jobId": 50101,
+                  "bossId": 50201,
+                  "title": "模拟岗位",
+                  "brand": "模拟公司"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "id_bindings": [],
+      "evidence_ids": [
+        "SDI017",
+        "SDI024"
+      ]
+    },
+    {
+      "id": "bind_ai_to_pending",
+      "kind": "runtime_callback",
+      "callback": "selectPendingForAiResult",
+      "inputs": {
+        "ai_result_step": "task_results",
+        "pending_candidates_step": "pending_query",
+        "account_token": "app_user"
+      },
+      "mock_attestation": {
+        "selected_pending_token": "pending_P",
+        "source_ai_result_token": "ai_result_R",
+        "provided_by": "test fixture only; externally supplied runtime association, not an API field"
+      },
+      "required": true,
+      "on_missing": "RuntimeAssociationRequired",
+      "evidence_ids": [
+        "SDI011",
+        "SDI024"
+      ]
+    },
+    {
+      "id": "confirm_delivery",
+      "kind": "http_json",
+      "operation_name": "partnersZpGeekSendConfirmedResumePost",
+      "request": {
+        "method": "POST",
+        "path": "/wapi/partners/zp/geek/sendConfirmedResume",
+        "body": {
+          "messageId": 40201,
+          "jobDetail": {
+            "title": "模拟岗位",
+            "brand": "模拟公司",
+            "salary": "",
+            "cityName": "",
+            "experienceName": "",
+            "degreeName": "",
+            "description": "",
+            "companyStage": "",
+            "companyScale": "",
+            "industryName": "",
+            "jobUrl": "",
+            "positionName": "模拟岗位",
+            "jobId": 50101,
+            "bossId": 50201,
+            "skills": [],
+            "welfare": []
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "result": {
+            "status": "ADD_FRIEND"
+          }
+        }
+      },
+      "id_bindings": [
+        {
+          "pointer": "/request/body/messageId",
+          "token": "pending_P",
+          "namespace": "PendingResultId",
+          "codec": "number"
+        },
+        {
+          "pointer": "/request/body/jobDetail/jobId",
+          "token": "pending_job_J",
+          "namespace": "PendingJobId",
+          "codec": "number"
+        },
+        {
+          "pointer": "/request/body/jobDetail/bossId",
+          "token": "pending_boss_B",
+          "namespace": "PendingBossId",
+          "codec": "number"
+        }
+      ],
+      "evidence_ids": [
+        "SDI021",
+        "SDI024"
+      ],
+      "policy": "explicit user action only; require exact code0 AND ADD_FRIEND|DELIVERED; ADD_FRIEND does not establish resume attachment delivery"
+    },
+    {
+      "id": "delivery_status",
+      "kind": "http_json",
+      "operation_name": "userGeekDeliveryListByJobIdsPost",
+      "request": {
+        "method": "POST",
+        "path": "/wapi/user/geek/delivery/listByJobIds",
+        "body": {
+          "ids": [
+            50101
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "result": [
+            {
+              "status": "ADD_FRIEND",
+              "jobSnapshot": {
+                "jobId": 50101
+              }
+            }
+          ]
+        }
+      },
+      "id_bindings": [
+        {
+          "pointer": "/request/body/ids/0",
+          "token": "pending_job_J",
+          "namespace": "PendingJobId",
+          "codec": "number"
+        }
+      ],
+      "evidence_ids": [
+        "SDI016"
+      ]
+    },
+    {
+      "id": "delivery_records",
+      "kind": "http_json",
+      "operation_name": "userGeekDeliveryListGet",
+      "request": {
+        "method": "GET",
+        "path": "/wapi/user/geek/delivery/list",
+        "query": {
+          "deliveryBy": "MANUAL",
+          "deliveryStatus": "ADD_FRIEND,DELIVERED"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "result": [
+            {
+              "id": 60101,
+              "zpJobId": 60201,
+              "zpBossUid": 60301,
+              "jobSnapshot": {
+                "jobId": 60201,
+                "bossId": 60301,
+                "bossIcon": "/mock/avatar.png"
+              }
+            }
+          ]
+        }
+      },
+      "id_bindings": [],
+      "evidence_ids": [
+        "SDI030",
+        "SDI026"
+      ]
+    },
+    {
+      "id": "bind_confirmation_to_record",
+      "kind": "runtime_callback",
+      "callback": "selectDeliveryRecordForConfirmation",
+      "inputs": {
+        "confirmation_step": "confirm_delivery",
+        "record_candidates_step": "delivery_records",
+        "account_token": "app_user"
+      },
+      "mock_attestation": {
+        "selected_record_token": "delivery_record_K",
+        "confirmation_pending_token": "pending_P",
+        "mapping": {
+          "pending_job_token": "pending_job_J",
+          "record_zp_job_token": "record_zp_job_Z",
+          "pending_boss_token": "pending_boss_B",
+          "record_boss_token": "record_boss_initial"
+        },
+        "provided_by": "test fixture only; no server conversion/recordId/chatId field invented"
+      },
+      "required": true,
+      "on_missing": "RuntimeAssociationRequired",
+      "evidence_ids": [
+        "SDI024",
+        "SDI031"
+      ]
+    },
+    {
+      "id": "enrich_record",
+      "kind": "http_json",
+      "operation_name": "userGeekDeliveryListByJobIdsPost",
+      "request": {
+        "method": "POST",
+        "path": "/wapi/user/geek/delivery/listByJobIds",
+        "body": {
+          "ids": [
+            60201
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "result": [
+            {
+              "zpJobId": 60201,
+              "jobSnapshot": {
+                "jobId": 60201,
+                "bossId": 60301,
+                "bossIcon": "/mock/avatar.png"
+              }
+            }
+          ]
+        }
+      },
+      "id_bindings": [
+        {
+          "pointer": "/request/body/ids/0",
+          "token": "record_zp_job_Z",
+          "namespace": "DeliveryZpJobId",
+          "codec": "number"
+        }
+      ],
+      "evidence_ids": [
+        "SDI029"
+      ]
+    },
+    {
+      "id": "continue_chat_route",
+      "kind": "local_route",
+      "route": {
+        "path": "/pages/im/index",
+        "query": {
+          "friendId": "60301",
+          "friendSource": "0",
+          "jobId": "60201",
+          "avatar": "/mock/avatar.png"
+        }
+      },
+      "id_bindings": [
+        {
+          "pointer": "/route/query/friendId",
+          "token": "record_boss_initial",
+          "namespace": "RecordBossUid",
+          "codec": "decimal_string"
+        },
+        {
+          "pointer": "/route/query/jobId",
+          "token": "record_zp_job_Z",
+          "namespace": "DeliveryZpJobId",
+          "codec": "decimal_string"
+        }
+      ],
+      "evidence_ids": [
+        "SDI031",
+        "SDI032"
+      ],
+      "policy": "does not send IM text; initial peer may be overridden by lookup; no msgId provided by this route"
+    },
+    {
+      "id": "lookup_peer",
+      "kind": "http_json",
+      "operation_name": "userGeekDeliveryListByJobIdsPost",
+      "request": {
+        "method": "POST",
+        "path": "/wapi/user/geek/delivery/listByJobIds",
+        "body": {
+          "ids": [
+            60201
+          ],
+          "includeDeleted": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "result": [
+            {
+              "zpJobId": 60201,
+              "zpBossUid": 60301,
+              "jobSnapshot": {
+                "jobId": 60201,
+                "bossId": 70301,
+                "bossName": "模拟BOSS",
+                "bossIcon": "/mock/avatar.png"
+              }
+            }
+          ]
+        }
+      },
+      "id_bindings": [
+        {
+          "pointer": "/request/body/ids/0",
+          "token": "record_zp_job_Z",
+          "namespace": "DeliveryZpJobId",
+          "codec": "number"
+        }
+      ],
+      "evidence_ids": [
+        "SDI033"
+      ],
+      "policy": "mock deliberately changes snapshot bossId to show peer override; not claim real backend values differ; strict adapter verifies lookup job belongs requested job"
+    },
+    {
+      "id": "im_token",
+      "kind": "http_json",
+      "operation_name": "userAuthZpChatTokenH5Get",
+      "request": {
+        "method": "GET",
+        "path": "/wapi/user/auth/zp/chat/token/h5",
+        "query": {
+          "forceRefresh": false
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "result": {
+            "userId": 70401,
+            "token": "MOCK_ONLY_ZP_TOKEN"
+          }
+        }
+      },
+      "id_bindings": [],
+      "evidence_ids": [
+        "SDI042",
+        "SDI034"
+      ]
+    },
+    {
+      "id": "im_ticket",
+      "kind": "http_json",
+      "operation_name": "userAuthZpChatTicketH5Get",
+      "request": {
+        "method": "GET",
+        "path": "/wapi/user/auth/zp/chat/ticket/h5",
+        "query": {
+          "forceRefresh": false
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "result": {
+            "webTicket2": "MOCK_ONLY_WT2",
+            "productId": "MOCK_PRODUCT"
+          }
+        }
+      },
+      "id_bindings": [],
+      "evidence_ids": [
+        "SDI042",
+        "SDI034"
+      ]
+    },
+    {
+      "id": "boss_history",
+      "kind": "http_json",
+      "operation_name": "chatHistoryPost",
+      "request": {
+        "method": "POST",
+        "path": "/wapi/chat/history",
+        "body": {
+          "userId": 70401,
+          "friendId": 70301,
+          "identity": 0,
+          "userSource": 0,
+          "friendSource": 0,
+          "pageSize": 10
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "code": 0,
+          "result": {
+            "messageList": [],
+            "hasMore": false,
+            "minMsgId": 0
+          }
+        }
+      },
+      "id_bindings": [
+        {
+          "pointer": "/request/body/userId",
+          "token": "zp_self",
+          "namespace": "ZpUserId",
+          "codec": "number"
+        },
+        {
+          "pointer": "/request/body/friendId",
+          "token": "boss_peer_final",
+          "namespace": "BossPeerUid",
+          "codec": "number"
+        }
+      ],
+      "evidence_ids": [
+        "SDI035",
+        "SDI036"
+      ]
+    },
+    {
+      "id": "await_im_connected",
+      "kind": "mock_boss_adapter",
+      "action": "awaitConnected",
+      "response": {
+        "connectionState": "connected"
+      },
+      "id_bindings": [],
+      "evidence_ids": [
+        "SDI037",
+        "SDI044"
+      ],
+      "policy": "adapter interface is harness design, not a new server HTTP API; ready/init resolution alone insufficient"
+    },
+    {
+      "id": "boss_send_text",
+      "kind": "mock_boss_adapter",
+      "action": "sendText",
+      "arguments": {
+        "peer": {
+          "uid": 70301,
+          "friendSource": 0,
+          "clientMid": 1700000000007
+        },
+        "text": "你好，这是离线模拟消息"
+      },
+      "clock": {
+        "lastMsgId": 7,
+        "now": 1700000000000
+      },
+      "expected_publish": {
+        "topic": "chat",
+        "qos": 1,
+        "retained": true,
+        "messageIdentifier": 17,
+        "protobuf": {
+          "type": 1,
+          "messages": [
+            {
+              "from": {
+                "uid": 70401,
+                "source": 0
+              },
+              "to": {
+                "uid": 70301,
+                "source": 0
+              },
+              "type": 1,
+              "mid": 1700000000007,
+              "cmid": 1700000000007,
+              "time": 1700000000000,
+              "body": {
+                "type": 1,
+                "templateId": 1,
+                "text": "你好，这是离线模拟消息"
+              },
+              "status": 0
+            }
+          ]
+        }
+      },
+      "id_bindings": [
+        {
+          "pointer": "/arguments/peer/uid",
+          "token": "boss_peer_final",
+          "namespace": "BossPeerUid",
+          "codec": "number"
+        },
+        {
+          "pointer": "/arguments/peer/clientMid",
+          "token": "boss_client_cmid",
+          "namespace": "BossClientMessageId",
+          "codec": "number"
+        },
+        {
+          "pointer": "/expected_publish/messageIdentifier",
+          "token": "mqtt_packet_id",
+          "namespace": "MqttPacketId",
+          "codec": "number"
+        },
+        {
+          "pointer": "/expected_publish/protobuf/messages/0/from/uid",
+          "token": "zp_self",
+          "namespace": "ZpUserId",
+          "codec": "number"
+        },
+        {
+          "pointer": "/expected_publish/protobuf/messages/0/to/uid",
+          "token": "boss_peer_final",
+          "namespace": "BossPeerUid",
+          "codec": "number"
+        },
+        {
+          "pointer": "/expected_publish/protobuf/messages/0/mid",
+          "token": "boss_client_cmid",
+          "namespace": "BossClientMessageId",
+          "codec": "number"
+        },
+        {
+          "pointer": "/expected_publish/protobuf/messages/0/cmid",
+          "token": "boss_client_cmid",
+          "namespace": "BossClientMessageId",
+          "codec": "number"
+        }
+      ],
+      "evidence_ids": [
+        "SDI038",
+        "SDI039",
+        "SDI040",
+        "SDI047"
+      ],
+      "policy": "explicit send after connected; no AI/task/pending/job ID added to active text protobuf"
+    },
+    {
+      "id": "boss_ack",
+      "kind": "mock_boss_adapter",
+      "action": "receiveAck",
+      "packet": {
+        "type": "PUBACK",
+        "remainingLength": 18,
+        "messageIdentifier": 17,
+        "cmid": 1700000000007,
+        "mid": 1700001000009
+      },
+      "id_bindings": [
+        {
+          "pointer": "/packet/messageIdentifier",
+          "token": "mqtt_packet_id",
+          "namespace": "MqttPacketId",
+          "codec": "number"
+        },
+        {
+          "pointer": "/packet/cmid",
+          "token": "boss_client_cmid",
+          "namespace": "BossClientMessageId",
+          "codec": "number"
+        },
+        {
+          "pointer": "/packet/mid",
+          "token": "boss_server_mid",
+          "namespace": "BossServerMessageId",
+          "codec": "number"
+        }
+      ],
+      "expected": {
+        "sdk_delivery": {
+          "mid": 1700001000009,
+          "cmid": 1700000000007,
+          "status": 1
+        },
+        "source_ui_optimistic": {
+          "mid": 1700000000007,
+          "cmid": 1700000000007,
+          "status": 1
+        }
+      },
+      "evidence_ids": [
+        "SDI041",
+        "SDI045",
+        "SDI046",
+        "SDI038"
+      ],
+      "policy": "SDK design requires packetId+cmid match; source only uses truthy ACK cmid after packet match. ACK does not establish read/attachment receipt."
+    }
+  ],
+  "optional_scenarios": [
+    {
+      "id": "optional_hidden_command",
+      "kind": "http_sse",
+      "operation_name": "chatUserSay",
+      "request": {
+        "method": "POST",
+        "path": "/wapi/partners/v2/chat/userSay",
+        "body": {
+          "parent": 20302,
+          "conversation_id": 20101,
+          "content": {
+            "content_type": "multi_part",
+            "parts": [
+              {
+                "content_type": "agent_job_chat",
+                "message_id": 20301,
+                "job_ids": [
+                  50101
+                ]
+              }
+            ]
+          },
+          "metadata": {
+            "platform": "APP",
+            "style": "agent_job_chat",
+            "is_visually_hidden_from_conversation": true
+          },
+          "agent_hint": {
+            "conversionType": "DOUZI"
+          }
+        }
+      },
+      "id_bindings": [
+        {
+          "pointer": "/request/body/parent",
+          "token": "latest_parent_A",
+          "namespace": "AiMessageId",
+          "codec": "number"
+        },
+        {
+          "pointer": "/request/body/conversation_id",
+          "token": "conversation_C",
+          "namespace": "AiConversationId",
+          "codec": "number"
+        },
+        {
+          "pointer": "/request/body/content/parts/0/message_id",
+          "token": "task_message_M",
+          "namespace": "AiMessageId",
+          "codec": "number"
+        },
+        {
+          "pointer": "/request/body/content/parts/0/job_ids/0",
+          "token": "pending_job_J",
+          "namespace": "PendingJobId",
+          "codec": "number"
+        }
+      ],
+      "evidence_ids": [
+        "SDI014",
+        "SDI015",
+        "SDI004",
+        "SDI053"
+      ],
+      "policy": "Optional explicit user action only, outside core 19-step mock flow; final parent A differs from source part.message_id M. No task/result/pending/mode/trace ID or default text system_hints/market metadata. Completion does not prove pending creation."
+    }
+  ],
+  "alternative_report_branch": {
+    "purpose": "optional independent report-based pending query; not automatic R->D->P mapping",
+    "report_request": {
+      "method": "GET",
+      "path": "/wapi/partners/v2/daily-report/by-id",
+      "query": {
+        "id": 40101
+      }
+    },
+    "mock_report_response": {
+      "code": 0,
+      "result": {
+        "detail": {
+          "pendingConfirmedTaskResultIdList": [
+            40201
+          ]
+        }
+      }
+    },
+    "pending_request": {
+      "method": "GET",
+      "path": "/wapi/partners/v2/daily-report/pending-delivery-jobs",
+      "query": {
+        "ids": "40201"
+      }
+    },
+    "boundary": "This list is server-returned; client joins comma and does not verify output P.id membership. No AI result-derived report ID invented.",
+    "evidence_ids": [
+      "SDI018",
+      "SDI019",
+      "SDI024"
+    ]
+  },
+  "negative_cases": [
+    {
+      "name": "task_list:/request/query/conversationId",
+      "kind": "id_substitution",
+      "step": "task_list",
+      "pointer": "/request/query/conversationId",
+      "expected_token": "conversation_C",
+      "substitute_token": "ai_result_R",
+      "expected_error": "IdNamespaceMismatch",
+      "source_behavior": "stricter SDK/harness design, not a claim original client validates all IDs"
+    },
+    {
+      "name": "task_results:/request/query/taskId",
+      "kind": "id_substitution",
+      "step": "task_results",
+      "pointer": "/request/query/taskId",
+      "expected_token": "task_T",
+      "substitute_token": "ai_result_R",
+      "expected_error": "IdNamespaceMismatch",
+      "source_behavior": "stricter SDK/harness design, not a claim original client validates all IDs"
+    },
+    {
+      "name": "read_result:/request/body/id",
+      "kind": "id_substitution",
+      "step": "read_result",
+      "pointer": "/request/body/id",
+      "expected_token": "ai_result_R",
+      "substitute_token": "pending_P",
+      "expected_error": "IdNamespaceMismatch",
+      "source_behavior": "stricter SDK/harness design, not a claim original client validates all IDs"
+    },
+    {
+      "name": "confirm_delivery:/request/body/messageId",
+      "kind": "id_substitution",
+      "step": "confirm_delivery",
+      "pointer": "/request/body/messageId",
+      "expected_token": "pending_P",
+      "substitute_token": "ai_result_R",
+      "expected_error": "IdNamespaceMismatch",
+      "source_behavior": "stricter SDK/harness design, not a claim original client validates all IDs"
+    },
+    {
+      "name": "confirm_delivery:/request/body/jobDetail/jobId",
+      "kind": "id_substitution",
+      "step": "confirm_delivery",
+      "pointer": "/request/body/jobDetail/jobId",
+      "expected_token": "pending_job_J",
+      "substitute_token": "ai_result_R",
+      "expected_error": "IdNamespaceMismatch",
+      "source_behavior": "stricter SDK/harness design, not a claim original client validates all IDs"
+    },
+    {
+      "name": "confirm_delivery:/request/body/jobDetail/bossId",
+      "kind": "id_substitution",
+      "step": "confirm_delivery",
+      "pointer": "/request/body/jobDetail/bossId",
+      "expected_token": "pending_boss_B",
+      "substitute_token": "ai_result_R",
+      "expected_error": "IdNamespaceMismatch",
+      "source_behavior": "stricter SDK/harness design, not a claim original client validates all IDs"
+    },
+    {
+      "name": "delivery_status:/request/body/ids/0",
+      "kind": "id_substitution",
+      "step": "delivery_status",
+      "pointer": "/request/body/ids/0",
+      "expected_token": "pending_job_J",
+      "substitute_token": "ai_result_R",
+      "expected_error": "IdNamespaceMismatch",
+      "source_behavior": "stricter SDK/harness design, not a claim original client validates all IDs"
+    },
+    {
+      "name": "enrich_record:/request/body/ids/0",
+      "kind": "id_substitution",
+      "step": "enrich_record",
+      "pointer": "/request/body/ids/0",
+      "expected_token": "record_zp_job_Z",
+      "substitute_token": "ai_result_R",
+      "expected_error": "IdNamespaceMismatch",
+      "source_behavior": "stricter SDK/harness design, not a claim original client validates all IDs"
+    },
+    {
+      "name": "continue_chat_route:/route/query/friendId",
+      "kind": "id_substitution",
+      "step": "continue_chat_route",
+      "pointer": "/route/query/friendId",
+      "expected_token": "record_boss_initial",
+      "substitute_token": "ai_result_R",
+      "expected_error": "IdNamespaceMismatch",
+      "source_behavior": "stricter SDK/harness design, not a claim original client validates all IDs"
+    },
+    {
+      "name": "continue_chat_route:/route/query/jobId",
+      "kind": "id_substitution",
+      "step": "continue_chat_route",
+      "pointer": "/route/query/jobId",
+      "expected_token": "record_zp_job_Z",
+      "substitute_token": "ai_result_R",
+      "expected_error": "IdNamespaceMismatch",
+      "source_behavior": "stricter SDK/harness design, not a claim original client validates all IDs"
+    },
+    {
+      "name": "lookup_peer:/request/body/ids/0",
+      "kind": "id_substitution",
+      "step": "lookup_peer",
+      "pointer": "/request/body/ids/0",
+      "expected_token": "record_zp_job_Z",
+      "substitute_token": "ai_result_R",
+      "expected_error": "IdNamespaceMismatch",
+      "source_behavior": "stricter SDK/harness design, not a claim original client validates all IDs"
+    },
+    {
+      "name": "boss_history:/request/body/userId",
+      "kind": "id_substitution",
+      "step": "boss_history",
+      "pointer": "/request/body/userId",
+      "expected_token": "zp_self",
+      "substitute_token": "ai_result_R",
+      "expected_error": "IdNamespaceMismatch",
+      "source_behavior": "stricter SDK/harness design, not a claim original client validates all IDs"
+    },
+    {
+      "name": "boss_history:/request/body/friendId",
+      "kind": "id_substitution",
+      "step": "boss_history",
+      "pointer": "/request/body/friendId",
+      "expected_token": "boss_peer_final",
+      "substitute_token": "ai_result_R",
+      "expected_error": "IdNamespaceMismatch",
+      "source_behavior": "stricter SDK/harness design, not a claim original client validates all IDs"
+    },
+    {
+      "name": "boss_send_text:/arguments/peer/uid",
+      "kind": "id_substitution",
+      "step": "boss_send_text",
+      "pointer": "/arguments/peer/uid",
+      "expected_token": "boss_peer_final",
+      "substitute_token": "ai_result_R",
+      "expected_error": "IdNamespaceMismatch",
+      "source_behavior": "stricter SDK/harness design, not a claim original client validates all IDs"
+    },
+    {
+      "name": "boss_send_text:/arguments/peer/clientMid",
+      "kind": "id_substitution",
+      "step": "boss_send_text",
+      "pointer": "/arguments/peer/clientMid",
+      "expected_token": "boss_client_cmid",
+      "substitute_token": "ai_result_R",
+      "expected_error": "IdNamespaceMismatch",
+      "source_behavior": "stricter SDK/harness design, not a claim original client validates all IDs"
+    },
+    {
+      "name": "boss_send_text:/expected_publish/messageIdentifier",
+      "kind": "id_substitution",
+      "step": "boss_send_text",
+      "pointer": "/expected_publish/messageIdentifier",
+      "expected_token": "mqtt_packet_id",
+      "substitute_token": "ai_result_R",
+      "expected_error": "IdNamespaceMismatch",
+      "source_behavior": "stricter SDK/harness design, not a claim original client validates all IDs"
+    },
+    {
+      "name": "boss_send_text:/expected_publish/protobuf/messages/0/from/uid",
+      "kind": "id_substitution",
+      "step": "boss_send_text",
+      "pointer": "/expected_publish/protobuf/messages/0/from/uid",
+      "expected_token": "zp_self",
+      "substitute_token": "ai_result_R",
+      "expected_error": "IdNamespaceMismatch",
+      "source_behavior": "stricter SDK/harness design, not a claim original client validates all IDs"
+    },
+    {
+      "name": "boss_send_text:/expected_publish/protobuf/messages/0/to/uid",
+      "kind": "id_substitution",
+      "step": "boss_send_text",
+      "pointer": "/expected_publish/protobuf/messages/0/to/uid",
+      "expected_token": "boss_peer_final",
+      "substitute_token": "ai_result_R",
+      "expected_error": "IdNamespaceMismatch",
+      "source_behavior": "stricter SDK/harness design, not a claim original client validates all IDs"
+    },
+    {
+      "name": "boss_send_text:/expected_publish/protobuf/messages/0/mid",
+      "kind": "id_substitution",
+      "step": "boss_send_text",
+      "pointer": "/expected_publish/protobuf/messages/0/mid",
+      "expected_token": "boss_client_cmid",
+      "substitute_token": "ai_result_R",
+      "expected_error": "IdNamespaceMismatch",
+      "source_behavior": "stricter SDK/harness design, not a claim original client validates all IDs"
+    },
+    {
+      "name": "boss_send_text:/expected_publish/protobuf/messages/0/cmid",
+      "kind": "id_substitution",
+      "step": "boss_send_text",
+      "pointer": "/expected_publish/protobuf/messages/0/cmid",
+      "expected_token": "boss_client_cmid",
+      "substitute_token": "ai_result_R",
+      "expected_error": "IdNamespaceMismatch",
+      "source_behavior": "stricter SDK/harness design, not a claim original client validates all IDs"
+    },
+    {
+      "name": "boss_ack:/packet/messageIdentifier",
+      "kind": "id_substitution",
+      "step": "boss_ack",
+      "pointer": "/packet/messageIdentifier",
+      "expected_token": "mqtt_packet_id",
+      "substitute_token": "ai_result_R",
+      "expected_error": "IdNamespaceMismatch",
+      "source_behavior": "stricter SDK/harness design, not a claim original client validates all IDs"
+    },
+    {
+      "name": "boss_ack:/packet/cmid",
+      "kind": "id_substitution",
+      "step": "boss_ack",
+      "pointer": "/packet/cmid",
+      "expected_token": "boss_client_cmid",
+      "substitute_token": "ai_result_R",
+      "expected_error": "IdNamespaceMismatch",
+      "source_behavior": "stricter SDK/harness design, not a claim original client validates all IDs"
+    },
+    {
+      "name": "boss_ack:/packet/mid",
+      "kind": "id_substitution",
+      "step": "boss_ack",
+      "pointer": "/packet/mid",
+      "expected_token": "boss_server_mid",
+      "substitute_token": "ai_result_R",
+      "expected_error": "IdNamespaceMismatch",
+      "source_behavior": "stricter SDK/harness design, not a claim original client validates all IDs"
+    },
+    {
+      "name": "optional_hidden_command:/request/body/parent",
+      "kind": "id_substitution",
+      "step": "optional_hidden_command",
+      "pointer": "/request/body/parent",
+      "expected_token": "latest_parent_A",
+      "substitute_token": "ai_result_R",
+      "expected_error": "IdNamespaceMismatch",
+      "source_behavior": "stricter SDK/harness design, not a claim original client validates all IDs"
+    },
+    {
+      "name": "optional_hidden_command:/request/body/conversation_id",
+      "kind": "id_substitution",
+      "step": "optional_hidden_command",
+      "pointer": "/request/body/conversation_id",
+      "expected_token": "conversation_C",
+      "substitute_token": "ai_result_R",
+      "expected_error": "IdNamespaceMismatch",
+      "source_behavior": "stricter SDK/harness design, not a claim original client validates all IDs"
+    },
+    {
+      "name": "optional_hidden_command:/request/body/content/parts/0/message_id",
+      "kind": "id_substitution",
+      "step": "optional_hidden_command",
+      "pointer": "/request/body/content/parts/0/message_id",
+      "expected_token": "task_message_M",
+      "substitute_token": "ai_result_R",
+      "expected_error": "IdNamespaceMismatch",
+      "source_behavior": "stricter SDK/harness design, not a claim original client validates all IDs"
+    },
+    {
+      "name": "optional_hidden_command:/request/body/content/parts/0/job_ids/0",
+      "kind": "id_substitution",
+      "step": "optional_hidden_command",
+      "pointer": "/request/body/content/parts/0/job_ids/0",
+      "expected_token": "pending_job_J",
+      "substitute_token": "ai_result_R",
+      "expected_error": "IdNamespaceMismatch",
+      "source_behavior": "stricter SDK/harness design, not a claim original client validates all IDs"
+    },
+    {
+      "name": "no_pending_resolver",
+      "kind": "missing_callback",
+      "callback": "selectPendingForAiResult",
+      "expected_error": "RuntimeAssociationRequired"
+    },
+    {
+      "name": "no_record_resolver",
+      "kind": "missing_callback",
+      "callback": "selectDeliveryRecordForConfirmation",
+      "expected_error": "RuntimeAssociationRequired"
+    },
+    {
+      "name": "confirm_code200",
+      "kind": "confirmation_outcome",
+      "body": {
+        "code": 200,
+        "result": {
+          "status": "DELIVERED"
+        }
+      },
+      "expected_error": "ConfirmationBusinessRejected"
+    },
+    {
+      "name": "confirm_unknown_status",
+      "kind": "confirmation_outcome",
+      "body": {
+        "code": 0,
+        "result": {
+          "status": "PENDING"
+        }
+      },
+      "expected_error": "ConfirmationStatusRejected"
+    },
+    {
+      "name": "confirm_missing_result",
+      "kind": "confirmation_outcome",
+      "body": {
+        "code": 0
+      },
+      "expected_error": "ConfirmationStatusRejected"
+    },
+    {
+      "name": "sse_EOF_without_DONE",
+      "kind": "sse_incomplete",
+      "expected_error": "IncompleteSse"
+    },
+    {
+      "name": "im_ready_not_connected",
+      "kind": "im_state",
+      "state": "ready",
+      "expected_error": "ImNotConnected"
+    },
+    {
+      "name": "plain_puback",
+      "kind": "ack_without_extension",
+      "packet": {
+        "type": "PUBACK",
+        "remainingLength": 2,
+        "messageIdentifier": 17
+      },
+      "expected_error": "UncorrelatedImAck"
+    },
+    {
+      "name": "ack_wrong_cmid",
+      "kind": "ack_wrong_cmid",
+      "packet": {
+        "type": "PUBACK",
+        "remainingLength": 18,
+        "messageIdentifier": 17,
+        "cmid": 30201,
+        "mid": 1700001000009
+      },
+      "expected_error": "UncorrelatedImAck"
+    },
+    {
+      "name": "ack_wrong_packet_id",
+      "kind": "ack_wrong_packet",
+      "packet": {
+        "type": "PUBACK",
+        "remainingLength": 18,
+        "messageIdentifier": 99,
+        "cmid": 1700000000007,
+        "mid": 1700001000009
+      },
+      "expected_error": "UncorrelatedImAck"
+    }
+  ],
+  "all_pair_id_mutation_rule": "For every id_binding, substitute every other logical token through same codec; must reject before mock dispatch. This is a SDK guard test, not server input-validation evidence.",
+  "expected_outcome": {
+    "sse": "logical_complete",
+    "task": "mock SUCCESS from independent query",
+    "ai_result_to_pending": "provided by explicit synthetic runtime callback; not inferred",
+    "confirmation": "App-accepted ADD_FRIEND",
+    "resume_attachment_receipt": "unknown",
+    "pending_to_delivery_record": "provided by explicit synthetic runtime callback; not inferred",
+    "boss_peer": "final lookup overrides route initial UID",
+    "im_send": "correlated extended ACK received",
+    "im_read": "unknown; no messageRead event in this fixture"
+  },
+  "field_provenance": {
+    "SSE delta/create/message fields": [
+      "SDI005",
+      "SDI006"
+    ],
+    "task/result fields": [
+      "SDI009",
+      "SDI011"
+    ],
+    "pending/jobDetail/confirm status": [
+      "SDI024",
+      "SDI021"
+    ],
+    "delivery rows/snapshots/status": [
+      "SDI016",
+      "SDI029",
+      "SDI033"
+    ],
+    "credential and history fields": [
+      "SDI034",
+      "SDI042",
+      "SDI035",
+      "SDI036"
+    ],
+    "active text protobuf and ACK": [
+      "SDI040",
+      "SDI041",
+      "SDI046"
+    ]
+  }
+}

@@ -1,0 +1,4756 @@
+{
+  "schema_version": 1,
+  "source_path": "/Users/abc/Documents/deepseek-harness/zj/HBuilder.app/Pandora/apps/__UNI__49240F0/www/app-service.js",
+  "source_sha256": "85df0d8ca64906e303f261512d32fb695450ec70dcc6862aedcee796533da79e",
+  "analysis_mode": "Static source and AST only; no app execution, account access, real credentials, or business requests",
+  "evidence_file": "evidence.json",
+  "coordinates": "0-based half-open Unicode code points, UTF8 bytes and UTF16 code units; 1-based lines",
+  "channel_separation": [
+    {
+      "channel": "App HTTPS",
+      "auth": "App login/session Bearer and common headers/cookies",
+      "purpose": "obtain ZP IM credentials, history, delivery lookup, exchange and report",
+      "evidence": [
+        "SDB004",
+        "SDB015",
+        "SDB016",
+        "SDB045"
+      ]
+    },
+    {
+      "channel": "BOSS WSS MQTT level 4",
+      "auth": "ZP token|identity and wt2, productId; no App Bearer set by this call",
+      "purpose": "binary proto2 chat/read/presence and broker ACK",
+      "evidence": [
+        "SDB008",
+        "SDB023",
+        "SDB025"
+      ]
+    },
+    {
+      "channel": "Assistant STOMP WebSocket",
+      "purpose": "separate assistant delivery/status topic connection, not BOSS MQTT",
+      "evidence": [
+        "search_ledger.json:uni.connectSocket contexts at assistant-stomp adapter"
+      ]
+    },
+    {
+      "channel": "AI SSE",
+      "purpose": "AI task/messages and product mode signals, not BOSS chat ACK",
+      "evidence": [
+        "../sse_work_mode_sdk/sse/sse_work_mode_flow.md"
+      ]
+    }
+  ],
+  "http": {
+    "source": "/Users/abc/Documents/deepseek-harness/zj/HBuilder.app/Pandora/apps/__UNI__49240F0/www/app-service.js",
+    "source_sha256": "85df0d8ca64906e303f261512d32fb695450ec70dcc6862aedcee796533da79e",
+    "evidence_type": "static callsites, no service requests made",
+    "http_base": "Bundled production https://www.deephire.cn; parent common-auth analysis verifies environment-switch compile gate. No live destinations observed.",
+    "common_headers": "Shared App metadata/device/auth headers documented by parent; preserve explicit endpoint headers. No actual tokens sampled.",
+    "http_endpoints": [
+      {
+        "name": "getZpChatTokenH5",
+        "method": "GET",
+        "path": "/wapi/user/auth/zp/chat/token/h5",
+        "query": {
+          "forceRefresh": false
+        },
+        "response_expected_by_caller": {
+          "userId": "number|string -> Number",
+          "token": "string"
+        },
+        "options": {
+          "skipLoginRedirect": true,
+          "hideErrorToast": true
+        },
+        "evidence": [
+          "SDB004",
+          "SDB015"
+        ],
+        "authentication": "App session bearer via shared request/upload interceptor; ZP credentials are not manually sent as HTTP authorization in these local calls"
+      },
+      {
+        "name": "getZpChatTicketH5",
+        "method": "GET",
+        "path": "/wapi/user/auth/zp/chat/ticket/h5",
+        "query": {
+          "forceRefresh": false
+        },
+        "response_expected_by_caller": {
+          "webTicket2": "string",
+          "productId": "string"
+        },
+        "options": {
+          "skipLoginRedirect": true,
+          "hideErrorToast": true
+        },
+        "evidence": [
+          "SDB004",
+          "SDB015"
+        ],
+        "authentication": "App session bearer via shared request/upload interceptor; ZP credentials are not manually sent as HTTP authorization in these local calls"
+      },
+      {
+        "name": "history",
+        "method": "POST",
+        "path": "/wapi/chat/history",
+        "body": {
+          "userId": "ZP user ID",
+          "friendId": "BOSS ZP ID",
+          "identity": 0,
+          "userSource": 0,
+          "friendSource": 0,
+          "pageSize": 10,
+          "maxMsgId": "optional positive cursor"
+        },
+        "explicit_headers": {
+          "Content-Type": "application/json;charset=UTF-8",
+          "X-Requested-With": "XMLHttpRequest",
+          "Accept": "application/json, text/plain, */*"
+        },
+        "options": {
+          "returnEnvelope": true,
+          "hideErrorToast": true
+        },
+        "response_fields_used": [
+          "code",
+          "result.messageList",
+          "result.hasMore",
+          "result.minMsgId",
+          "message"
+        ],
+        "special_handling": {
+          "code_1000": "friendship removed; clear list and hide composer",
+          "http_502_503_504": "code -1, isGatewayError true; continue realtime only"
+        },
+        "evidence": [
+          "SDB001",
+          "SDB015"
+        ],
+        "authentication": "App session bearer via shared request/upload interceptor; ZP credentials are not manually sent as HTTP authorization in these local calls"
+      },
+      {
+        "name": "refreshSingleMessage",
+        "method": "GET",
+        "path": "/wapi/chat/message",
+        "query": {
+          "messageId": "parsed action97 extend.mid",
+          "identity": 0
+        },
+        "options": {
+          "returnEnvelope": true,
+          "hideErrorToast": true
+        },
+        "response_fields_used": [
+          "code",
+          "result"
+        ],
+        "evidence": [
+          "SDB014",
+          "SDB015"
+        ],
+        "authentication": "App session bearer via shared request/upload interceptor; ZP credentials are not manually sent as HTTP authorization in these local calls"
+      },
+      {
+        "name": "acceptExchange",
+        "method": "POST",
+        "path": "/wapi/chat/exchange/accept",
+        "body": {
+          "userId": "ZP user ID",
+          "identity": 0,
+          "userSource": 0,
+          "friendId": "message.friendId",
+          "friendSource": 0,
+          "exchangeType": "wechat 2 | resume 4 | phone 1",
+          "requestDialogMid": "message.mid",
+          "extendJson": "optional JSON string {resumeId:<selected sourceId>}"
+        },
+        "options": {
+          "returnEnvelope": true,
+          "hideErrorToast": true
+        },
+        "evidence": [
+          "SDB015",
+          "SDB017",
+          "SDB033"
+        ],
+        "authentication": "App session bearer via shared request/upload interceptor; ZP credentials are not manually sent as HTTP authorization in these local calls"
+      },
+      {
+        "name": "rejectExchange",
+        "method": "POST",
+        "path": "/wapi/chat/exchange/reject",
+        "body": {
+          "userId": "ZP user ID",
+          "identity": 0,
+          "userSource": 0,
+          "friendId": "message.friendId",
+          "friendSource": 0,
+          "exchangeType": "wechat 2 | resume 4 | phone 1",
+          "requestDialogMid": "message.mid"
+        },
+        "options": {
+          "returnEnvelope": true,
+          "hideErrorToast": true
+        },
+        "evidence": [
+          "SDB015",
+          "SDB017",
+          "SDB033"
+        ],
+        "authentication": "App session bearer via shared request/upload interceptor; ZP credentials are not manually sent as HTTP authorization in these local calls"
+      },
+      {
+        "name": "hasWechat",
+        "method": "GET",
+        "path": "/wapi/user/auth/zp/hasWechat",
+        "options": {
+          "returnEnvelope": true,
+          "hideErrorToast": true
+        },
+        "response_fields_used": [
+          "result truthiness"
+        ],
+        "evidence": [
+          "SDB015",
+          "SDB017"
+        ],
+        "authentication": "App session bearer via shared request/upload interceptor; ZP credentials are not manually sent as HTTP authorization in these local calls"
+      },
+      {
+        "name": "resumeAttachmentList",
+        "method": "POST",
+        "path": "/wapi/user/geek/resume/attachment/list",
+        "body": null,
+        "options": {
+          "returnEnvelope": true,
+          "hideErrorToast": true
+        },
+        "response_fields_used": [
+          "result array",
+          "sourceId",
+          "id",
+          "fileName",
+          "updateTime",
+          "fileSize"
+        ],
+        "evidence": [
+          "SDB015",
+          "SDB018"
+        ],
+        "authentication": "App session bearer via shared request/upload interceptor; ZP credentials are not manually sent as HTTP authorization in these local calls"
+      },
+      {
+        "name": "resumeAttachmentUpload",
+        "method": "POST multipart upload",
+        "path": "/wapi/user/geek/resume/attachment/upload",
+        "url_builder": "Yb() (= API base) + path",
+        "file_field_name": "file",
+        "file_path": "selected localPath; UI acceptedSuffixes pdf",
+        "explicit_headers_in_call": {},
+        "response_fields_used": [
+          "code == 0",
+          "message|msg"
+        ],
+        "evidence": [
+          "SDB018"
+        ],
+        "authentication": "App session bearer via shared request/upload interceptor; ZP credentials are not manually sent as HTTP authorization in these local calls"
+      },
+      {
+        "name": "reportReasons",
+        "method": "GET",
+        "path": "/wapi/user/report/reason/tree",
+        "params": {},
+        "response_fields_used": [
+          "array",
+          "id",
+          "showName",
+          "children"
+        ],
+        "evidence": [
+          "SDB019",
+          "SDB020"
+        ],
+        "authentication": "App session bearer via shared request/upload interceptor; ZP credentials are not manually sent as HTTP authorization in these local calls"
+      },
+      {
+        "name": "reportSubmit",
+        "method": "POST",
+        "path": "/wapi/user/report/submit",
+        "explicit_headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "reasonIds": [
+            "selected child reason ID"
+          ],
+          "commentText": "trimmed required text"
+        },
+        "not_present_in_page_submission": [
+          "friendId",
+          "messageId",
+          "jobId",
+          "chat transcript"
+        ],
+        "page_reads_but_does_not_submit": "route friendId stored in ref s",
+        "evidence": [
+          "SDB019",
+          "SDB020"
+        ],
+        "authentication": "App session bearer via shared request/upload interceptor; ZP credentials are not manually sent as HTTP authorization in these local calls"
+      },
+      {
+        "name": "deliveryLookup",
+        "method": "POST",
+        "path": "/wapi/user/geek/delivery/listByJobIds",
+        "explicit_headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "ids": [
+            "route jobId"
+          ],
+          "includeDeleted": true
+        },
+        "response_fields_used": [
+          "jobSnapshot",
+          "zpBossUid",
+          "zpJobId",
+          "encryptId",
+          "createTime",
+          "sendResumeTime",
+          "viewResumeTime",
+          "exchangeWechatTime",
+          "exchangePhoneTime"
+        ],
+        "evidence": [
+          "SDB001",
+          "SDB034"
+        ],
+        "authentication": "App session bearer via shared request/upload interceptor; ZP credentials are not manually sent as HTTP authorization in these local calls"
+      }
+    ],
+    "websocket": {
+      "active_url_template": "wss://ws6.zhipin.com/chatws?wt=<webTicket2>&zp_product_id=<productId>",
+      "constructor_port": 443,
+      "request_subprotocols": [
+        "mqtt"
+      ],
+      "explicit_headers": {
+        "wt": "webTicket2",
+        "wt2": "webTicket2",
+        "zp_product_id": "productId"
+      },
+      "mqtt_connect": {
+        "username": "<ZP token>|0",
+        "password": "webTicket2",
+        "clientId": "dhh5- + 16 pseudorandom hex chars",
+        "mqttVersion": 4,
+        "keepAliveInterval": 25,
+        "timeout": 60,
+        "cleanSession": true,
+        "reconnect": false,
+        "version_terminology": "MQTT protocol level 4 (config mqttVersion=4), not an asserted MQTT standard version named 4"
+      },
+      "backup_hosts_declared": [
+        "ws2.zhipin.com",
+        "www.zhipin.com"
+      ],
+      "backup_reachability": "Yje has uris config, but current lc.init/connect do not forward it to Rje; active path does not establish fallback use",
+      "evidence": [
+        "SDB008",
+        "SDB011",
+        "SDB025",
+        "SDB030"
+      ]
+    },
+    "common_auth_evidence": [
+      "../auth/auth_flow.md",
+      "AUTH001",
+      "AUTH003",
+      "AUTH004",
+      "AUTH005"
+    ],
+    "authentication_note": "Request and upload interceptor adds bearer fallback and withCredentials=true; these are App session credentials, not MQTT ZP token/wt2."
+  },
+  "independent_delivery_records_query": {
+    "method": "GET",
+    "path": "/wapi/user/geek/delivery/list",
+    "query_defaults": {
+      "deliveryStatus": "ADD_FRIEND,DELIVERED"
+    },
+    "optional_query": {
+      "deliveryBy": [
+        "MANUAL",
+        "AUTO"
+      ],
+      "deliveryStatus": [
+        "ADD_FRIEND",
+        "DELIVERED",
+        "ADD_FRIEND,DELIVERED"
+      ],
+      "viewed": "boolean"
+    },
+    "response_access": [
+      "array or result array or data array",
+      "zpJobId",
+      "zpBossUid",
+      "jobSnapshot.jobId",
+      "jobSnapshot.bossId",
+      "lastMessage",
+      "lastMessageRead",
+      "lastMessageSender"
+    ],
+    "does_not_use_sendConfirmedResume_response_as_records": true,
+    "evidence": [
+      "SDB085",
+      "SDB087",
+      "SDB090",
+      "SDB092",
+      "SDB093"
+    ]
+  },
+  "credentials": {
+    "active_callers": [
+      "lk.S -> pwe",
+      "pwe -> Promise.all(fwe(false),hwe(false))",
+      "Xje.initAndConnect -> VV.init(credentials+Yje) -> Pu/lc"
+    ],
+    "fields": {
+      "token": "String(token/h5 payload.token)",
+      "zpUserId": "Number(token/h5 payload.userId) in source; SDK preserves decimal string and rejects unsafe Number",
+      "wt2": "String(ticket/h5 payload.webTicket2)",
+      "productId": "String(ticket/h5 payload.productId)",
+      "identity": 0
+    },
+    "source_required": [
+      "nonzero userId",
+      "nonempty token",
+      "nonempty wt2"
+    ],
+    "productId_source_nonempty_guard": false,
+    "pc_mp_wrappers": "Exist, including separate generated wrappers with forceRefresh=true defaults; not the pwe active init path",
+    "automatic_refresh_after_im_login_failure": "No such call identified in active lc/Pu/R2/Xje/lk chain",
+    "source_ready_event": "0ms timer after init, not CONNACK; ensureSdkReady does not await authentication",
+    "logout": "user store destroys SDK and clears imAuthInfo; App account ID is not equated with zpUserId",
+    "evidence": [
+      "SDB002",
+      "SDB003",
+      "SDB004",
+      "SDB006",
+      "SDB008",
+      "SDB014",
+      "SDB061",
+      "SDB062",
+      "SDB063"
+    ]
+  },
+  "peer_job_security": {
+    "conversation_identity": {
+      "sender": "zpUserId from token/h5",
+      "recipient": "final peer ZP UID",
+      "source": "0 on current page",
+      "chatId": "not found as a full-source literal"
+    },
+    "route": [
+      "friendId",
+      "friendSource",
+      "jobId",
+      "optional avatar",
+      "optional msgId locator"
+    ],
+    "lookup": "If jobId exists, POST listByJobIds {ids:[jobId],includeDeleted:true}; first response row, snapshot.bossId ?? row.zpBossUid can override route friendId",
+    "lookup_does_not_validate_returned_job_id_equals_requested": true,
+    "source_orders_differ": {
+      "records_chat_job": "snapshot.jobId ?? row.zpJobId",
+      "records_chat_peer": "row.zpBossUid || snapshot.bossId",
+      "ImPage_peer": "snapshot.bossId ?? row.zpBossUid"
+    },
+    "wire_to_uid": "final peer -> lk userInfo.zpUid -> Xje peer.uid -> Gje.to.uid -> protobuf TechwolfUser.uid",
+    "route_friendSource_active_use": "read into page ref, but current store only sets zpUid; Xje uses userInfo.frendSource typo fallback 0",
+    "encryptUid": "Gje.to.encryptUid -> factory user second argument -> TechwolfUser.name #2 when truthy; no encryptUid field in proto",
+    "message_securityId": "optional TechwolfMessage.securityId #19; W4 exposes body.securityId || raw.securityId || empty; active text factory does not set it",
+    "resume_securityId": "optional TechwolfResume.securityId #23; not the WSS authentication token",
+    "job_securityId": "other job-card code can treat it as an opaque encryptId/navigation candidate; no active text setter bridge",
+    "text_not_set": [
+      "jobId",
+      "AI task/result/round ID",
+      "sendConfirmedResume.messageId",
+      "securityId",
+      "encryptedBody",
+      "bizId",
+      "bizType"
+    ],
+    "evidence": [
+      "SDB001",
+      "SDB002",
+      "SDB005",
+      "SDB009",
+      "SDB014",
+      "SDB021",
+      "SDB022",
+      "SDB092",
+      "SDB093"
+    ]
+  },
+  "write_chain": {
+    "steps": [
+      "ImPage Q -> lk.sendTextMessage",
+      "Xje m -> VV/R2.sendMessage",
+      "Pu.sendMessage -> Gje.sendTextMessage/getMessageStanza",
+      "ew.create(text) -> Os.createMessage.text",
+      "lc.send -> Rje.Client.send(chat,bytes,1,true)",
+      "y.send/_requires_ack/_schedule_message/_socket_send -> SocketTask.send"
+    ],
+    "native_dedicated_chat_plugin_required": false,
+    "runtime_dependency": "UniApp SocketTask is an adapter here; portable code must supply equivalent binary WebSocket and custom headers/subprotocol behavior",
+    "source_return": "optimistic local queued send; no Promise that awaits business delivery",
+    "source_id": "Xje T=lastMsgId+Date.now -> clientMid -> Gje.tempID -> proto mid and cmid; Gje intermediate random mid/cmid are ignored by actual text factory",
+    "evidence": [
+      "SDB001",
+      "SDB002",
+      "SDB006",
+      "SDB007",
+      "SDB008",
+      "SDB009",
+      "SDB014",
+      "SDB022",
+      "SDB028",
+      "SDB029",
+      "SDB043",
+      "SDB071",
+      "SDB072",
+      "SDB073"
+    ]
+  },
+  "mqtt": {
+    "active_endpoint": "wss://ws6.zhipin.com/chatws?wt=<wt2>&zp_product_id=<productId>",
+    "websocket_subprotocol": "mqtt",
+    "headers": {
+      "wt": "wt2",
+      "wt2": "wt2",
+      "zp_product_id": "productId"
+    },
+    "backup_hosts": "declared in Yje but not passed by active lc init/connect; no established fallback",
+    "connect": {
+      "first_byte": "0x10",
+      "protocol_bytes": "00044d51545404",
+      "flags": "0xc2",
+      "clientId": "dhh5- + 16 pseudorandom hex characters",
+      "username": "<ZP token>|0",
+      "password": "<wt2>",
+      "keepalive_seconds": 25,
+      "timeout_seconds": 60,
+      "cleanSession": true,
+      "mqttVersionExplicit": true,
+      "lower_reconnect": false
+    },
+    "connected_steps": [
+      "CONNACK code0",
+      "SUBSCRIBE chat qos1",
+      "emit connect",
+      "Presence",
+      "offline queue replay in source"
+    ],
+    "publish": {
+      "first_byte_normal_active": "0x33",
+      "qos": 1,
+      "retained": true,
+      "topic": "chat",
+      "layout": [
+        "first byte",
+        "base128 remaining length up to 4 bytes",
+        "uint16be topic UTF8 length",
+        "chat UTF8",
+        "uint16be packetId",
+        "proto2 bytes"
+      ],
+      "extra_app_magic_or_length": false
+    },
+    "receive": {
+      "fragmentation": "retains incomplete MQTT frame and appends next socket data",
+      "qos1": "send standard PUBACK then deliver",
+      "qos2": "store publish, PUBREC, deliver after PUBREL then PUBCOMP"
+    },
+    "puback": {
+      "standard_remaining_length": 2,
+      "extended_remaining_length": 18,
+      "fields": [
+        "packetId uint16be",
+        "cmid uint64be",
+        "mid uint64be"
+      ],
+      "standard_has_no_server_mid": true,
+      "extension_not_standard_mqtt": true
+    },
+    "source_ack_validation": "packetId looks up original publish; lc requires truthy ack.cmid but does not compare it with original message cmid",
+    "source_after_ack": "MQTT removes sent packet/storage; lc clears pending timer by ack.cmid and emits delivered with ack.mid; Xje only sets UI status=1 by cmid, not UI mid replacement",
+    "source_timeout": "60s pending timer emits send-error and deletes pending; Xje sendError handler empty; timer itself does not resend",
+    "source_precision": "ACK uint64 and decoded Long converted to JS Number; SDK intentionally fixes that boundary",
+    "evidence": [
+      "SDB008",
+      "SDB014",
+      "SDB023",
+      "SDB024",
+      "SDB025",
+      "SDB026",
+      "SDB028",
+      "SDB029",
+      "SDB035",
+      "SDB036",
+      "SDB043",
+      "SDB074",
+      "SDB075",
+      "SDB078",
+      "SDB079",
+      "SDB080"
+    ]
+  },
+  "protobuf": {
+    "origin": "Nje literal used by sn.loadProtoFile and active factory/decoder, not an unused schema string",
+    "syntax": "proto2 semantics",
+    "java_package": "cn.techwolf.boss.chat",
+    "message_count": 47,
+    "field_count": 318,
+    "declared_enum_count": 0,
+    "schema": {
+      "TechwolfUser": [
+        {
+          "name": "uid",
+          "tag": 1,
+          "type": "int64",
+          "rule": "required"
+        },
+        {
+          "name": "name",
+          "tag": 2,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "avatar",
+          "tag": 3,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "company",
+          "tag": 4,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "headImg",
+          "tag": 5,
+          "type": "int32",
+          "rule": "optional"
+        },
+        {
+          "name": "certification",
+          "tag": 6,
+          "type": "int32",
+          "rule": "optional"
+        },
+        {
+          "name": "source",
+          "tag": 7,
+          "type": "int32",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfSound": [
+        {
+          "name": "sid",
+          "tag": 1,
+          "type": "int64",
+          "rule": "optional"
+        },
+        {
+          "name": "url",
+          "tag": 2,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "duration",
+          "tag": 3,
+          "type": "int32",
+          "rule": "optional"
+        },
+        {
+          "name": "templateId",
+          "tag": 4,
+          "type": "int32",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfVideo": [
+        {
+          "name": "type",
+          "tag": 1,
+          "type": "int32",
+          "rule": "required"
+        },
+        {
+          "name": "status",
+          "tag": 2,
+          "type": "int32",
+          "rule": "required"
+        },
+        {
+          "name": "duration",
+          "tag": 3,
+          "type": "int32",
+          "rule": "optional"
+        },
+        {
+          "name": "text",
+          "tag": 4,
+          "type": "string",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfInterview": [
+        {
+          "name": "condition",
+          "tag": 1,
+          "type": "int32",
+          "rule": "required"
+        },
+        {
+          "name": "text",
+          "tag": 2,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "url",
+          "tag": 3,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "extend",
+          "tag": 4,
+          "type": "string",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfImageInfo": [
+        {
+          "name": "url",
+          "tag": 1,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "width",
+          "tag": 2,
+          "type": "int32",
+          "rule": "required"
+        },
+        {
+          "name": "height",
+          "tag": 3,
+          "type": "int32",
+          "rule": "required"
+        }
+      ],
+      "TechwolfImage": [
+        {
+          "name": "iid",
+          "tag": 1,
+          "type": "int64",
+          "rule": "optional"
+        },
+        {
+          "name": "tinyImage",
+          "tag": 2,
+          "type": "TechwolfImageInfo",
+          "rule": "optional"
+        },
+        {
+          "name": "originImage",
+          "tag": 3,
+          "type": "TechwolfImageInfo",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfAction": [
+        {
+          "name": "aid",
+          "tag": 1,
+          "type": "int32",
+          "rule": "required"
+        },
+        {
+          "name": "extend",
+          "tag": 2,
+          "type": "string",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfArticle": [
+        {
+          "name": "title",
+          "tag": 1,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "description",
+          "tag": 2,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "picUrl",
+          "tag": 3,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "url",
+          "tag": 4,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "templateId",
+          "tag": 5,
+          "type": "int32",
+          "rule": "optional"
+        },
+        {
+          "name": "bottomText",
+          "tag": 6,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "timeout",
+          "tag": 7,
+          "type": "int64",
+          "rule": "optional"
+        },
+        {
+          "name": "statisticParameters",
+          "tag": 8,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "highlightParts",
+          "tag": 9,
+          "type": "TechwolfSlice",
+          "rule": "repeated"
+        },
+        {
+          "name": "dimParts",
+          "tag": 10,
+          "type": "TechwolfSlice",
+          "rule": "repeated"
+        },
+        {
+          "name": "subTitle",
+          "tag": 11,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "extend",
+          "tag": 12,
+          "type": "string",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfNotify": [
+        {
+          "name": "text",
+          "tag": 1,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "url",
+          "tag": 2,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "title",
+          "tag": 3,
+          "type": "string",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfButton": [
+        {
+          "name": "text",
+          "tag": 1,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "url",
+          "tag": 2,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "templateId",
+          "tag": 3,
+          "type": "int32",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfDialog": [
+        {
+          "name": "text",
+          "tag": 1,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "buttons",
+          "tag": 2,
+          "type": "TechwolfButton",
+          "rule": "repeated"
+        },
+        {
+          "name": "operated",
+          "tag": 3,
+          "type": "bool",
+          "rule": "required"
+        },
+        {
+          "name": "clickMore",
+          "tag": 4,
+          "type": "bool",
+          "rule": "optional"
+        },
+        {
+          "name": "type",
+          "tag": 5,
+          "type": "int32",
+          "rule": "optional"
+        },
+        {
+          "name": "backgroundUrl",
+          "tag": 6,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "timeout",
+          "tag": 7,
+          "type": "int64",
+          "rule": "optional"
+        },
+        {
+          "name": "statisticParameters",
+          "tag": 8,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "title",
+          "tag": 9,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "url",
+          "tag": 10,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "selectedIndex",
+          "tag": 11,
+          "type": "int32",
+          "rule": "optional"
+        },
+        {
+          "name": "extend",
+          "tag": 12,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "content",
+          "tag": 13,
+          "type": "string",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfJobDesc": [
+        {
+          "name": "title",
+          "tag": 1,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "company",
+          "tag": 2,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "salary",
+          "tag": 3,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "url",
+          "tag": 4,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "jobId",
+          "tag": 5,
+          "type": "int64",
+          "rule": "required"
+        },
+        {
+          "name": "positionCategory",
+          "tag": 6,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "experience",
+          "tag": 7,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "education",
+          "tag": 8,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "city",
+          "tag": 9,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "bossTitle",
+          "tag": 10,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "boss",
+          "tag": 11,
+          "type": "TechwolfUser",
+          "rule": "optional"
+        },
+        {
+          "name": "lid",
+          "tag": 12,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "stage",
+          "tag": 13,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "bottomText",
+          "tag": 14,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "jobLabel",
+          "tag": 15,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "iconFlag",
+          "tag": 16,
+          "type": "int32",
+          "rule": "optional"
+        },
+        {
+          "name": "content",
+          "tag": 17,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "labels",
+          "tag": 18,
+          "type": "string",
+          "rule": "repeated"
+        },
+        {
+          "name": "expectId",
+          "tag": 19,
+          "type": "int64",
+          "rule": "optional"
+        },
+        {
+          "name": "expectPosition",
+          "tag": 20,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "expectSalary",
+          "tag": 21,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "partTimeDesc",
+          "tag": 22,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "geek",
+          "tag": 23,
+          "type": "TechwolfUser",
+          "rule": "optional"
+        },
+        {
+          "name": "latlon",
+          "tag": 24,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "distance",
+          "tag": 25,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "extend",
+          "tag": 26,
+          "type": "string",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfResume": [
+        {
+          "name": "user",
+          "tag": 1,
+          "type": "TechwolfUser",
+          "rule": "required"
+        },
+        {
+          "name": "description",
+          "tag": 2,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "city",
+          "tag": 3,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "position",
+          "tag": 4,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "keywords",
+          "tag": 5,
+          "type": "string",
+          "rule": "repeated"
+        },
+        {
+          "name": "expectId",
+          "tag": 6,
+          "type": "int64",
+          "rule": "optional"
+        },
+        {
+          "name": "lid",
+          "tag": 7,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "gender",
+          "tag": 8,
+          "type": "int32",
+          "rule": "optional"
+        },
+        {
+          "name": "salary",
+          "tag": 9,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "workYear",
+          "tag": 10,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "content1",
+          "tag": 11,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "content2",
+          "tag": 12,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "education",
+          "tag": 13,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "age",
+          "tag": 14,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "labels",
+          "tag": 15,
+          "type": "string",
+          "rule": "repeated"
+        },
+        {
+          "name": "experiences",
+          "tag": 16,
+          "type": "UserExperience",
+          "rule": "repeated"
+        },
+        {
+          "name": "positionCategory",
+          "tag": 17,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "jobSalary",
+          "tag": 18,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "bottomText",
+          "tag": 19,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "applyStatus",
+          "tag": 20,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "jobId",
+          "tag": 21,
+          "type": "int64",
+          "rule": "optional"
+        },
+        {
+          "name": "content3",
+          "tag": 22,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "securityId",
+          "tag": 23,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "boss",
+          "tag": 24,
+          "type": "TechwolfUser",
+          "rule": "optional"
+        },
+        {
+          "name": "brandName",
+          "tag": 25,
+          "type": "string",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfHyperLink": [
+        {
+          "name": "text",
+          "tag": 1,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "url",
+          "tag": 2,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "hyperLinkType",
+          "tag": 3,
+          "type": "int32",
+          "rule": "required"
+        },
+        {
+          "name": "extraJson",
+          "tag": 4,
+          "type": "string",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfMessageBody": [
+        {
+          "name": "type",
+          "tag": 1,
+          "type": "int32",
+          "rule": "required"
+        },
+        {
+          "name": "templateId",
+          "tag": 2,
+          "type": "int32",
+          "rule": "required"
+        },
+        {
+          "name": "headTitle",
+          "tag": 11,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "text",
+          "tag": 3,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "sound",
+          "tag": 4,
+          "type": "TechwolfSound",
+          "rule": "optional"
+        },
+        {
+          "name": "image",
+          "tag": 5,
+          "type": "TechwolfImage",
+          "rule": "optional"
+        },
+        {
+          "name": "action",
+          "tag": 6,
+          "type": "TechwolfAction",
+          "rule": "optional"
+        },
+        {
+          "name": "articles",
+          "tag": 7,
+          "type": "TechwolfArticle",
+          "rule": "repeated"
+        },
+        {
+          "name": "notify",
+          "tag": 8,
+          "type": "TechwolfNotify",
+          "rule": "optional"
+        },
+        {
+          "name": "dialog",
+          "tag": 9,
+          "type": "TechwolfDialog",
+          "rule": "optional"
+        },
+        {
+          "name": "jobDesc",
+          "tag": 10,
+          "type": "TechwolfJobDesc",
+          "rule": "optional"
+        },
+        {
+          "name": "resume",
+          "tag": 12,
+          "type": "TechwolfResume",
+          "rule": "optional"
+        },
+        {
+          "name": "redEnvelope",
+          "tag": 13,
+          "type": "TechwolfRedEnvelope",
+          "rule": "optional"
+        },
+        {
+          "name": "orderDetail",
+          "tag": 14,
+          "type": "TechwolfOrderDetail",
+          "rule": "optional"
+        },
+        {
+          "name": "hyperLink",
+          "tag": 15,
+          "type": "TechwolfHyperLink",
+          "rule": "optional"
+        },
+        {
+          "name": "video",
+          "tag": 16,
+          "type": "TechwolfVideo",
+          "rule": "optional"
+        },
+        {
+          "name": "interview",
+          "tag": 17,
+          "type": "TechwolfInterview",
+          "rule": "optional"
+        },
+        {
+          "name": "jobShare",
+          "tag": 18,
+          "type": "TechwolfJobShare",
+          "rule": "optional"
+        },
+        {
+          "name": "resumeShare",
+          "tag": 19,
+          "type": "TechwolfResumeShare",
+          "rule": "optional"
+        },
+        {
+          "name": "atInfo",
+          "tag": 20,
+          "type": "AtInfo",
+          "rule": "optional"
+        },
+        {
+          "name": "sticker",
+          "tag": 21,
+          "type": "TechwolfSticker",
+          "rule": "optional"
+        },
+        {
+          "name": "chatShare",
+          "tag": 22,
+          "type": "TechwolfChatShare",
+          "rule": "optional"
+        },
+        {
+          "name": "interviewShare",
+          "tag": 23,
+          "type": "TechwolfInterviewShare",
+          "rule": "optional"
+        },
+        {
+          "name": "listCard",
+          "tag": 24,
+          "type": "TechwolfListCard",
+          "rule": "optional"
+        },
+        {
+          "name": "starRate",
+          "tag": 25,
+          "type": "TechwolfStarRate",
+          "rule": "optional"
+        },
+        {
+          "name": "frame",
+          "tag": 26,
+          "type": "TechwolfFrame",
+          "rule": "optional"
+        },
+        {
+          "name": "multiImage",
+          "tag": 27,
+          "type": "TechwolfMultiImage",
+          "rule": "optional"
+        },
+        {
+          "name": "extend",
+          "tag": 28,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "style",
+          "tag": 29,
+          "type": "int32",
+          "rule": "optional"
+        },
+        {
+          "name": "comDesc",
+          "tag": 30,
+          "type": "TechwolfComDesc",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfMessage": [
+        {
+          "name": "from",
+          "tag": 1,
+          "type": "TechwolfUser",
+          "rule": "required"
+        },
+        {
+          "name": "to",
+          "tag": 2,
+          "type": "TechwolfUser",
+          "rule": "required"
+        },
+        {
+          "name": "type",
+          "tag": 3,
+          "type": "int32",
+          "rule": "required"
+        },
+        {
+          "name": "mid",
+          "tag": 4,
+          "type": "int64",
+          "rule": "optional"
+        },
+        {
+          "name": "time",
+          "tag": 5,
+          "type": "int64",
+          "rule": "optional"
+        },
+        {
+          "name": "body",
+          "tag": 6,
+          "type": "TechwolfMessageBody",
+          "rule": "required"
+        },
+        {
+          "name": "offline",
+          "tag": 7,
+          "type": "bool",
+          "rule": "optional"
+        },
+        {
+          "name": "received",
+          "tag": 8,
+          "type": "bool",
+          "rule": "optional"
+        },
+        {
+          "name": "pushText",
+          "tag": 9,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "taskId",
+          "tag": 10,
+          "type": "int64",
+          "rule": "optional"
+        },
+        {
+          "name": "cmid",
+          "tag": 11,
+          "type": "int64",
+          "rule": "optional"
+        },
+        {
+          "name": "status",
+          "tag": 12,
+          "type": "int32",
+          "rule": "optional"
+        },
+        {
+          "name": "uncount",
+          "tag": 13,
+          "type": "int32",
+          "rule": "optional"
+        },
+        {
+          "name": "pushSound",
+          "tag": 14,
+          "type": "int32",
+          "rule": "optional"
+        },
+        {
+          "name": "flag",
+          "tag": 15,
+          "type": "int32",
+          "rule": "optional"
+        },
+        {
+          "name": "encryptedBody",
+          "tag": 16,
+          "type": "bytes",
+          "rule": "optional"
+        },
+        {
+          "name": "bizId",
+          "tag": 17,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "bizType",
+          "tag": 18,
+          "type": "int32",
+          "rule": "optional"
+        },
+        {
+          "name": "securityId",
+          "tag": 19,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "quoteId",
+          "tag": 20,
+          "type": "int64",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfClientInfo": [
+        {
+          "name": "version",
+          "tag": 1,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "system",
+          "tag": 2,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "systemVersion",
+          "tag": 3,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "model",
+          "tag": 4,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "uniqid",
+          "tag": 5,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "network",
+          "tag": 6,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "appid",
+          "tag": 7,
+          "type": "int32",
+          "rule": "optional"
+        },
+        {
+          "name": "platform",
+          "tag": 8,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "channel",
+          "tag": 9,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "ssid",
+          "tag": 10,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "bssid",
+          "tag": 11,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "longitude",
+          "tag": 12,
+          "type": "double",
+          "rule": "optional"
+        },
+        {
+          "name": "latitude",
+          "tag": 13,
+          "type": "double",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfClientTime": [
+        {
+          "name": "startTime",
+          "tag": 1,
+          "type": "int64",
+          "rule": "optional"
+        },
+        {
+          "name": "resumeTime",
+          "tag": 2,
+          "type": "int64",
+          "rule": "optional"
+        },
+        {
+          "name": "locateTime",
+          "tag": 3,
+          "type": "int64",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfPresence": [
+        {
+          "name": "type",
+          "tag": 1,
+          "type": "int32",
+          "rule": "required"
+        },
+        {
+          "name": "uid",
+          "tag": 2,
+          "type": "int32",
+          "rule": "required"
+        },
+        {
+          "name": "clientInfo",
+          "tag": 3,
+          "type": "TechwolfClientInfo",
+          "rule": "optional"
+        },
+        {
+          "name": "clientTime",
+          "tag": 4,
+          "type": "TechwolfClientTime",
+          "rule": "optional"
+        },
+        {
+          "name": "lastMessageId",
+          "tag": 5,
+          "type": "int64",
+          "rule": "optional"
+        },
+        {
+          "name": "lastGroupMessageId",
+          "tag": 6,
+          "type": "int64",
+          "rule": "optional"
+        },
+        {
+          "name": "userId",
+          "tag": 7,
+          "type": "int64",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfKVEntry": [
+        {
+          "name": "key",
+          "tag": 1,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "value",
+          "tag": 2,
+          "type": "string",
+          "rule": "required"
+        }
+      ],
+      "TechwolfIq": [
+        {
+          "name": "qid",
+          "tag": 1,
+          "type": "int64",
+          "rule": "required"
+        },
+        {
+          "name": "query",
+          "tag": 2,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "params",
+          "tag": 3,
+          "type": "TechwolfKVEntry",
+          "rule": "repeated"
+        }
+      ],
+      "TechwolfIqResponse": [
+        {
+          "name": "qid",
+          "tag": 1,
+          "type": "int64",
+          "rule": "required"
+        },
+        {
+          "name": "query",
+          "tag": 2,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "results",
+          "tag": 3,
+          "type": "TechwolfKVEntry",
+          "rule": "repeated"
+        }
+      ],
+      "TechwolfMessageSync": [
+        {
+          "name": "clientMid",
+          "tag": 1,
+          "type": "int64",
+          "rule": "required"
+        },
+        {
+          "name": "serverMid",
+          "tag": 2,
+          "type": "int64",
+          "rule": "required"
+        }
+      ],
+      "TechwolfMessageRead": [
+        {
+          "name": "userId",
+          "tag": 1,
+          "type": "int64",
+          "rule": "required"
+        },
+        {
+          "name": "messageId",
+          "tag": 2,
+          "type": "int64",
+          "rule": "required"
+        },
+        {
+          "name": "readTime",
+          "tag": 3,
+          "type": "int64",
+          "rule": "required"
+        },
+        {
+          "name": "sync",
+          "tag": 4,
+          "type": "bool",
+          "rule": "optional",
+          "defaultValue": false
+        },
+        {
+          "name": "userSource",
+          "tag": 5,
+          "type": "int32",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfChatProtocol": [
+        {
+          "name": "type",
+          "tag": 1,
+          "type": "int32",
+          "rule": "required"
+        },
+        {
+          "name": "version",
+          "tag": 2,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "messages",
+          "tag": 3,
+          "type": "TechwolfMessage",
+          "rule": "repeated"
+        },
+        {
+          "name": "presence",
+          "tag": 4,
+          "type": "TechwolfPresence",
+          "rule": "optional"
+        },
+        {
+          "name": "iq",
+          "tag": 5,
+          "type": "TechwolfIq",
+          "rule": "optional"
+        },
+        {
+          "name": "iqResponse",
+          "tag": 6,
+          "type": "TechwolfIqResponse",
+          "rule": "optional"
+        },
+        {
+          "name": "messageSync",
+          "tag": 7,
+          "type": "TechwolfMessageSync",
+          "rule": "repeated"
+        },
+        {
+          "name": "messageRead",
+          "tag": 8,
+          "type": "TechwolfMessageRead",
+          "rule": "repeated"
+        },
+        {
+          "name": "dataSync",
+          "tag": 9,
+          "type": "TechwolfDataSync",
+          "rule": "optional"
+        },
+        {
+          "name": "domain",
+          "tag": 10,
+          "type": "int32",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfRedEnvelope": [
+        {
+          "name": "redId",
+          "tag": 1,
+          "type": "int64",
+          "rule": "required"
+        },
+        {
+          "name": "redText",
+          "tag": 2,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "redTitle",
+          "tag": 3,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "clickUrl",
+          "tag": 4,
+          "type": "string",
+          "rule": "required"
+        }
+      ],
+      "TechwolfOrderDetail": [
+        {
+          "name": "title",
+          "tag": 1,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "subTitle",
+          "tag": 2,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "url",
+          "tag": 3,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "orderDetailEntryList",
+          "tag": 4,
+          "type": "TechwolfOrderDetailEntry",
+          "rule": "repeated"
+        }
+      ],
+      "TechwolfOrderDetailItem": [
+        {
+          "name": "name",
+          "tag": 1,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "templateId",
+          "tag": 2,
+          "type": "int32",
+          "rule": "required"
+        }
+      ],
+      "TechwolfOrderDetailEntry": [
+        {
+          "name": "key",
+          "tag": 1,
+          "type": "TechwolfOrderDetailItem",
+          "rule": "required"
+        },
+        {
+          "name": "value",
+          "tag": 2,
+          "type": "TechwolfOrderDetailItem",
+          "rule": "required"
+        }
+      ],
+      "TechwolfUserSync": [
+        {
+          "name": "uid",
+          "tag": 1,
+          "type": "int64",
+          "rule": "required"
+        },
+        {
+          "name": "identity",
+          "tag": 2,
+          "type": "int32",
+          "rule": "required"
+        },
+        {
+          "name": "extraJson",
+          "tag": 3,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "userSource",
+          "tag": 4,
+          "type": "int32",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfDataSync": [
+        {
+          "name": "type",
+          "tag": 1,
+          "type": "int32",
+          "rule": "required"
+        },
+        {
+          "name": "userSync",
+          "tag": 2,
+          "type": "TechwolfUserSync",
+          "rule": "optional"
+        },
+        {
+          "name": "groupSync",
+          "tag": 3,
+          "type": "TechwolfGroupSync",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfSlice": [
+        {
+          "name": "startIndex",
+          "tag": 1,
+          "type": "int32",
+          "rule": "required"
+        },
+        {
+          "name": "endIndex",
+          "tag": 2,
+          "type": "int32",
+          "rule": "required"
+        }
+      ],
+      "UserExperience": [
+        {
+          "name": "organization",
+          "tag": 1,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "occupation",
+          "tag": 2,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "startDate",
+          "tag": 3,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "endDate",
+          "tag": 4,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "type",
+          "tag": 5,
+          "type": "int32",
+          "rule": "required"
+        }
+      ],
+      "TechwolfJobShare": [
+        {
+          "name": "user",
+          "tag": 1,
+          "type": "TechwolfUser",
+          "rule": "required"
+        },
+        {
+          "name": "jobId",
+          "tag": 2,
+          "type": "int64",
+          "rule": "required"
+        },
+        {
+          "name": "position",
+          "tag": 3,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "salary",
+          "tag": 4,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "location",
+          "tag": 5,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "company",
+          "tag": 6,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "stage",
+          "tag": 7,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "experience",
+          "tag": 8,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "education",
+          "tag": 9,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "url",
+          "tag": 10,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "lid",
+          "tag": 11,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "price",
+          "tag": 12,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "description",
+          "tag": 13,
+          "type": "string",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfResumeShare": [
+        {
+          "name": "user",
+          "tag": 1,
+          "type": "TechwolfUser",
+          "rule": "required"
+        },
+        {
+          "name": "expectId",
+          "tag": 2,
+          "type": "int64",
+          "rule": "required"
+        },
+        {
+          "name": "position",
+          "tag": 3,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "salary",
+          "tag": 4,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "location",
+          "tag": 5,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "applyStatus",
+          "tag": 6,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "age",
+          "tag": 7,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "experience",
+          "tag": 8,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "education",
+          "tag": 9,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "url",
+          "tag": 10,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "lid",
+          "tag": 11,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "gender",
+          "tag": 12,
+          "type": "int32",
+          "rule": "optional"
+        },
+        {
+          "name": "blurred",
+          "tag": 13,
+          "type": "bool",
+          "rule": "optional"
+        },
+        {
+          "name": "source",
+          "tag": 14,
+          "type": "int32",
+          "rule": "optional"
+        }
+      ],
+      "AtInfo": [
+        {
+          "name": "flag",
+          "tag": 1,
+          "type": "int32",
+          "rule": "required"
+        },
+        {
+          "name": "uids",
+          "tag": 2,
+          "type": "int64",
+          "rule": "repeated"
+        }
+      ],
+      "TechwolfGroupSync": [
+        {
+          "name": "gid",
+          "tag": 1,
+          "type": "int64",
+          "rule": "required"
+        },
+        {
+          "name": "version",
+          "tag": 2,
+          "type": "int32",
+          "rule": "optional"
+        },
+        {
+          "name": "encGid",
+          "tag": 3,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "extraJson",
+          "tag": 4,
+          "type": "string",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfSticker": [
+        {
+          "name": "sid",
+          "tag": 1,
+          "type": "int64",
+          "rule": "required"
+        },
+        {
+          "name": "packId",
+          "tag": 2,
+          "type": "int64",
+          "rule": "optional"
+        },
+        {
+          "name": "image",
+          "tag": 3,
+          "type": "TechwolfImage",
+          "rule": "optional"
+        },
+        {
+          "name": "format",
+          "tag": 4,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "name",
+          "tag": 5,
+          "type": "string",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfChatShare": [
+        {
+          "name": "shareId",
+          "tag": 1,
+          "type": "int64",
+          "rule": "required"
+        },
+        {
+          "name": "title",
+          "tag": 2,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "records",
+          "tag": 3,
+          "type": "string",
+          "rule": "repeated"
+        },
+        {
+          "name": "bottomText",
+          "tag": 4,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "url",
+          "tag": 5,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "from",
+          "tag": 6,
+          "type": "TechwolfUser",
+          "rule": "required"
+        },
+        {
+          "name": "to",
+          "tag": 7,
+          "type": "TechwolfUser",
+          "rule": "required"
+        },
+        {
+          "name": "user",
+          "tag": 8,
+          "type": "TechwolfUser",
+          "rule": "required"
+        }
+      ],
+      "TechwolfInterviewShare": [
+        {
+          "name": "interviewId",
+          "tag": 1,
+          "type": "int64",
+          "rule": "required"
+        },
+        {
+          "name": "user",
+          "tag": 2,
+          "type": "TechwolfUser",
+          "rule": "required"
+        },
+        {
+          "name": "title",
+          "tag": 3,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "bottomText",
+          "tag": 4,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "url",
+          "tag": 5,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "interviewTime",
+          "tag": 6,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "interviewAddress",
+          "tag": 7,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "jobName",
+          "tag": 8,
+          "type": "string",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfListItem": [
+        {
+          "name": "title",
+          "tag": 1,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "icon",
+          "tag": 2,
+          "type": "int32",
+          "rule": "optional"
+        },
+        {
+          "name": "url",
+          "tag": 3,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "text",
+          "tag": 4,
+          "type": "string",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfListCard": [
+        {
+          "name": "title",
+          "tag": 1,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "items",
+          "tag": 2,
+          "type": "TechwolfListItem",
+          "rule": "repeated"
+        },
+        {
+          "name": "pageSize",
+          "tag": 3,
+          "type": "int32",
+          "rule": "optional"
+        },
+        {
+          "name": "extend",
+          "tag": 4,
+          "type": "string",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfStar": [
+        {
+          "name": "starId",
+          "tag": 1,
+          "type": "int64",
+          "rule": "required"
+        },
+        {
+          "name": "starDesc",
+          "tag": 2,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "options",
+          "tag": 3,
+          "type": "TechwolfListItem",
+          "rule": "repeated"
+        }
+      ],
+      "TechwolfStarRate": [
+        {
+          "name": "title",
+          "tag": 1,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "stars",
+          "tag": 2,
+          "type": "TechwolfStar",
+          "rule": "repeated"
+        },
+        {
+          "name": "rateStatus",
+          "tag": 3,
+          "type": "int32",
+          "rule": "required"
+        },
+        {
+          "name": "rateStar",
+          "tag": 4,
+          "type": "TechwolfStar",
+          "rule": "optional"
+        },
+        {
+          "name": "submitButton",
+          "tag": 5,
+          "type": "TechwolfButton",
+          "rule": "optional"
+        }
+      ],
+      "TechwolfFrame": [
+        {
+          "name": "href",
+          "tag": 1,
+          "type": "string",
+          "rule": "required"
+        }
+      ],
+      "TechwolfMultiImage": [
+        {
+          "name": "images",
+          "tag": 1,
+          "type": "TechwolfImageInfo",
+          "rule": "repeated"
+        }
+      ],
+      "TechwolfComDesc": [
+        {
+          "name": "picUrl",
+          "tag": 1,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "name",
+          "tag": 2,
+          "type": "string",
+          "rule": "required"
+        },
+        {
+          "name": "stage",
+          "tag": 3,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "scale",
+          "tag": 4,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "industry",
+          "tag": 5,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "welfareLabels",
+          "tag": 6,
+          "type": "string",
+          "rule": "repeated"
+        },
+        {
+          "name": "introduce",
+          "tag": 7,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "url",
+          "tag": 8,
+          "type": "string",
+          "rule": "optional"
+        },
+        {
+          "name": "extend",
+          "tag": 9,
+          "type": "string",
+          "rule": "optional"
+        }
+      ]
+    },
+    "active_subset_and_ui_constants": {
+      "source": "/Users/abc/Documents/deepseek-harness/zj/HBuilder.app/Pandora/apps/__UNI__49240F0/www/app-service.js",
+      "source_sha256": "85df0d8ca64906e303f261512d32fb695450ec70dcc6862aedcee796533da79e",
+      "format": "client-shipped proto2 literal, not recovered server code",
+      "declared_proto_enum_count": 0,
+      "message_types": {
+        "TechwolfUser": {
+          "fields": [
+            {
+              "name": "uid",
+              "tag": 1,
+              "type": "int64",
+              "rule": "required",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": "required field missing -> decoder error",
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "name",
+              "tag": 2,
+              "type": "string",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "avatar",
+              "tag": 3,
+              "type": "string",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "company",
+              "tag": 4,
+              "type": "string",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "headImg",
+              "tag": 5,
+              "type": "int32",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": "Application constants listed separately; no protobuf enum declaration"
+            },
+            {
+              "name": "certification",
+              "tag": 6,
+              "type": "int32",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": "Application constants listed separately; no protobuf enum declaration"
+            },
+            {
+              "name": "source",
+              "tag": 7,
+              "type": "int32",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": "Application constants listed separately; no protobuf enum declaration"
+            }
+          ],
+          "evidence": [
+            "SDB021"
+          ]
+        },
+        "TechwolfAction": {
+          "fields": [
+            {
+              "name": "aid",
+              "tag": 1,
+              "type": "int32",
+              "rule": "required",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": "required field missing -> decoder error",
+              "numeric_enum_semantics": "Application constants listed separately; no protobuf enum declaration"
+            },
+            {
+              "name": "extend",
+              "tag": 2,
+              "type": "string",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            }
+          ],
+          "evidence": [
+            "SDB021"
+          ]
+        },
+        "TechwolfButton": {
+          "fields": [
+            {
+              "name": "text",
+              "tag": 1,
+              "type": "string",
+              "rule": "required",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": "required field missing -> decoder error",
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "url",
+              "tag": 2,
+              "type": "string",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "templateId",
+              "tag": 3,
+              "type": "int32",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": "Application constants listed separately; no protobuf enum declaration"
+            }
+          ],
+          "evidence": [
+            "SDB021"
+          ]
+        },
+        "TechwolfDialog": {
+          "fields": [
+            {
+              "name": "text",
+              "tag": 1,
+              "type": "string",
+              "rule": "required",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": "required field missing -> decoder error",
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "buttons",
+              "tag": 2,
+              "type": "TechwolfButton",
+              "rule": "repeated",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": true,
+              "declared_enum_type": false,
+              "constructor_default": [],
+              "absent_after_decode": [],
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "operated",
+              "tag": 3,
+              "type": "bool",
+              "rule": "required",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": "required field missing -> decoder error",
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "clickMore",
+              "tag": 4,
+              "type": "bool",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "type",
+              "tag": 5,
+              "type": "int32",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": "Application constants listed separately; no protobuf enum declaration"
+            },
+            {
+              "name": "backgroundUrl",
+              "tag": 6,
+              "type": "string",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "timeout",
+              "tag": 7,
+              "type": "int64",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "statisticParameters",
+              "tag": 8,
+              "type": "string",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "title",
+              "tag": 9,
+              "type": "string",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "url",
+              "tag": 10,
+              "type": "string",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "selectedIndex",
+              "tag": 11,
+              "type": "int32",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": "Application constants listed separately; no protobuf enum declaration"
+            },
+            {
+              "name": "extend",
+              "tag": 12,
+              "type": "string",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "content",
+              "tag": 13,
+              "type": "string",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            }
+          ],
+          "evidence": [
+            "SDB021"
+          ]
+        },
+        "TechwolfMessageBody": {
+          "fields": [
+            {
+              "name": "type",
+              "tag": 1,
+              "type": "int32",
+              "rule": "required",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": "required field missing -> decoder error",
+              "numeric_enum_semantics": "Application constants listed separately; no protobuf enum declaration"
+            },
+            {
+              "name": "templateId",
+              "tag": 2,
+              "type": "int32",
+              "rule": "required",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": "required field missing -> decoder error",
+              "numeric_enum_semantics": "Application constants listed separately; no protobuf enum declaration"
+            },
+            {
+              "name": "headTitle",
+              "tag": 11,
+              "type": "string",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "text",
+              "tag": 3,
+              "type": "string",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "sound",
+              "tag": 4,
+              "type": "TechwolfSound",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "image",
+              "tag": 5,
+              "type": "TechwolfImage",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "action",
+              "tag": 6,
+              "type": "TechwolfAction",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "articles",
+              "tag": 7,
+              "type": "TechwolfArticle",
+              "rule": "repeated",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": true,
+              "declared_enum_type": false,
+              "constructor_default": [],
+              "absent_after_decode": [],
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "notify",
+              "tag": 8,
+              "type": "TechwolfNotify",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "dialog",
+              "tag": 9,
+              "type": "TechwolfDialog",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "jobDesc",
+              "tag": 10,
+              "type": "TechwolfJobDesc",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "resume",
+              "tag": 12,
+              "type": "TechwolfResume",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "redEnvelope",
+              "tag": 13,
+              "type": "TechwolfRedEnvelope",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "orderDetail",
+              "tag": 14,
+              "type": "TechwolfOrderDetail",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "hyperLink",
+              "tag": 15,
+              "type": "TechwolfHyperLink",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "video",
+              "tag": 16,
+              "type": "TechwolfVideo",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "interview",
+              "tag": 17,
+              "type": "TechwolfInterview",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "jobShare",
+              "tag": 18,
+              "type": "TechwolfJobShare",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "resumeShare",
+              "tag": 19,
+              "type": "TechwolfResumeShare",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "atInfo",
+              "tag": 20,
+              "type": "AtInfo",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "sticker",
+              "tag": 21,
+              "type": "TechwolfSticker",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "chatShare",
+              "tag": 22,
+              "type": "TechwolfChatShare",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "interviewShare",
+              "tag": 23,
+              "type": "TechwolfInterviewShare",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "listCard",
+              "tag": 24,
+              "type": "TechwolfListCard",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "starRate",
+              "tag": 25,
+              "type": "TechwolfStarRate",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "frame",
+              "tag": 26,
+              "type": "TechwolfFrame",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "multiImage",
+              "tag": 27,
+              "type": "TechwolfMultiImage",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "extend",
+              "tag": 28,
+              "type": "string",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "style",
+              "tag": 29,
+              "type": "int32",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": "Application constants listed separately; no protobuf enum declaration"
+            },
+            {
+              "name": "comDesc",
+              "tag": 30,
+              "type": "TechwolfComDesc",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            }
+          ],
+          "evidence": [
+            "SDB021"
+          ]
+        },
+        "TechwolfMessage": {
+          "fields": [
+            {
+              "name": "from",
+              "tag": 1,
+              "type": "TechwolfUser",
+              "rule": "required",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": "required field missing -> decoder error",
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "to",
+              "tag": 2,
+              "type": "TechwolfUser",
+              "rule": "required",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": "required field missing -> decoder error",
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "type",
+              "tag": 3,
+              "type": "int32",
+              "rule": "required",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": "required field missing -> decoder error",
+              "numeric_enum_semantics": "Application constants listed separately; no protobuf enum declaration"
+            },
+            {
+              "name": "mid",
+              "tag": 4,
+              "type": "int64",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "time",
+              "tag": 5,
+              "type": "int64",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "body",
+              "tag": 6,
+              "type": "TechwolfMessageBody",
+              "rule": "required",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": "required field missing -> decoder error",
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "offline",
+              "tag": 7,
+              "type": "bool",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "received",
+              "tag": 8,
+              "type": "bool",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "pushText",
+              "tag": 9,
+              "type": "string",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "taskId",
+              "tag": 10,
+              "type": "int64",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "cmid",
+              "tag": 11,
+              "type": "int64",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "status",
+              "tag": 12,
+              "type": "int32",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": "Application constants listed separately; no protobuf enum declaration"
+            },
+            {
+              "name": "uncount",
+              "tag": 13,
+              "type": "int32",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": "Application constants listed separately; no protobuf enum declaration"
+            },
+            {
+              "name": "pushSound",
+              "tag": 14,
+              "type": "int32",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": "Application constants listed separately; no protobuf enum declaration"
+            },
+            {
+              "name": "flag",
+              "tag": 15,
+              "type": "int32",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": "Application constants listed separately; no protobuf enum declaration"
+            },
+            {
+              "name": "encryptedBody",
+              "tag": 16,
+              "type": "bytes",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "bizId",
+              "tag": 17,
+              "type": "string",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "bizType",
+              "tag": 18,
+              "type": "int32",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": "Application constants listed separately; no protobuf enum declaration"
+            },
+            {
+              "name": "securityId",
+              "tag": 19,
+              "type": "string",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "quoteId",
+              "tag": 20,
+              "type": "int64",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            }
+          ],
+          "evidence": [
+            "SDB021"
+          ]
+        },
+        "TechwolfClientInfo": {
+          "fields": [
+            {
+              "name": "version",
+              "tag": 1,
+              "type": "string",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "system",
+              "tag": 2,
+              "type": "string",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "systemVersion",
+              "tag": 3,
+              "type": "string",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "model",
+              "tag": 4,
+              "type": "string",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "uniqid",
+              "tag": 5,
+              "type": "string",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "network",
+              "tag": 6,
+              "type": "string",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "appid",
+              "tag": 7,
+              "type": "int32",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": "Application constants listed separately; no protobuf enum declaration"
+            },
+            {
+              "name": "platform",
+              "tag": 8,
+              "type": "string",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "channel",
+              "tag": 9,
+              "type": "string",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "ssid",
+              "tag": 10,
+              "type": "string",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "bssid",
+              "tag": 11,
+              "type": "string",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "longitude",
+              "tag": 12,
+              "type": "double",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 1,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "latitude",
+              "tag": 13,
+              "type": "double",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 1,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            }
+          ],
+          "evidence": [
+            "SDB021"
+          ]
+        },
+        "TechwolfClientTime": {
+          "fields": [
+            {
+              "name": "startTime",
+              "tag": 1,
+              "type": "int64",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "resumeTime",
+              "tag": 2,
+              "type": "int64",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "locateTime",
+              "tag": 3,
+              "type": "int64",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            }
+          ],
+          "evidence": [
+            "SDB021"
+          ]
+        },
+        "TechwolfPresence": {
+          "fields": [
+            {
+              "name": "type",
+              "tag": 1,
+              "type": "int32",
+              "rule": "required",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": "required field missing -> decoder error",
+              "numeric_enum_semantics": "Application constants listed separately; no protobuf enum declaration"
+            },
+            {
+              "name": "uid",
+              "tag": 2,
+              "type": "int32",
+              "rule": "required",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": "required field missing -> decoder error",
+              "numeric_enum_semantics": "Application constants listed separately; no protobuf enum declaration"
+            },
+            {
+              "name": "clientInfo",
+              "tag": 3,
+              "type": "TechwolfClientInfo",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "clientTime",
+              "tag": 4,
+              "type": "TechwolfClientTime",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "lastMessageId",
+              "tag": 5,
+              "type": "int64",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "lastGroupMessageId",
+              "tag": 6,
+              "type": "int64",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "userId",
+              "tag": 7,
+              "type": "int64",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            }
+          ],
+          "evidence": [
+            "SDB021"
+          ]
+        },
+        "TechwolfKVEntry": {
+          "fields": [
+            {
+              "name": "key",
+              "tag": 1,
+              "type": "string",
+              "rule": "required",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": "required field missing -> decoder error",
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "value",
+              "tag": 2,
+              "type": "string",
+              "rule": "required",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": "required field missing -> decoder error",
+              "numeric_enum_semantics": null
+            }
+          ],
+          "evidence": [
+            "SDB021"
+          ]
+        },
+        "TechwolfIq": {
+          "fields": [
+            {
+              "name": "qid",
+              "tag": 1,
+              "type": "int64",
+              "rule": "required",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": "required field missing -> decoder error",
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "query",
+              "tag": 2,
+              "type": "string",
+              "rule": "required",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": "required field missing -> decoder error",
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "params",
+              "tag": 3,
+              "type": "TechwolfKVEntry",
+              "rule": "repeated",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": true,
+              "declared_enum_type": false,
+              "constructor_default": [],
+              "absent_after_decode": [],
+              "numeric_enum_semantics": null
+            }
+          ],
+          "evidence": [
+            "SDB021"
+          ]
+        },
+        "TechwolfIqResponse": {
+          "fields": [
+            {
+              "name": "qid",
+              "tag": 1,
+              "type": "int64",
+              "rule": "required",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": "required field missing -> decoder error",
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "query",
+              "tag": 2,
+              "type": "string",
+              "rule": "required",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": "required field missing -> decoder error",
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "results",
+              "tag": 3,
+              "type": "TechwolfKVEntry",
+              "rule": "repeated",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": true,
+              "declared_enum_type": false,
+              "constructor_default": [],
+              "absent_after_decode": [],
+              "numeric_enum_semantics": null
+            }
+          ],
+          "evidence": [
+            "SDB021"
+          ]
+        },
+        "TechwolfMessageSync": {
+          "fields": [
+            {
+              "name": "clientMid",
+              "tag": 1,
+              "type": "int64",
+              "rule": "required",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": "required field missing -> decoder error",
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "serverMid",
+              "tag": 2,
+              "type": "int64",
+              "rule": "required",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": "required field missing -> decoder error",
+              "numeric_enum_semantics": null
+            }
+          ],
+          "evidence": [
+            "SDB021"
+          ]
+        },
+        "TechwolfMessageRead": {
+          "fields": [
+            {
+              "name": "userId",
+              "tag": 1,
+              "type": "int64",
+              "rule": "required",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": "required field missing -> decoder error",
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "messageId",
+              "tag": 2,
+              "type": "int64",
+              "rule": "required",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": "required field missing -> decoder error",
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "readTime",
+              "tag": 3,
+              "type": "int64",
+              "rule": "required",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": "required field missing -> decoder error",
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "sync",
+              "tag": 4,
+              "type": "bool",
+              "rule": "optional",
+              "explicit_proto_default": "false",
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": false,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "userSource",
+              "tag": 5,
+              "type": "int32",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": "Application constants listed separately; no protobuf enum declaration"
+            }
+          ],
+          "evidence": [
+            "SDB021"
+          ]
+        },
+        "TechwolfChatProtocol": {
+          "fields": [
+            {
+              "name": "type",
+              "tag": 1,
+              "type": "int32",
+              "rule": "required",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": "required field missing -> decoder error",
+              "numeric_enum_semantics": "Application constants listed separately; no protobuf enum declaration"
+            },
+            {
+              "name": "version",
+              "tag": 2,
+              "type": "string",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "messages",
+              "tag": 3,
+              "type": "TechwolfMessage",
+              "rule": "repeated",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": true,
+              "declared_enum_type": false,
+              "constructor_default": [],
+              "absent_after_decode": [],
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "presence",
+              "tag": 4,
+              "type": "TechwolfPresence",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "iq",
+              "tag": 5,
+              "type": "TechwolfIq",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "iqResponse",
+              "tag": 6,
+              "type": "TechwolfIqResponse",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "messageSync",
+              "tag": 7,
+              "type": "TechwolfMessageSync",
+              "rule": "repeated",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": true,
+              "declared_enum_type": false,
+              "constructor_default": [],
+              "absent_after_decode": [],
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "messageRead",
+              "tag": 8,
+              "type": "TechwolfMessageRead",
+              "rule": "repeated",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": true,
+              "declared_enum_type": false,
+              "constructor_default": [],
+              "absent_after_decode": [],
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "dataSync",
+              "tag": 9,
+              "type": "TechwolfDataSync",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 2,
+              "scalar": false,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": null
+            },
+            {
+              "name": "domain",
+              "tag": 10,
+              "type": "int32",
+              "rule": "optional",
+              "explicit_proto_default": null,
+              "wire_type": 0,
+              "scalar": true,
+              "repeated": false,
+              "declared_enum_type": false,
+              "constructor_default": null,
+              "absent_after_decode": null,
+              "numeric_enum_semantics": "Application constants listed separately; no protobuf enum declaration"
+            }
+          ],
+          "evidence": [
+            "SDB021"
+          ]
+        }
+      },
+      "active_protocol_type_values": {
+        "1": "message",
+        "2": "presence",
+        "4": "iqResponse receive",
+        "5": "messageSync receive; no active outbound sync call established",
+        "6": "read"
+      },
+      "body_type_values": {
+        "TEXT": 1,
+        "SOUND": 2,
+        "IMAGE": 3,
+        "ACTION": 4,
+        "DIALOG": 7,
+        "JOB_DESC": 8,
+        "RESUME": 9,
+        "HYPERLINK": 12,
+        "VIDEO": 13,
+        "INTERVIEW": 14,
+        "ARTICLE": 15,
+        "ARTICLES": 16,
+        "JOB_SHARE": 18,
+        "RESUME_SHARE": 19,
+        "STICKER": 20,
+        "INTERVIEW_SHARE": 23,
+        "LIST_CARD": 24,
+        "COM_DESC": 28
+      },
+      "ui_status_values": {
+        "SENDING": 0,
+        "SUCCESS": 1,
+        "READ": 2,
+        "RECALL": 3,
+        "ERROR": 4
+      },
+      "explicit_outbound_text": {
+        "protocol.type": 1,
+        "messages[0].type": 1,
+        "messages[0].mid": "tempID",
+        "messages[0].cmid": "tempID",
+        "messages[0].time": "Date.now()",
+        "messages[0].status": 0,
+        "messages[0].from.uid": "zpUserId",
+        "messages[0].from.source": 0,
+        "messages[0].to.uid": "friendId",
+        "messages[0].to.source": "friendSource || 0",
+        "messages[0].to.name": "optional nonempty encryptUid argument (factory uses name field)",
+        "messages[0].body.type": 1,
+        "messages[0].body.templateId": 1,
+        "messages[0].body.text": "trimmed UI text"
+      },
+      "default_notes": {
+        "constructor": "Repeated fields initialize []; proto2 nonrepeated fields generally null unless required explicit default; callers set active fields.",
+        "decoder": "populateDefaults=true; explicit sync=false is filled on decode; absent fields without explicit defaults remain null before format fallback.",
+        "ui_formatter": "W4 separately applies defaults such as source/status/time/cmid=0, strings empty, booleans false.",
+        "integers": "int64 decode becomes JS Number by parseInt(Long.toString()), so full int64 precision is not preserved."
+      },
+      "transport": {
+        "scheme": "wss",
+        "host": "ws6.zhipin.com",
+        "path": "/chatws",
+        "subprotocol": "mqtt",
+        "mqtt_version": 4,
+        "topic": "chat",
+        "publish_qos": 1,
+        "retained": true,
+        "outbound_fixed_header_first_byte": "0x33 when duplicate=false (PUBLISH|qos1|retained)",
+        "connect_fixed_header_first_byte": "0x10",
+        "connect_flags": "0xc2 = username + password + cleanSession; no will",
+        "connect_protocol_bytes": [
+          0,
+          4,
+          77,
+          81,
+          84,
+          84,
+          4
+        ],
+        "keepalive_seconds": 25,
+        "timeout_seconds": 60,
+        "mqtt_fixed_header": "packet type high 4 bits and flags low 4 bits, variable remaining-length base128 then variable header/payload",
+        "publish_variable_header": "2-byte big-endian UTF8 topic length + topic chat + 2-byte big-endian packet identifier; raw proto2 payload follows",
+        "extended_puback": "packet type4, remainingLength18: 2-byte packet identifier + uint64be cmid + uint64be mid. Ordinary remainingLength2 has no ids.",
+        "business_application_header": "No extra custom protobuf length prefix or magic bytes shown; protobuf is MQTT payload.",
+        "evidence": [
+          "SDB008",
+          "SDB023",
+          "SDB024",
+          "SDB025",
+          "SDB026",
+          "SDB029",
+          "SDB035"
+        ],
+        "duplicate_flag_bit": "0x08; transport duplicate marker, no server business-idempotency guarantee established",
+        "mqtt_version_terminology": "protocol level 4"
+      }
+    },
+    "active_outgoing": {
+      "text": {
+        "protocol_type": 1,
+        "message_type": 1,
+        "body_type": 1,
+        "templateId": 1,
+        "mid_and_cmid": "tempID",
+        "status": 0
+      },
+      "read": {
+        "protocol_type": 6,
+        "fields": [
+          "userId",
+          "messageId",
+          "readTime",
+          "userSource"
+        ],
+        "sync": "not explicitly set outbound; proto default false"
+      },
+      "presence": {
+        "protocol_type": 2,
+        "type": 1,
+        "uid_type": "int32, not int64",
+        "version": "4.92 IM declaration, not App version",
+        "appid": 20002,
+        "platform": "h5",
+        "channel": "-1"
+      }
+    },
+    "encryption": "Active text factory sends body text and does not set encryptedBody; WSS transport is separate from application-level/end-to-end encryption",
+    "evidence": [
+      "SDB010",
+      "SDB021",
+      "SDB022",
+      "SDB038",
+      "SDB039",
+      "SDB040"
+    ]
+  },
+  "receipt_layers": [
+    {
+      "state": "queued",
+      "proves": "SDK accepted/wrote to adapter",
+      "does_not_prove": "broker receipt, server mid, recipient read or resume delivery"
+    },
+    {
+      "state": "broker_received",
+      "proves": "matched MQTT packetId received PUBACK",
+      "does_not_prove": "business cmid/mid confirmation when standard two-byte ACK"
+    },
+    {
+      "state": "brokerAck",
+      "proves": "SDK validated packetId + original cmid + nonzero server mid in supported 18-byte extension",
+      "does_not_prove": "recipient read or delivery API result"
+    },
+    {
+      "state": "read",
+      "proves": "non-sync peer/source read messageId covers the confirmed server mid",
+      "does_not_prove": "recruiter reviewed resume or accepted application"
+    },
+    {
+      "state": "sendConfirmedResume result",
+      "proves": "separate App delivery API caller accepted ADD_FRIEND/DELIVERED",
+      "does_not_prove": "arbitrary BOSS text send ACK; no direct client SDK send edge established"
+    }
+  ],
+  "errors_and_reconnect": {
+    "source_sdk_error_codes": {
+      "UNKNOWN_ERROR": 1000,
+      "INIT_FAILED": 1001,
+      "CONNECTION_FAILED": 1002,
+      "CONNECTION_LOST": 1003,
+      "LOGIN_FAILED": 1004,
+      "UNKNOWN_WT": 1005,
+      "UNKNOWN_TOKEN": 1006,
+      "UNKNOWN_USER_ID": 1007,
+      "MESSAGE_ARRIVED_FAILED": 1008,
+      "MESSAGE_FORMAT_INVALID": 1009,
+      "SEND_FAILED": 1010
+    },
+    "source_connack": "code0 connected; parsed code2/3 can retry through upper policy, other parsed login failures stop; no credential refresh in this branch",
+    "source_policy": {
+      "baseDelay_ms": 1000,
+      "factor": 1.5,
+      "maxDelay_ms": 60000,
+      "maxRetries": 5,
+      "jitter": "±10%",
+      "stable_reset_ms": 60000
+    },
+    "source_offline_queue": "in-memory max100, only sends attempted while disconnected; timeout does not enqueue already-written sends",
+    "source_persistence_limit": "cleanSession true clears sent/received on CONNACK; random clientId and restore for-in over storage keys prevent claiming reliable restart replay",
+    "sdk_policy": "no automatic reconnect or write replay; explicit caller connect and fresh credentials if needed; close/timeout rejects receipt promises",
+    "evidence": [
+      "SDB008",
+      "SDB012",
+      "SDB026",
+      "SDB027",
+      "SDB037",
+      "SDB044",
+      "SDB054",
+      "SDB057",
+      "SDB058",
+      "SDB080"
+    ]
+  },
+  "sdk": {
+    "files": [
+      "sdk/zhijue-ai-sdk/src/boss.ts",
+      "sdk/zhijue-ai-sdk/src/boss-mqtt.ts",
+      "sdk/zhijue-ai-sdk/src/boss-protobuf.ts"
+    ],
+    "http_class": "BossHttpClient",
+    "http_methods": [
+      "getCredentials",
+      "history",
+      "message",
+      "deliveryRecords",
+      "lookupDeliveryJobs",
+      "resolvePeer",
+      "hasWechat",
+      "resumeAttachments",
+      "acceptExchange",
+      "rejectExchange"
+    ],
+    "realtime_class": "BossImClient",
+    "realtime_methods": [
+      "connect",
+      "sendText",
+      "sendRead",
+      "on",
+      "disconnect"
+    ],
+    "socket_factory": "factory(url,{protocols:[mqtt],headers:{wt,wt2,zp_product_id}})->adapter{send(Uint8Array),close,onOpen,onMessage,onError,onClose}",
+    "write_gate": "connect resolves after CONNACK code0; sendText/sendRead reject before that",
+    "session_epoch": "BossHttpOptions.sessionEpoch forwarded to every client.request; getCredentials captures one value for both parallel GETs; enclosing workflow closes IM and rechecks epoch before writes",
+    "send_handle": [
+      "state=queued",
+      "packetId",
+      "cmid",
+      "brokerReceived Promise",
+      "brokerAck Promise",
+      "read Promise"
+    ],
+    "brokerAck_promise": "only supported extension, dual packetId/cmid check, nonzero cmid/mid; standard ACK does not resolve it",
+    "precision": "proto int64 -> decimal string; PUBACK uint64 -> bigint arithmetic -> decimal string; unsafe Number input/JSON rejected",
+    "http_large_id_caveat": "safe integers use observed JSON-number representation; larger caller-provided IDs sent as decimal strings, which requires service compatibility confirmation",
+    "no_new_runtime_dependencies": true,
+    "enhancements_not_source_observations": [
+      "await CONNACK",
+      "dual-key ACK validation",
+      "lossless int64/uint64",
+      "explicit standard ACK vs business extension promises",
+      "no offline write queue or automatic replay",
+      "all inbound batch messages exposed",
+      "peer/source and confirmed server-mid read mapping",
+      "all deferred rejections pre-observed",
+      "bounded frame/queue data and protocol validation",
+      "default cmid source-like clock+lastMid with monotonic collision guard"
+    ],
+    "source_quirks_not_copied_as_success_guarantees": [
+      "ready timer is not auth",
+      "UI delivered does not replace server mid",
+      "sendError empty",
+      "only first live batch item handled",
+      "ACK cmid only truthy checked",
+      "Number precision loss"
+    ]
+  },
+  "bounded_negative_search": {
+    "ledger": "search_ledger.json",
+    "chatId_literal_count": 0,
+    "wapi_chat_path_literal_count": 4,
+    "sendConfirmedResume_literal_count": 1,
+    "securityId_literal_count": 9,
+    "uni_connectSocket_literal_count": 5,
+    "limit": "Literal count is not a proof that a computed server path or an unobserved server relationship cannot exist"
+  },
+  "unknowns": [
+    {
+      "item": "Server continues to use the supported 18-byte extension and accepts the recovered schema",
+      "minimum_evidence": "authorized raw binary WS exchange correlated to packetId/cmid/server mid; mock tests do not establish live compatibility"
+    },
+    {
+      "item": "Node/browser adapter custom header requirements and cross-origin availability",
+      "minimum_evidence": "a controlled handshake preserving query/subprotocol/header contract; browser standard WebSocket alone cannot set custom headers"
+    },
+    {
+      "item": "Credential expiry and server refresh/login procedure",
+      "minimum_evidence": "documented expiry/refresh contract or authorized failure trace; do not invent refresh endpoint or replay writes"
+    },
+    {
+      "item": "Confirmation delivery to record/job/peer server mapping",
+      "minimum_evidence": "separately retrieved delivery row matching the selected job and explicit peer verification; confirmation response alone has no traced bridge"
+    },
+    {
+      "item": "server business idempotency by cmid, delivery semantics and read truth",
+      "minimum_evidence": "server contract/controlled observation; QoS/DUP and client caches are not such proof"
+    },
+    {
+      "item": "acceptance of JSON decimal-string IDs larger than safe Number",
+      "minimum_evidence": "server schema or authorized read-only response/request fixture; never coerce to lossy Number"
+    }
+  ]
+}

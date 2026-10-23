@@ -1,0 +1,135 @@
+name: Mobile apps
+
+on:
+  pull_request:
+    paths:
+      [
+        "packages/mobile/**",
+        "packages/ai-sdk/**",
+        "pnpm-lock.yaml",
+        ".github/workflows/mobile-apps.yml",
+      ]
+  push:
+    branches: ["codex/mobile-apps", "master"]
+    paths:
+      [
+        "packages/mobile/**",
+        "packages/ai-sdk/**",
+        "pnpm-lock.yaml",
+        ".github/workflows/mobile-apps.yml",
+      ]
+  workflow_dispatch:
+    inputs:
+      include_ios:
+        description: Also verify the reserved unsigned iOS simulator project
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PUPPETEER_SKIP_DOWNLOAD: "true"
+  ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+
+jobs:
+  verify:
+    name: Mobile types, contracts and user flow
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-checks
+      - run: pnpm mobile:test
+      - run: pnpm mobile:build
+      - name: Exercise demo flow without external requests
+        run: node packages/mobile/scripts/smoke.mjs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: mobile-verification-${{ github.run_id }}
+          path: .ci-reports/mobile
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
+  android:
+    name: Android installable test APK
+    needs: verify
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-checks
+      - name: Select hosted Java 21
+        run: |
+          test -x "$JAVA_HOME_21_X64/bin/java"
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
+      - run: pnpm mobile:build
+      - run: pnpm --filter geekgeekrun-mobile exec cap sync android
+      - name: Verify Android SDK 36 is installed
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Build and lint APK
+        working-directory: packages/mobile/android
+        run: ./gradlew --no-daemon --console=plain assembleDebug assembleRelease lintRelease
+      - name: Prepare APK and checksum
+        run: |
+          mkdir -p artifacts/android
+          cp packages/mobile/android/app/build/outputs/apk/debug/app-debug.apk artifacts/android/geekgeekrun-0.1.0-android-debug.apk
+          cp packages/mobile/android/app/build/outputs/apk/release/app-release-unsigned.apk artifacts/android/geekgeekrun-0.1.0-android-release-unsigned.apk
+          cd artifacts/android
+          sha256sum *.apk > SHA256SUMS
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: geekgeekrun-android-apk-${{ github.run_id }}
+          path: artifacts/android
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: mobile-android-lint-${{ github.run_id }}
+          path: packages/mobile/android/app/build/reports/lint-results-release.html
+          if-no-files-found: warn
+          retention-days: 14
+
+  ios:
+    if: github.event_name == 'workflow_dispatch' && inputs.include_ios
+    name: iOS simulator build (unsigned)
+    needs: verify
+    runs-on: macos-26
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-checks
+      - run: xcodebuild -version
+      - run: pnpm mobile:build
+      - run: pnpm --filter geekgeekrun-mobile exec cap sync ios
+      - name: Build simulator app
+        run: >-
+          xcodebuild -project packages/mobile/ios/App/App.xcodeproj -scheme App
+          -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath .ci-reports/mobile-ios CODE_SIGNING_ALLOWED=NO build
+      - name: Package simulator app
+        run: |
+          mkdir -p artifacts/ios
+          ditto -c -k --sequesterRsrc --keepParent .ci-reports/mobile-ios/Build/Products/Debug-iphonesimulator/App.app artifacts/ios/geekgeekrun-ios-simulator.zip
+          cd artifacts/ios
+          shasum -a 256 *.zip > SHA256SUMS
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: geekgeekrun-ios-simulator-${{ github.run_id }}
+          path: artifacts/ios
+          if-no-files-found: error
+          retention-days: 30

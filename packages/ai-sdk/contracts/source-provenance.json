@@ -1,0 +1,15 @@
+{
+  "sdk_version": "0.2.0",
+  "binary_path": "/Users/abc/Documents/deepseek-harness/zj/HBuilder.app/HBuilder",
+  "binary_sha256": "2b2caf081a7da765949cb0f80a9160074677f38d8c1b78643e706d8cb2ae24af",
+  "source_path": "/Users/abc/Documents/deepseek-harness/zj/HBuilder.app/Pandora/apps/__UNI__49240F0/www/app-service.js",
+  "source_sha256": "85df0d8ca64906e303f261512d32fb695450ec70dcc6862aedcee796533da79e",
+  "new_evidence_counts": {
+    "auth": 62,
+    "ids": 61,
+    "boss": 93,
+    "extra": 1
+  },
+  "official_sdk": false,
+  "live_service_verified": false
+}
