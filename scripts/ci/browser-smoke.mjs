@@ -11,6 +11,7 @@ const require = createRequire(path.join(root, 'package.json'))
 const load = name => import(pathToFileURL(path.join(root, 'packages/geek-auto-start-chat-with-boss', name)).href)
 const { launchTaskBrowser, showTaskBrowser } = await load('task-browser.mjs')
 const { watchTaskBrowser, beginChatConfirmation } = await load('browser-health.mjs')
+const { watchJobResponses } = await load('boss-job-responses.mjs')
 const { closeOwnedBrowser } = await load('browser-cleanup.mjs')
 const { openJobCardForReview, assertCanGreet } = await load('auto-chat-navigation.mjs')
 const { assertCompanyPlatformFilters } = await load('company-page.mjs')
@@ -93,6 +94,29 @@ try {
         assert.equal(db.prepare('SELECT count(*) AS n FROM mark_as_not_suit_log').get().n, 0)
         await showTaskBrowser(page)
         assert.equal((await session.send('Browser.getWindowForTarget')).bounds.windowState, 'normal')
+        // Exercise actual Chrome document/loader changes with synthetic API events.
+        // No BOSS request leaves this isolated browser.
+        const responses = watchJobResponses(page)
+        try {
+          await responses.assertHealthy()
+          const api = body => ({ url: () => 'https://www.zhipin.com/wapi/zpgeek/search/joblist.json',
+            status: () => 200, request: () => ({ url: () => 'https://www.zhipin.com/wapi/zpgeek/search/joblist.json?page=1' }),
+            json: async () => body })
+          page.emit('response', api({ code: 0, zpData: { jobList: [{ encryptJobId: 'old-document' }] } }))
+          await responses.assertHealthy()
+          const abandoned = api(null); abandoned.json = () => new Promise(() => {})
+          page.emit('response', abandoned)
+          await new Promise(resolve => setImmediate(resolve))
+          await page.goto('data:text/html,<h1>new document</h1>', { waitUntil: 'domcontentloaded' })
+          await responses.assertHealthy()
+          assert.equal(responses.getListSnapshot(), null)
+          page.emit('response', api({ code: 0, zpData: { jobList: [{ encryptJobId: 'current-document' }] } }))
+          await responses.assertHealthy()
+          assert.deepEqual(responses.getListSnapshot().ids, ['current-document'])
+          page.emit('response', api({ code: 31 }))
+          await assert.rejects(responses.guard(() => assert.fail('cannot act after restriction')), /LOGIN_STATUS_RESTRICTED/)
+          report.documentNavigation = { abandonedReadCancelled: true, freshListOnly: true, restrictionsPreserved: true }
+        } finally { responses.dispose() }
       } else beginChatConfirmation(page) // No communication is actually sent by this offline fixture.
       await session.detach()
       await page.close()

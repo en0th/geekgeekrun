@@ -1,5 +1,6 @@
 import { classifyBossLoginResponse, bossLoginError } from '@geekgeekrun/utils/boss-login.mjs'
 import { isCompanyJobsDocument } from './company-source.mjs'
+import { watchJobDocument } from './job-response-document.mjs'
 
 const listPaths = new Set([
   '/wapi/zpgeek/search/joblist.json',
@@ -54,6 +55,14 @@ export function watchJobResponses(page, { bodyTimeoutMs = 15000, onBlocked = () 
   let expectedList = null
   let sequence = 0, latestList = null, listPages = new Map(), listScope = ''
   let listGeneration = 0, listPageSequences = new Map()
+  const document = watchJobDocument(page, { onNavigation: generation => {
+    latestList = null
+    listScope = ''
+    listGeneration++
+    listPages.clear()
+    listPageSequences.clear()
+    for (const cancel of cancelReads) if (cancel.documentGeneration < generation) cancel()
+  } })
   let rejectFailure
   const failed = new Promise((_, reject) => { rejectFailure = reject })
   // The monitor can fail between checkpoints, before guard() has subscribed.
@@ -77,6 +86,7 @@ export function watchJobResponses(page, { bodyTimeoutMs = 15000, onBlocked = () 
       return
     }
     const searchCheck = expectedSearch
+    const documentGeneration = document.generation
     const responseSequence = kind === 'list' ? ++sequence : 0
     let listRequest = null
     if (kind === 'list') {
@@ -99,12 +109,23 @@ export function watchJobResponses(page, { bodyTimeoutMs = 15000, onBlocked = () 
     let timer, cancel
     const cancelled = new Promise((_, reject) => {
       cancel = () => reject(new Error('Job response monitor closed'))
+      cancel.documentGeneration = documentGeneration
       cancelReads.add(cancel)
       timer = setTimeout(() => reject(new Error('Job response body timed out')), bodyTimeoutMs)
     })
     const reading = (async () => {
       try {
-        const body = await Promise.race([Promise.resolve().then(() => response.json()), cancelled])
+        const bodyRead = Promise.resolve().then(() => response.json()).then(body => {
+          // A late, explicit authentication/restriction result still stops the run.
+          // An abandoned body must never become a way to hide a known access failure.
+          if (!disposed && documentGeneration !== document.generation) {
+            const result = classifyJobResponse(response.status(), body, kind)
+            if (['invalid', 'restricted'].includes(result.status)) block(result)
+          }
+          return body
+        })
+        const body = await Promise.race([bodyRead, cancelled])
+        if (documentGeneration !== document.generation) return
         const result = classifyJobResponse(response.status(), body, kind)
         if (kind === 'list' && ['available', 'empty'].includes(result.status)) {
           try {
@@ -146,7 +167,8 @@ export function watchJobResponses(page, { bodyTimeoutMs = 15000, onBlocked = () 
         else if (searchCheck && response.url().split('?')[0].endsWith('/search/joblist.json') && !searchCheck(response.request()))
           block({ status: 'unknown', detail: 'BOSS搜索响应与本次搜索内容或平台职位类目不一致，已暂停任务，请检查页面后恢复' })
       } catch {
-        if (!disposed) block(classifyJobResponse(response.status(), null, kind))
+        if (!disposed && documentGeneration === document.generation)
+          block(classifyJobResponse(response.status(), null, kind))
       } finally {
         clearTimeout(timer)
         cancelReads.delete(cancel)
@@ -159,6 +181,7 @@ export function watchJobResponses(page, { bodyTimeoutMs = 15000, onBlocked = () 
   async function assertHealthy() {
     if (failure) throw failure
     if (disposed) throw new Error('AUTO_CHAT_JOB_PAGE_CLOSED')
+    await document.ready
     // Responses can arrive while an earlier response body is still being read.
     while (pending.size) {
       await Promise.all([...pending])
@@ -181,6 +204,7 @@ export function watchJobResponses(page, { bodyTimeoutMs = 15000, onBlocked = () 
       disposed = true
       rejectFailure(failure || new Error('AUTO_CHAT_JOB_PAGE_CLOSED'))
       page.off('response', onResponse)
+      document.dispose()
       for (const cancel of cancelReads) cancel()
       latestList = null
       listPages.clear()

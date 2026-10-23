@@ -145,3 +145,81 @@ test('closing a run cancels an outstanding guarded action', async t => {
   monitor.dispose()
   await assert.rejects(waiting, /AUTO_CHAT_JOB_PAGE_CLOSED/)
 })
+
+async function documentMonitored(t, { failSetup = false } = {}) {
+  const page = new EventEmitter(), session = new EventEmitter(), calls = []
+  session.send = async command => {
+    if (failSetup) throw Error('Lifecycle unavailable')
+    calls.push(command)
+    return { frameTree: { frame: { loaderId: 'document-a' } } }
+  }
+  session.detach = async () => { calls.push('detach') }
+  page.createCDPSession = async () => session
+  const monitor = watchJobResponses(page, { bodyTimeoutMs: 1000 })
+  t.after(() => monitor.dispose())
+  await monitor.assertHealthy()
+  return { page, session, monitor, calls }
+}
+const scopedResponse = (body, options = {}) => response(body, {
+  request: { url: () => listUrl + '?page=1&query=current', postData: () => '' }, ...options,
+})
+
+test('a committed main document replaces old caches and releases abandoned body reads', async t => {
+  const f = await documentMonitored(t)
+  f.page.emit('response', scopedResponse(available))
+  await f.monitor.assertHealthy()
+  assert.deepEqual(f.monitor.getListSnapshot().ids, ['job-a'])
+  let finishOld
+  f.page.emit('response', scopedResponse(null, { json: () => new Promise(resolve => { finishOld = resolve }) }))
+  await new Promise(resolve => setImmediate(resolve))
+  f.session.emit('Page.frameNavigated', { frame: { id: 'main', loaderId: 'document-b' } })
+  assert.equal(f.monitor.getListSnapshot(), null)
+  f.page.emit('response', scopedResponse({ code: 0, zpData: { jobList: [{ encryptJobId: 'job-new' }] } }))
+  assert.equal(await f.monitor.guard(() => 'fresh document'), 'fresh document')
+  finishOld(available)
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(f.monitor.getListSnapshot().ids, ['job-new'])
+})
+
+test('same-document and child frame navigation do not excuse malformed current responses', async t => {
+  for (const frame of [{ id: 'main', loaderId: 'document-a' }, { id: 'child', parentId: 'main', loaderId: 'document-b' }]) {
+    const f = await documentMonitored(t)
+    let rejectBody
+    f.page.emit('response', scopedResponse(null, { json: () => new Promise((_, reject) => { rejectBody = reject }) }))
+    await new Promise(resolve => setImmediate(resolve))
+    f.session.emit('Page.frameNavigated', { frame })
+    rejectBody(Error('Malformed current body'))
+    await assert.rejects(f.monitor.assertHealthy(), /LOGIN_STATUS_UNKNOWN/)
+  }
+})
+
+test('document replacement never clears known access failures, including late restricted bodies', async t => {
+  const f = await documentMonitored(t)
+  let finishOld
+  f.page.emit('response', scopedResponse(null, { json: () => new Promise(resolve => { finishOld = resolve }) }))
+  await new Promise(resolve => setImmediate(resolve))
+  f.session.emit('Page.frameNavigated', { frame: { loaderId: 'document-b' } })
+  await f.monitor.assertHealthy()
+  finishOld({ code: 31 })
+  await new Promise(resolve => setImmediate(resolve))
+  await assert.rejects(f.monitor.assertHealthy(), /LOGIN_STATUS_RESTRICTED/)
+  f.session.emit('Page.frameNavigated', { frame: { loaderId: 'document-c' } })
+  f.page.emit('response', scopedResponse(available))
+  await assert.rejects(f.monitor.assertHealthy(), /LOGIN_STATUS_RESTRICTED/)
+  const http = await documentMonitored(t)
+  http.page.emit('response', scopedResponse(null, { status: 429, json: () => new Promise(() => {}) }))
+  http.session.emit('Page.frameNavigated', { frame: { loaderId: 'document-b' } })
+  await assert.rejects(http.monitor.assertHealthy(), /LOGIN_STATUS_RESTRICTED/)
+})
+
+test('unavailable document tracking retains strict checks and disposal removes its listener', async t => {
+  const bad = await documentMonitored(t, { failSetup: true })
+  bad.page.emit('response', scopedResponse(null, { json: async () => { throw Error('unreadable') } }))
+  await assert.rejects(bad.monitor.assertHealthy(), /LOGIN_STATUS_UNKNOWN/)
+  const f = await documentMonitored(t)
+  assert.equal(f.session.listenerCount('Page.frameNavigated'), 1)
+  f.monitor.dispose()
+  assert.equal(f.session.listenerCount('Page.frameNavigated'), 0)
+  assert.equal(f.calls.at(-1), 'detach')
+  await assert.rejects(f.monitor.assertHealthy(), /AUTO_CHAT_JOB_PAGE_CLOSED/)
+})
