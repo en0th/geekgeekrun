@@ -112,15 +112,16 @@ test('unexpected sent or marked progress is recorded as a failed collection boun
 test('early job-response failures retain safe status and shape without response bodies or URLs', async t => {
   const f = fixture(t)
   for (const [status, body] of [[200, { code: 0, zpData: { jobList: [] } }],
-    [200, { code: 31, message: 'private-account token=secret', zpData: null }], [200, null]]) {
+    [200, { code: 31, message: 'private-account token=secret', zpData: null }], [200, null],
+    [200, { code: { toString: null, valueOf: 'secret' }, zpData: {} }]]) {
     f.page.emit('response', { url: () => 'https://www.zhipin.com/wapi/zpgeek/search/joblist.json?token=secret',
       status: () => status, json: async () => { if (!body) throw Error('private HTML'); return body } })
   }
   await new Promise(resolve => setImmediate(resolve))
   const rows = f.records().filter(x => x.kind === 'job-response')
-  assert.equal(rows.length, 3)
-  assert.deepEqual(rows.map(x => x.format), ['json', 'json', 'unreadable'])
-  assert.deepEqual(rows.map(x => x.code), [0, 31, null])
-  assert.deepEqual(rows.map(x => x.listArray), [true, false, false])
+  assert.equal(rows.length, 4)
+  assert.deepEqual(rows.map(x => x.format), ['json', 'json', 'unreadable', 'json'])
+  assert.deepEqual(rows.map(x => x.code), [0, 31, null, null])
+  assert.deepEqual(rows.map(x => x.listArray), [true, false, false, false])
   assert.equal(/secret|private|https:|token|HTML/.test(JSON.stringify(rows)), false)
 })

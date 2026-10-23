@@ -45,11 +45,12 @@ export function attachCollectAcceptance({ hooks, events, runMode, runRecordId,
       if (!kind) return
       let body: any, format = 'json'
       try { body = await response.json() } catch { format = 'unreadable' }
-      const code = Number(body?.code)
+      const rawCode = body?.code
+      const code = typeof rawCode === 'number' || (typeof rawCode === 'string' && rawCode.trim())
+        ? Number(rawCode) : NaN
       // Record only shape and fixed metadata, including failures before the first review.
       record({ kind: 'job-response', endpoint: kind, httpStatus: response.status(), format,
-        code: ['number', 'string'].includes(typeof body?.code) && String(body.code).trim() &&
-          Number.isSafeInteger(code) && Math.abs(code) < 100000 ? code : null,
+        code: Number.isSafeInteger(code) && Math.abs(code) < 100000 ? code : null,
         dataObject: !!body?.zpData && typeof body.zpData === 'object' && !Array.isArray(body.zpData),
         listArray: Array.isArray(body?.zpData?.jobList),
         count: Array.isArray(body?.zpData?.jobList) ? body.zpData.jobList.length : null })
