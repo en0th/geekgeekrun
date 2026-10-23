@@ -53,7 +53,7 @@ GitHub Actions 的 `Mobile apps` 流水线会验证 SDK / 移动端、运行无�
 | BOSS jobId / peer UID             | 记录快照与 listByJobIds 独立补查              | history、IM 收发                      |
 | cmid / mid                        | 本机发送 / 有效的扩展 ACK                     | 分别跟踪排队、服务器确认与已读        |
 
-移动端通过 SDK 0.2.1 新增的 `selectPendingRow` / `confirmPending` 支持独立待确认列表。它不要求编造 AI task/result → 待确认行关系；保留原有 `bindPendingDelivery` 的运行时关联证明要求。账号 epoch 绑定与 ID 精度检查继续生效。
+移动端通过 SDK 0.2.1 新增的 `selectPendingRow` / `confirmPending` 支持独立待确认列表。它不要求编造 AI task/result → 待确认行关系；保留原有 `bindPendingDelivery` 的运行时关联证明要求。账号 epoch 绑定与 ID 精度检查继续生效。BOSS 独立补查必须匹配请求的岗位 ID，不能采用列表中的无关招聘方；历史状态非 0 时不建立发送会话。
 
 ```mermaid
 sequenceDiagram

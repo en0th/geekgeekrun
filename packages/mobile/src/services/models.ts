@@ -211,6 +211,10 @@ export function errorMessage(error: unknown, write = false): string {
     return "回复连接提前结束，请刷新对话核对结果";
   if (name === "ConfirmationRejectedError")
     return "服务未接受此次投递，请刷新岗位状态";
+  if (name === "RuntimeAssociationRequiredError")
+    return "岗位与招聘方信息未能核对，请刷新投递记录";
+  if (name === "BossHistoryUnavailableError")
+    return "暂无法建立会话，请刷新投递记录核对联系状态";
   if (write) return "未能确认操作结果，请先刷新记录核对，避免重复提交";
   return "连接或数据格式异常，请检查服务配置后重试";
 }

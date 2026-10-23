@@ -264,3 +264,20 @@ test('unsigned ACK mids and a smaller explicit cmid cannot poison the next signe
     }finally{im.disconnect();}
   }
 });
+
+test('independent peer lookup selects only the requested job even when rows are reordered', async () => {
+  const boss = new BossHttpClient({});
+  boss.lookupDeliveryJobs = async () => [
+    { zpJobId: '8', jobSnapshot: { jobId: '8', bossId: '88' } },
+    { zpJobId: '7', jobSnapshot: { jobId: '7', bossId: '77' } },
+  ];
+  const resolved = await boss.resolvePeer({ jobId: '7', friendId: '99' });
+  assert.equal(resolved.friendId, '77');
+  assert.equal(resolved.record.jobSnapshot.jobId, '7');
+});
+
+test('independent peer lookup refuses an unrelated row instead of adopting its BOSS UID', async () => {
+  const boss = new BossHttpClient({});
+  boss.lookupDeliveryJobs = async () => [{ zpJobId: '7', jobSnapshot: { jobId: '8', bossId: '88' } }];
+  await assert.rejects(boss.resolvePeer({ jobId: '7', friendId: '99' }), { name: 'RuntimeAssociationRequiredError' });
+});

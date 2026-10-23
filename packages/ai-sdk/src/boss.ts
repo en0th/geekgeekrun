@@ -1,5 +1,5 @@
 import type { ZhijueAIClient } from './client.js';
-import { HttpError } from './errors.js';
+import { HttpError, RuntimeAssociationRequiredError } from './errors.js';
 import { BossProtocolError, bossId, bossInteger, createBossPresenceProtocol, createBossReadProtocol, createBossTextProtocol, decodeBossProtocol, encodeBossProtocol } from './boss-protobuf.js';
 import type { BossChatProtocol, BossId, BossMessage, BossMessageRead } from './boss-protobuf.js';
 import { BossMqttDecoder, encodeBossMqttConnect, encodeBossMqttControl, encodeBossMqttDisconnect, encodeBossMqttPing, encodeBossMqttPuback, encodeBossMqttPublish, encodeBossMqttSubscribe } from './boss-mqtt.js';
@@ -94,7 +94,12 @@ export class BossHttpClient {
     const jobId = input.jobId === undefined ? undefined : bossId(input.jobId);
     let record: Record<string, unknown> | undefined;
     if (jobId) {
-      [record] = await this.lookupDeliveryJobs([jobId], { ...options, includeDeleted: true });
+      const records = await this.lookupDeliveryJobs([jobId], { ...options, includeDeleted: true });
+      record = records.find(row => {
+        const snapshot = object(row.jobSnapshot);
+        return bossId((snapshot?.jobId ?? row.zpJobId) as BossId) === jobId;
+      });
+      if (records.length && !record) throw new RuntimeAssociationRequiredError('requested job -> independent BOSS peer lookup');
       const snapshot = object(record?.jobSnapshot), candidate = snapshot?.bossId ?? record?.zpBossUid;
       if (candidate !== undefined && candidate !== null && bossInteger(candidate as BossId) > 0n) friendId = bossId(candidate as BossId);
     }

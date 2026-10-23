@@ -340,14 +340,20 @@ export function createWorkspace() {
   async function logout() {
     await run("logout", async () => {
       const current = runtime;
+      let serverConfirmed = false;
       try {
-        if (current?.sessions.hasSession) await current.auth.logout();
+        if (current?.sessions.hasSession) {
+          await current.auth.logout();
+          serverConfirmed = true;
+        }
       } finally {
         current?.sessions.clear();
         await vaultQueue;
         await MobileBridge.clearSession().catch(() => {});
         state.loggedIn = false;
-        state.notice = "已退出登录并清除本机凭证";
+        state.notice = serverConfirmed
+          ? "已退出登录并清除本机凭证"
+          : "本机登录已清除，服务端退出尚未确认";
       }
     });
   }
@@ -587,8 +593,10 @@ export function createWorkspace() {
         scope,
       );
       if (v !== scopeVersion || connectionVersion !== chatVersion) return;
-      if (history.code !== 0 && history.code !== 1000)
-        throw new Error("History unavailable");
+      if (history.code !== 0)
+        throw Object.assign(new Error("History unavailable"), {
+          name: "BossHistoryUnavailableError",
+        });
       const historyRows = history.result?.messageList ?? [];
       state.chat = historyRows.map((value, index) => {
         const m = record(value),
@@ -722,7 +730,10 @@ export function createWorkspace() {
         credentials = undefined;
         peerId = "";
         state.connection = "连接已断开";
-      } else if (runtime && !runtime.sessions.authenticated) {
+      } else if (
+        runtime?.sessions.hasSession &&
+        !runtime.sessions.authenticated
+      ) {
         state.loggedIn = false;
         state.expiresAt = 0;
         state.notice = "登录已过期，请重新登录";

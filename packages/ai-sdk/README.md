@@ -278,4 +278,4 @@ WorkflowStageError保留失败stage、确认是否尝试/接受、聊天是否qu
 
 ## 移动端集成扩展（0.2.1）
 
-新增 `selectPendingRow(rows, pendingId, scope)`、`buildPendingRowConfirmation(selection)` 与 `TaskDeliveryClient.confirmPending(selection)`，支持用户从独立待确认列表选中一行后确认投递，无需编造 AI task/result → pending 的关联。原有 `confirm` / `bindPendingDelivery` 仍要求显式关联证据。完整接入、原生网络桥与运行时未知项见仓库根目录 `MOBILE.md`。
+新增 `selectPendingRow(rows, pendingId, scope)`、`buildPendingRowConfirmation(selection)` 与 `TaskDeliveryClient.confirmPending(selection)`，支持用户从独立待确认列表选中一行后确认投递，无需编造 AI task/result → pending 的关联。原有 `confirm` / `bindPendingDelivery` 仍要求显式关联证据。`BossHttpClient.resolvePeer` 也会核对独立补查返回的岗位 ID，并拒绝采用无关行的招聘方 UID。完整接入、原生网络桥与运行时未知项见仓库根目录 `MOBILE.md`。
