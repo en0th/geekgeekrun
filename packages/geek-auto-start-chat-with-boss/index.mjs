@@ -1970,6 +1970,8 @@ async function runBrowserLoop (hooks) {
 
     // ;await browser.close()
   } catch (err) {
+    // Launch fails before the health monitor can record its allowlisted reason.
+    if (err?.diagnostic?.stage === 'launch') console.debug('BOSS_BROWSER_DIAGNOSTIC', JSON.stringify(err.diagnostic))
     // a verification page needs the user: keep the window open for them (see waitUntilSecurityCheckPassed)
     let onSecurityCheck = false
     try {
