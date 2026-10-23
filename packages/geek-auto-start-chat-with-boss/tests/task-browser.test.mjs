@@ -28,6 +28,8 @@ test('background launch creates its first headed window minimized without activa
   assert.equal(result.page, f.page)
   const launch = f.calls[0].launch
   assert.equal(launch.headless, false)
+  assert.equal(launch.pipe, true)
+  assert.equal(launch.debuggingPort, undefined)
   assert.equal(launch.waitForInitialPage, false)
   assert.deepEqual(launch.args, ['--no-startup-window'])
   const create = f.calls.find(call => call.command === 'Target.createTarget').params
@@ -57,6 +59,7 @@ test('ordinary windows remain opt-in, while a security handoff restores and acti
   await launchTaskBrowser(visible.puppeteer, { background: false })
   assert.equal(visible.calls[0].launch.waitForInitialPage, undefined)
   assert.equal(visible.calls[0].launch.args, undefined)
+  assert.equal(visible.calls[0].launch.pipe, true)
   const bg = fixture()
   await launchTaskBrowser(bg.puppeteer)
   await showTaskBrowser(bg.page)
