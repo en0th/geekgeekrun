@@ -180,21 +180,30 @@ test('continuation does not switch to a different run discovered by the fresh re
 })
 
 const ipc = fs.readFileSync(new URL('../src/main/flow/OPEN_SETTING_WINDOW/ipc/index.ts', import.meta.url), 'utf8')
-const begin = ipc.indexOf("  ipcMain.handle(\n    'run-geek-auto-start-chat-with-boss',")
-const handler = (await transform(ipc.slice(begin, ipc.indexOf('\n  // 任务详情', begin)), { loader: 'ts' })).code
+async function recoveryHandler(text) {
+  const normalized = text.replace(/\r\n/g, '\n')
+  const begin = normalized.indexOf("  ipcMain.handle(\n    'run-geek-auto-start-chat-with-boss',")
+  const end = normalized.indexOf('\n  // 任务详情', begin)
+  assert.ok(begin >= 0 && end > begin, 'the shipped recovery IPC handler must be present')
+  return (await transform(normalized.slice(begin, end), { loader: 'ts' })).code
+}
+const handlers = await Promise.all([ipc, ipc.replace(/\r?\n/g, '\r\n')].map(recoveryHandler))
 
 test('the real IPC handler rejects stale task IDs and preserves unreadable checkpoints before creating a task', async () => {
-  let run, unreadable = false
-  const calls = []
-  const ctx = vm.createContext({ ipcMain: { handle: (_name, fn) => { run = fn } },
-    readAutoChatResume: options => { assert.equal(options.strict, true); if (unreadable) throw Error('fixture corrupt checkpoint'); return checkpoint() },
-    discardAutoChatResume: () => calls.push('discard'), runCommon: async () => { calls.push('dispatch'); return { runRecordId: 42 } },
-    sendToDaemon: async () => ({ workers: [], queue: [] }), daemonEE: { on() {} } })
-  vm.runInContext(handler, ctx)
-  await assert.rejects(run(null, { resume: true, runRecordId: 43 }), /任务信息已更新/)
-  assert.deepEqual(calls, [])
-  await run(null, { resume: true, runRecordId: 42 }); assert.deepEqual(calls, ['dispatch'])
-  calls.length = 0; unreadable = true
-  await assert.rejects(run(null), /fixture corrupt checkpoint/)
-  assert.deepEqual(calls, [])
+  for (const handler of handlers) {
+    let run, unreadable = false
+    const calls = []
+    const ctx = vm.createContext({ ipcMain: { handle: (_name, fn) => { run = fn } },
+      readAutoChatResume: options => { assert.equal(options.strict, true); if (unreadable) throw Error('fixture corrupt checkpoint'); return checkpoint() },
+      discardAutoChatResume: () => calls.push('discard'), runCommon: async () => { calls.push('dispatch'); return { runRecordId: 42 } },
+      sendToDaemon: async () => ({ workers: [], queue: [] }), daemonEE: { on() {} } })
+    vm.runInContext(handler, ctx)
+    assert.equal(typeof run, 'function')
+    await assert.rejects(run(null, { resume: true, runRecordId: 43 }), /任务信息已更新/)
+    assert.deepEqual(calls, [])
+    await run(null, { resume: true, runRecordId: 42 }); assert.deepEqual(calls, ['dispatch'])
+    calls.length = 0; unreadable = true
+    await assert.rejects(run(null), /fixture corrupt checkpoint/)
+    assert.deepEqual(calls, [])
+  }
 })
