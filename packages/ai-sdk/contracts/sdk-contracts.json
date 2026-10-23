@@ -1,0 +1,541 @@
+{
+  "schema_version": 1,
+  "source_path": "/Users/abc/Documents/deepseek-harness/zj/HBuilder.app/Pandora/apps/__UNI__49240F0/www/app-service.js",
+  "source_sha256": "85df0d8ca64906e303f261512d32fb695450ec70dcc6862aedcee796533da79e",
+  "knowledge_boundary": "Client static construction and consumption. Unknown server-required fields and responses remain unknown/open/raw.",
+  "canonical_registry": "endpoint_registry.json (name/id frozen; params=query alias, body=body observations; path_params separate; include_in_sdk selects core+aux)",
+  "http_argument_mapping": {
+    "_s": "(url,query,header,options) -> GET",
+    "ud": "(url,body,query,header,options) -> POST",
+    "vwe": "(url,body,query,header,options) -> PUT",
+    "Swe": "(url,query,header,options) -> DELETE",
+    "jt": "request params renamed query, headers renamed header; path keys destructured out for templates",
+    "query_encoding": "omit null/undefined; preserve0/false/empty string; array -> repeated key for nonnull elements, not implicit comma join; callers may explicitly join comma beforehand",
+    "rest_body": "App uni object data; SDK JSON unless FormData/Blob/ArrayBuffer/raw requested. Do not apply SSE wT cleanup to all REST calls.",
+    "sse_body": "wT deletes top-level null/undefined/empty-string only, then JSON.stringify; no recursive scrub",
+    "evidence_ids": [
+      "SWMA003",
+      "SWMA538",
+      "SWMA007"
+    ]
+  },
+  "http_envelope": {
+    "app_unwrap_precedence": [
+      "object data property exists and data !== undefined/null -> data",
+      "else result property exists and result !== undefined -> result (null allowed)",
+      "else undefined; app does not fallback raw object in $0e"
+    ],
+    "success_business_codes_numeric": [
+      0,
+      200,
+      4
+    ],
+    "missing_or_non_numeric_code": "accepted by ordinary app success check",
+    "http_401_or_numeric_business_401": "ordinary xi rejects first (even returnEnvelope), app logs out unless skipLoginRedirect then reject without redirect",
+    "other_business_failure": "on 2xx and !returnEnvelope: numeric code outside accepted set rejects; loginBizHandled wraps code/result/raw in LoginBizApiError; ordinary path may reject unwrapped payload rather than Error",
+    "returnEnvelope": "on2xx returns raw server object before normal numeric business error validation; some job more callers need code400=no more",
+    "sdk_result_shape": {
+      "data": "unknown/unwrapped or raw-mode data",
+      "raw": "original parsed envelope always retained",
+      "status": "HTTP status",
+      "headers": "actual response headers"
+    },
+    "sdk_requirements": [
+      "Expose requestRaw/returnEnvelope or allowBusinessCodes so caller can inspect unmodeled codes and no-more400.",
+      "No DOM toast/logout/redirect implicit SDK side effect.",
+      "Keep non-JSON errors/body text/raw response rather than assuming server schema."
+    ],
+    "evidence_ids": [
+      "SWMA001",
+      "SWMA002"
+    ]
+  },
+  "auth_and_headers": {
+    "ordinary_app": "jSe sets timeout60s, withCredentials=true, appends validToken or raw tokenInfo accessToken/token unless an exact Authorization already truthy. Ip client X headers only same API origin/relative wapi.",
+    "sse": {
+      "base_headers": {
+        "Accept": "application/json,text/event-stream",
+        "X-Requested-With": "XMLHttpRequest",
+        "Content-Type": "application/json for POST"
+      },
+      "profiles": {
+        "DOUZI": "tryGetValidToken then raw tokenInfo.accessToken/token fallback",
+        "RECOMMEND": "tryGetValidToken only; no raw token fallback in resolveHeaders",
+        "RESUME_OPTIMIZATION": "tryGetValidToken only",
+        "JOB_MATCH": "tryGetValidToken only"
+      },
+      "cookies": "fetch credentials default include; plusXHR withCredentials true. Therefore resolveHeaders containing only Bearer does NOT prove Bearer-only transport. Android plugin cookie behavior not specified by JS options.",
+      "trace": "Only instrumentation context adds traceId; no mandatory command/task/run identifier.",
+      "json_401": "B5e only numeric code401 -> D5e; BXe initiates UI logout/navigate and returns false; guarded resend does not execute. Other non2xx HTTP failures are generic errors, not ordinary xi flow."
+    },
+    "sdk_cross_origin": "API auth headers must not automatically flow to separately configured external service/absolute URL. Explicit base/service credential policy; do not imitate app broad Bearer interceptor across origins.",
+    "nebula": "requires explicit serviceBases.nebula; Authorization is raw signature response authorization plus query sig, not inferred API Bearer. No fixed ASR websocket path.",
+    "evidence_ids": [
+      "SWMA004",
+      "SWMA005",
+      "SWMA006",
+      "SWMA007",
+      "SWMA010",
+      "SWMA012",
+      "SWMA013",
+      "SWMA017",
+      "SWMA025"
+    ]
+  },
+  "upload_contract": {
+    "chat_file_upload": "raw.result.file_id is required by app parsers sUe/YUe; result returned as fileInfo, name/extension may normalize; standard data-first unwrap does not apply",
+    "source_weakness_boundary": "App upload parser checks result.file_id independent of HTTP/business code in the parser. SDK should still reject HTTP error status and preserve raw; do not copy weak validation as success guarantee.",
+    "encoding": "FormData binary part file, additional body fields open for resume uploads; browser/fetch sets boundary automatically; source manually labels multipart but SDK must not force a fixed boundary.",
+    "binary_preview": "use raw/Blob/ArrayBuffer. Content-Type can be PDF/image/other resource; not universal JSON.",
+    "evidence_ids": [
+      "SWMA019",
+      "SWMA020",
+      "SWMA018"
+    ]
+  },
+  "sse_parser": {
+    "wire_frames": "split blank line /\\r?\\n\\r?\\n/; recognize id,event,data; trim field values; last data line overwrites previous; JSON.parse data else retain string",
+    "preserve": [
+      "rawEvent",
+      "rawData",
+      "rawFrame",
+      "parsedData",
+      "id"
+    ],
+    "no_evidence_for": [
+      "Last-Event-ID automatic resume",
+      "general SSE reconnect/backoff",
+      "a closed event:error schema",
+      "EOF without logical DONE equals delivery/task success"
+    ],
+    "profiles": {
+      "DOUZI": {
+        "constructor": "Wh -> yT(userSay)",
+        "agent_hint": {
+          "conversionType": "DOUZI"
+        },
+        "before_done_events": [
+          "delta",
+          "delta_encoding",
+          "notice",
+          "create_conversation",
+          "content_detect",
+          "title_generation",
+          "control",
+          "quick_reply",
+          "retry_reset",
+          "retry_error"
+        ],
+        "done_rule": "Only fallback/final else checks Yk(event) || data === \"[DONE]\", after earlier named branches and active work-mode notice handler. A named known event such as delta carrying string [DONE] is consumed by its earlier branch and is NOT logical DONE.",
+        "body": "main removes author; adds APP; source context/parent selection can overwrite caller parent. Caller-supplied raw payload remains open.",
+        "auth": "tryGetValidToken then raw tokenInfo.accessToken/token fallback",
+        "evidence_ids": [
+          "SWMA008",
+          "SWMA009",
+          "SWMA010",
+          "SWMA011"
+        ]
+      },
+      "RECOMMEND": {
+        "constructor": "lN -> yT(userSay)",
+        "agent_hint": {
+          "conversionType": "RECOMMEND"
+        },
+        "before_done_events": [
+          "delta",
+          "delta_encoding",
+          "notice",
+          "recommend_condition",
+          "search_condition",
+          "create_conversation",
+          "content_detect",
+          "title_generation"
+        ],
+        "done_rule": "Only final else checks Yk(event) || data === \"[DONE]\". Earlier named event branches take precedence, including named delta/[DONE] data.",
+        "body": "author.role=user; current_condition from conditionSnapshot plus userId; quote selected_text/style/job_id. Does not run main B sanitizer; sendPayload spreads caller after defaults so caller can override.",
+        "auth": "tryGetValidToken only; no raw token fallback in resolveHeaders",
+        "evidence_ids": [
+          "SWMA012"
+        ]
+      },
+      "RESUME_OPTIMIZATION": {
+        "constructor": "Sy -> yT(userSay)",
+        "agent_hint": {
+          "conversionType": "RESUME_OPTIMIZATION",
+          "conversionRelatedId": "resumeRevisionId"
+        },
+        "before_done_events": [
+          "resume_delta (separate queue)",
+          "delta_encoding",
+          "delta",
+          "create_conversation",
+          "control",
+          "RESUME_CHAT_POLISH_TIP or data.resp_type==RESUME_CHAT_POLISH_TIP"
+        ],
+        "done_rule": "Normal m() completes only Yk(event) || (!event && data === \"[DONE]\"). Yk itself means no event and data marker. Named [DONE] event/data alone does not logically complete. resume_delta is routed away before m().",
+        "body": "requires local revisionId and text for ordinary send; init content_type=resume_polish_init. metadata resume_revision_id, style=resume_part_select, selected_path/name arrays, optional selected_text(path,path_name,text). Text send includes author.role=user; init does not.",
+        "auth": "tryGetValidToken only",
+        "app_close_side_effect": "App also finalizes on non-manual close and may voice-apply buffered edits; this is not logical DONE evidence and SDK must not silently persist/apply on EOF.",
+        "evidence_ids": [
+          "SWMA013"
+        ]
+      },
+      "JOB_MATCH": {
+        "constructor": "job detail qe -> yT(/partners/job/match)",
+        "path": "/wapi/partners/job/match",
+        "body": {
+          "jobDetail": "Qe(detailJob) serializer; raw schema open"
+        },
+        "done_rule": "No dedicated [DONE] check in consumer. event score updates score, other data concatenated to explanation; nonmanual close settles UI. Do not reuse DO UZI logical-DONE success assumption.",
+        "auth": "tryGetValidToken only",
+        "evidence_ids": [
+          "SWMA014"
+        ]
+      }
+    },
+    "sdk_design": "Default userSay profile by conversionType; explicit donePredicate override available. Keep all raw events and do not auto applyMode/persist revision. For JOB_MATCH/raw streams EOF is transport termination, not a proven business terminal result.",
+    "evidence_ids": [
+      "SWMA007",
+      "SWMA011",
+      "SWMA012",
+      "SWMA013",
+      "SWMA014"
+    ]
+  },
+  "user_say_variants": {
+    "main_text": {
+      "endpoint": "chatUserSay",
+      "agent": "DOUZI",
+      "body_fields": [
+        "content",
+        "metadata",
+        "parent?",
+        "conversation_id?",
+        "agent_hint"
+      ],
+      "parts_order": [
+        "browser_text quote if present",
+        "fileInfo if present",
+        "text part always last"
+      ],
+      "content_type": "fileInfo -> multimodal_text; quote only -> multi_part; else text",
+      "text_part_fields": [
+        "content_type=text",
+        "text",
+        "value? from quickReplyValue"
+      ],
+      "quote_part": {
+        "content_type": "browser_text",
+        "content": "<user__selection>quotedText</user__selection>",
+        "quote_source": "",
+        "workspace": "chat"
+      },
+      "metadata_fields": [
+        "platform=APP",
+        "system_hints default [deep_job_match], explicit [] stays empty",
+        "selected_text.text/quote style/job_id when quoting",
+        "resume_id when selected",
+        "analyze_data_from_market for applicable text/custom path"
+      ],
+      "local_fields_removed": [
+        "author",
+        "metadata.client_feature",
+        "metadata.diagnosis_trigger_method"
+      ],
+      "evidence_ids": [
+        "SWMA015",
+        "SWMA008",
+        "SWMA009",
+        "SWMA016"
+      ]
+    },
+    "hidden_agent_job_chat": {
+      "endpoint": "chatUserSay",
+      "agent": "DOUZI",
+      "body": {
+        "content": {
+          "content_type": "multi_part",
+          "parts": [
+            {
+              "content_type": "agent_job_chat",
+              "message_id": "ordinary source AI message M.id",
+              "job_ids": "single/batch recruitment job IDs"
+            }
+          ]
+        },
+        "metadata": {
+          "style": "agent_job_chat",
+          "is_visually_hidden_from_conversation": true,
+          "platform": "APP"
+        },
+        "agent_hint": {
+          "conversionType": "DOUZI"
+        }
+      },
+      "notes": [
+        "Top-level parent/cid follow current active scope, not guaranteed source M/C.",
+        "No mode/proxyMode/taskId/task_result_id/resumeId/job.sessionId sent by this producer.",
+        "sendUserPayload does not add ordinary text default system_hints or market enrichment.",
+        "SDK should construct and return raw request/events; no automatic proxy toggle, work-mode update, pending confirmation or delivery operation."
+      ],
+      "evidence_ids": [
+        "SWMA008",
+        "SWMA009"
+      ]
+    },
+    "main_custom_mode_card": {
+      "endpoint": "chatUserSay",
+      "agent": "DOUZI",
+      "source_call": "sendUserCustomContent(text part option.title, metadata{parent:card.id,style:exact wireId}, onSendStarted)",
+      "notes": [
+        "Metadata parent is card ID; final top-level parent may be scope-derived.",
+        "wireId can preserve a nonempty server alias; do not silently canonicalize arbitrary raw wireId.",
+        "SDK does not auto-apply work mode or proxy settings."
+      ]
+    },
+    "retry": {
+      "endpoint": "chatMessageRetry",
+      "body_fields": [
+        "answer_message_id",
+        "user_message_id"
+      ],
+      "notes": [
+        "Dedicated SSE URL override; no conversation_id, author or APP metadata added by main retry helper.",
+        "Origin user resolved by answer round_id in app UI; SDK should require explicit IDs rather than invent cross-namespace mapping."
+      ]
+    },
+    "stop": {
+      "endpoint": "chatStopSay",
+      "body_fields": [
+        "conversation_id"
+      ],
+      "notes": [
+        "Server request distinct from local AbortSignal. A local abort does not prove backend work stopped."
+      ]
+    }
+  },
+  "special_field_notes": [
+    {
+      "operation": "proxyToggle",
+      "field": "mode",
+      "note": "only enabled true + truthy provided mode in p4e; disabled omits mode; backend semantics unknown"
+    },
+    {
+      "operation": "userResumeRevisionUpsertByIdPost",
+      "field": "update",
+      "note": "source removes update from body; input.update===false -> query update:false only; metadata must be nonempty object in client guard"
+    },
+    {
+      "operation": "userResumeRevisionVoiceApplyPost",
+      "field": "resumeRevision.metadata / changes",
+      "note": "metadata nonempty guard; optional nonempty changes array; unknown backend validation"
+    },
+    {
+      "operation": "userResumeRevisionCoverByIdPost / userResumeRevisionDeleteByIdPost",
+      "field": "id",
+      "note": "POST with query id, not JSON id body"
+    },
+    {
+      "operation": "userFeedbackReportPost",
+      "field": "targetType/targetId/platform",
+      "note": "chat targetType MESSAGE; other target types dynamic. Source compiled APP feedback sends platform MINI_PROGRAM. Do not rewrite it to APP based on build assumptions."
+    },
+    {
+      "operation": "userFeedbackFindByTargetIdsPost",
+      "field": "targetEnum",
+      "note": "find endpoint uses targetEnum, reasons/report endpoints use targetType; do not unify property names"
+    },
+    {
+      "operation": "chatMessagesList",
+      "field": "limit",
+      "note": "wrapper default string20; observed histories often numeric30; preserve explicit caller override"
+    },
+    {
+      "operation": "userResumeRevisionOptimizeRecordsGet",
+      "field": "pageNo/pageSize",
+      "note": "wrapper defaults1/10; callers override pageSize30 in some views"
+    }
+  ],
+  "result_delivery_bridge": {
+    "category": "auxiliary_ai_result_delivery_bridge",
+    "operations": [
+      {
+        "name": "partnersV2DailyReportByIdGet",
+        "method": "GET",
+        "path": "/wapi/partners/v2/daily-report/by-id",
+        "effect_class": "read_query",
+        "evidence_ids": [
+          "SWMA139",
+          "SWMA142"
+        ]
+      },
+      {
+        "name": "partnersV2DailyReportPendingDeliveryJobsGet",
+        "method": "GET",
+        "path": "/wapi/partners/v2/daily-report/pending-delivery-jobs",
+        "effect_class": "read_query",
+        "evidence_ids": [
+          "SWMA143"
+        ]
+      },
+      {
+        "name": "partnersV2DailyReportPendingRepliesGet",
+        "method": "GET",
+        "path": "/wapi/partners/v2/daily-report/pending-replies",
+        "effect_class": "read_query",
+        "evidence_ids": [
+          "SWMA144"
+        ]
+      },
+      {
+        "name": "partnersV2DailyReportRealtimeGet",
+        "method": "GET",
+        "path": "/wapi/partners/v2/daily-report/realtime",
+        "effect_class": "read_query",
+        "evidence_ids": [
+          "SWMA140"
+        ]
+      },
+      {
+        "name": "partnersV2DailyReportRealtimePendingRepliesGet",
+        "method": "GET",
+        "path": "/wapi/partners/v2/daily-report/realtime/pending-replies",
+        "effect_class": "read_query",
+        "evidence_ids": [
+          "SWMA141"
+        ]
+      },
+      {
+        "name": "partnersV2DailyReportSummaryGet",
+        "method": "GET",
+        "path": "/wapi/partners/v2/daily-report/summary",
+        "effect_class": "read_query",
+        "evidence_ids": [
+          "SWMA199"
+        ]
+      },
+      {
+        "name": "partnersV2OfficeRecordListGet",
+        "method": "GET",
+        "path": "/wapi/partners/v2/office-record/list",
+        "effect_class": "read_query",
+        "evidence_ids": [
+          "SWMA046"
+        ]
+      },
+      {
+        "name": "partnersV2OfficeRecordReadPost",
+        "method": "POST",
+        "path": "/wapi/partners/v2/office-record/read",
+        "effect_class": "office_record_mark_read",
+        "evidence_ids": [
+          "SWMA047"
+        ]
+      },
+      {
+        "name": "partnersZpGeekSendConfirmedResumePost",
+        "method": "POST",
+        "path": "/wapi/partners/zp/geek/sendConfirmedResume",
+        "effect_class": "explicit_delivery_write",
+        "evidence_ids": [
+          "SWMA101"
+        ]
+      },
+      {
+        "name": "userGeekDeliveryListGet",
+        "method": "GET",
+        "path": "/wapi/user/geek/delivery/list",
+        "effect_class": "read_query",
+        "evidence_ids": [
+          "SWMA103",
+          "SWMA539"
+        ]
+      },
+      {
+        "name": "userGeekDeliveryListByJobIdsPost",
+        "method": "POST",
+        "path": "/wapi/user/geek/delivery/listByJobIds",
+        "effect_class": "read_query",
+        "evidence_ids": [
+          "SWMA104"
+        ]
+      }
+    ],
+    "execution_policy": "Explicit call only. sendConfirmedResume is a real delivery write, never auto-called by SDK on SSE/task/card/pending results. No business call performed during analysis.",
+    "id_boundary": "Observed confirmation sender messageId=Number(rawPendingItem.id), distinct from ordinary AI message.id namespace unless server independently proves a relation. listByJobIds POST is a read query.",
+    "evidence_ids": [
+      "SWMA101",
+      "SWMA103",
+      "SWMA539"
+    ]
+  },
+  "protocol_services": [
+    {
+      "id": "assistantStomp",
+      "kind": "stomp_over_websocket",
+      "base": "ws",
+      "path": "/wapi/user/ws",
+      "production_base_observed": "wss://www.deephire.cn",
+      "destination": "/user/queue/douzi",
+      "subprotocols": [
+        "v12.stomp",
+        "v11.stomp",
+        "v10.stomp"
+      ],
+      "upgrade_headers": {
+        "Authorization": "Bearer token if present"
+      },
+      "connect_headers": {
+        "Authorization": "Bearer token if present, refreshed before each connection"
+      },
+      "heartbeat_in_ms": 25000,
+      "heartbeat_out_ms": 25000,
+      "reconnect_delay_ms": 5000,
+      "max_reconnect_delay_ms": 60000,
+      "default_retry_limit": 5,
+      "stable_reset_ms": 60000,
+      "websocket_factory": "App uses UniSocketAdapter -> uni.connectSocket({url,header,protocols}). Browser standard WebSocket cannot set arbitrary upgrade headers; require custom adapter/factory if server needs them. STOMP-only Authorization is not proven equivalent.",
+      "do_not_invent": [
+        "query-string token fallback",
+        "browser upgrade header support",
+        "automatic agent start or mode application"
+      ],
+      "evidence_ids": [
+        "SWMA023",
+        "SWMA024"
+      ]
+    },
+    {
+      "id": "asrExternalSocket",
+      "kind": "server_provided_websocket",
+      "base": "returned ASR config zpSdkInfo.wssAddress[0]",
+      "bootstrap_operation": "nebulaAsrConfigGet",
+      "authorization": "actual returned URL/ticket fields; do not construct a fixed recognition path or copy App credentials automatically",
+      "source_defaults": {
+        "sampleRate": 16000,
+        "channels": 1,
+        "bitDepth": 16,
+        "reconnect_attempts": 5,
+        "reconnect_interval_ms": 3000
+      },
+      "evidence_ids": [
+        "SWMA025"
+      ]
+    }
+  ],
+  "unsupported_operations": [
+    {
+      "operation": "remote conversation rename/delete/remove/top/pin/clear",
+      "status": "not observed in this build",
+      "boundary": "All same-hash script endpoint literal inventory contains only conversation/{id} GET, conversation/messages GET, conversations GET. Exact remote path/operation-name negatives retained in evidence.json. Local clearConversationMessages/resetSession are not a remote API.",
+      "sdk_action": "Do not generate unproven convenience endpoints; use explicit requestRaw when a separately verified server contract becomes available."
+    },
+    {
+      "operation": "dedicated quick-reply setter / suggestion mutation endpoint",
+      "status": "not observed",
+      "boundary": "quick_reply comes from SSE; user selections feed userSay content/value/metadata. Homepage suggestions use GET /wapi/partners/suggest/homepage/v2.",
+      "sdk_action": "Expose raw SSE and userSay; do not invent /quickReply RPC."
+    }
+  ],
+  "source_only_wrappers": "All registry capabilities preserved even zero statically resolved call sites; descriptive export alias candidates labelled; neither no caller nor a wrapper presence proves runtime use or backend availability."
+}

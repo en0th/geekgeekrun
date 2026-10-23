@@ -1,0 +1,794 @@
+{
+  "source": "/Users/abc/Documents/deepseek-harness/zj/HBuilder.app/Pandora/apps/__UNI__49240F0/www/app-service.js",
+  "source_sha256": "85df0d8ca64906e303f261512d32fb695450ec70dcc6862aedcee796533da79e",
+  "scope": "Static shipped app-service.js and bounded packaged www search; no App execution, business request or actual credentials",
+  "api_base": {
+    "fallback": "https://www.deephire.cn",
+    "helper": "Ap",
+    "evidence": [
+      "SDA056"
+    ]
+  },
+  "endpoints": [
+    {
+      "key": "legacyLogin",
+      "path": "/auth/login",
+      "method": "POST",
+      "parameter_placement": "body (xi.post second argument)",
+      "observed_fields": [],
+      "defaults": {},
+      "actual_caller": "gn.login -> ZMe -> xi.post; exposed legacy entry, no direct UI invocation located",
+      "client_auth": "Shared request interceptor may add API Bearer, metadata and withCredentials; server requirement unknown",
+      "evidence": [
+        "SDA001",
+        "SDA020",
+        "SDA021"
+      ],
+      "notes": [
+        "Body fields are opaque input; do not infer username/password/refresh schema."
+      ]
+    },
+    {
+      "key": "captchaGetTypeV2",
+      "path": "/wapi/zppassport/captcha/getTypeV2",
+      "method": "GET",
+      "parameter_placement": "no body/query constructed",
+      "observed_fields": [],
+      "defaults": {},
+      "actual_caller": "K$ from native captcha open and captcha H5 init",
+      "client_auth": "Shared request interceptor may add API Bearer, metadata and withCredentials; server requirement unknown",
+      "evidence": [
+        "SDA023"
+      ],
+      "notes": [
+        "hideErrorToast=true; skipLoginRedirect=true; catches and ignores errors; no getcaptcha endpoint is recoverable from this wrapper."
+      ]
+    },
+    {
+      "key": "sendLoginVerifyCodeV2",
+      "path": "/wapi/user/auth/phone/sendLoginVerifyCodeV2",
+      "method": "POST",
+      "parameter_placement": "JSON body",
+      "observed_fields": [
+        "phone",
+        "loginDevice",
+        "captchaType",
+        "geetVerify",
+        "wyVerify",
+        "imageVerify"
+      ],
+      "defaults": {
+        "loginDevice": "H5"
+      },
+      "actual_caller": "Native login Q and captcha-h5 S",
+      "client_auth": "Shared request interceptor may add API Bearer, metadata and withCredentials; server requirement unknown",
+      "evidence": [
+        "SDA005",
+        "SDA022",
+        "SDA025",
+        "SDA028",
+        "SDA033",
+        "SDA034"
+      ],
+      "notes": [
+        "Callback headers are extracted, but options.header is overwritten by wrapper defaults in jt. Native Q has returnEnvelope=true/hideErrorToast=true; H5 S also skipLoginRedirect=true.",
+        "Both callers Number-coerce code (nullish defaults to 0), reject finite values other than 0/200; numeric code 4 is rejected here despite generic HTTP success rule."
+      ]
+    },
+    {
+      "key": "phoneLogin",
+      "path": "/wapi/user/auth/phone/login",
+      "method": "POST",
+      "parameter_placement": "JSON body",
+      "observed_fields": [
+        "phone",
+        "code",
+        "userIdentity",
+        "sessionType",
+        "source"
+      ],
+      "defaults": {
+        "userIdentity": "GEEK",
+        "sessionType": "APP",
+        "source_by_platform": {
+          "ios": "JOBSEEKER_MOBILE_IOS",
+          "android": "JOBSEEKER_MOBILE_ANDROID",
+          "other_or_error": "SELF"
+        }
+      },
+      "actual_caller": "gn.loginWithPhoneCode(phone,code) -> generated bot",
+      "client_auth": "Shared request interceptor may add API Bearer, metadata and withCredentials; server requirement unknown",
+      "evidence": [
+        "SDA003",
+        "SDA004",
+        "SDA009",
+        "SDA010",
+        "SDA033"
+      ],
+      "notes": [
+        "loginBizHandled=true; status success and userId!=null checked after generic envelope handling; profile gates precede token adoption."
+      ]
+    },
+    {
+      "key": "logout",
+      "path": "/wapi/user/auth/logout",
+      "method": "POST",
+      "parameter_placement": "no body/query constructed",
+      "observed_fields": [],
+      "defaults": {},
+      "actual_caller": "gn.logout after push unregister, before unconditional local finally cleanup",
+      "client_auth": "Shared request interceptor may add API Bearer, metadata and withCredentials; server requirement unknown",
+      "evidence": [
+        "SDA018",
+        "SDA033"
+      ],
+      "notes": []
+    },
+    {
+      "key": "inviteCodeLogin",
+      "path": "/wapi/user/auth/login/invite-code",
+      "method": "POST",
+      "parameter_placement": "JSON body (opaque wrapper input)",
+      "observed_fields": [],
+      "defaults": {},
+      "actual_caller": "Generated wrapper only; no established active call in this investigation",
+      "client_auth": "Shared request interceptor may add API Bearer, metadata and withCredentials; server requirement unknown",
+      "evidence": [
+        "SDA033"
+      ],
+      "notes": [
+        "No active caller field schema located; do not fabricate invite fields."
+      ]
+    },
+    {
+      "key": "wechatAccountBinding",
+      "path": "/wapi/user/auth/wechat/account-binding",
+      "method": "POST",
+      "parameter_placement": "JSON body (opaque wrapper input)",
+      "observed_fields": [],
+      "defaults": {},
+      "actual_caller": "Generated wrapper only; no established active call in this investigation",
+      "client_auth": "Shared request interceptor may add API Bearer, metadata and withCredentials; server requirement unknown",
+      "evidence": [
+        "SDA033"
+      ],
+      "notes": []
+    },
+    {
+      "key": "wechatBindLogin",
+      "path": "/wapi/user/auth/wechat/bindLogin",
+      "method": "POST",
+      "parameter_placement": "JSON body (opaque wrapper input)",
+      "observed_fields": [],
+      "defaults": {},
+      "actual_caller": "Generated wrapper only; no established active call in this investigation",
+      "client_auth": "Shared request interceptor may add API Bearer, metadata and withCredentials; server requirement unknown",
+      "evidence": [
+        "SDA033"
+      ],
+      "notes": []
+    },
+    {
+      "key": "wechatCode2SessionLogin",
+      "path": "/wapi/user/auth/wechat/code2SessionLogin",
+      "method": "POST",
+      "parameter_placement": "generated wrapper takes JSON body",
+      "observed_fields": [],
+      "defaults": {},
+      "actual_caller": "gn.wxLogin gets uni.login provider=weixin code, but passes {params:{req:{loginCode}}} to a {body,options} wrapper",
+      "client_auth": "Shared request interceptor may add API Bearer, metadata and withCredentials; server requirement unknown",
+      "evidence": [
+        "SDA002",
+        "SDA012",
+        "SDA033"
+      ],
+      "notes": [
+        "The internal caller does not populate wrapper body/query with loginCode; expected server body is unknown.",
+        "No direct .wxLogin member invocation located."
+      ]
+    },
+    {
+      "key": "zpGetLogin",
+      "path": "/wapi/user/auth/zp/get/login",
+      "method": "POST",
+      "parameter_placement": "query",
+      "observed_fields": [
+        "wt2"
+      ],
+      "defaults": {},
+      "actual_caller": "gn.loginWithZpGetToken(wt2), current/deprecated IntroGet pages read route.wt2",
+      "client_auth": "Shared request interceptor may add API Bearer, metadata and withCredentials; server requirement unknown",
+      "evidence": [
+        "SDA011",
+        "SDA033",
+        "SDA048",
+        "SDA049",
+        "SDA060"
+      ],
+      "notes": [
+        "Inbound BOSS-host ticket and subsequently fetched IM webTicket2 are distinct acquisition paths; equality/lifetime not established."
+      ]
+    },
+    {
+      "key": "zpGetLoginInfo",
+      "path": "/wapi/user/auth/zp/get/login/info",
+      "method": "GET",
+      "parameter_placement": "query (opaque wrapper input)",
+      "observed_fields": [],
+      "defaults": {},
+      "actual_caller": "Generated wrapper only; no established active call in this investigation",
+      "client_auth": "Shared request interceptor may add API Bearer, metadata and withCredentials; server requirement unknown",
+      "evidence": [
+        "SDA033"
+      ],
+      "notes": []
+    },
+    {
+      "key": "zpHasWechat",
+      "path": "/wapi/user/auth/zp/hasWechat",
+      "method": "GET",
+      "parameter_placement": "no body/query constructed",
+      "observed_fields": [],
+      "defaults": {},
+      "actual_caller": "Generated wrapper only; no established active call in this investigation",
+      "client_auth": "Shared request interceptor may add API Bearer, metadata and withCredentials; server requirement unknown",
+      "evidence": [
+        "SDA033"
+      ],
+      "notes": []
+    },
+    {
+      "key": "zpHomeBannerLogin",
+      "path": "/wapi/user/auth/zp/home-banner/login",
+      "method": "POST",
+      "parameter_placement": "no body/query constructed",
+      "observed_fields": [],
+      "defaults": {},
+      "actual_caller": "Generated wrapper only; no established active call in this investigation",
+      "client_auth": "Shared request interceptor may add API Bearer, metadata and withCredentials; server requirement unknown",
+      "evidence": [
+        "SDA033"
+      ],
+      "notes": []
+    },
+    {
+      "key": "zpQrcodeLogin",
+      "path": "/wapi/user/auth/zp/qrcode/login",
+      "method": "GET",
+      "parameter_placement": "query (opaque wrapper input)",
+      "observed_fields": [],
+      "defaults": {},
+      "actual_caller": "Generated wrapper only; no established active call in this investigation",
+      "client_auth": "Shared request interceptor may add API Bearer, metadata and withCredentials; server requirement unknown",
+      "evidence": [
+        "SDA033"
+      ],
+      "notes": []
+    },
+    {
+      "key": "zpResumeLogin",
+      "path": "/wapi/user/auth/zp/resume/login",
+      "method": "POST",
+      "parameter_placement": "query (opaque wrapper input)",
+      "observed_fields": [],
+      "defaults": {},
+      "actual_caller": "Generated wrapper only; no established active call in this investigation",
+      "client_auth": "Shared request interceptor may add API Bearer, metadata and withCredentials; server requirement unknown",
+      "evidence": [
+        "SDA033"
+      ],
+      "notes": []
+    },
+    {
+      "key": "zpResumeLoginInfo",
+      "path": "/wapi/user/auth/zp/resume/login/info",
+      "method": "GET",
+      "parameter_placement": "query (opaque wrapper input)",
+      "observed_fields": [],
+      "defaults": {},
+      "actual_caller": "Generated wrapper only; no established active call in this investigation",
+      "client_auth": "Shared request interceptor may add API Bearer, metadata and withCredentials; server requirement unknown",
+      "evidence": [
+        "SDA033"
+      ],
+      "notes": []
+    },
+    {
+      "key": "zpUpdateIdentity",
+      "path": "/wapi/user/auth/zp/updateIdentity",
+      "method": "POST",
+      "parameter_placement": "no body/query constructed",
+      "observed_fields": [],
+      "defaults": {},
+      "actual_caller": "Generated wrapper only; no established active call in this investigation",
+      "client_auth": "Shared request interceptor may add API Bearer, metadata and withCredentials; server requirement unknown",
+      "evidence": [
+        "SDA033"
+      ],
+      "notes": []
+    },
+    {
+      "key": "zpImTokenH5",
+      "path": "/wapi/user/auth/zp/chat/token/h5",
+      "method": "GET",
+      "parameter_placement": "query",
+      "observed_fields": [
+        "forceRefresh"
+      ],
+      "defaults": {
+        "actual_pwe_path": false,
+        "handwritten_fwe_default": false,
+        "generated_Sot_default": "true"
+      },
+      "actual_caller": "pwe Promise.all -> fwe({forceRefresh:false})",
+      "client_auth": "Shared request interceptor may add API Bearer, metadata and withCredentials; server requirement unknown",
+      "evidence": [
+        "SDA033",
+        "SDA043",
+        "SDA044"
+      ],
+      "notes": [
+        "Actual handwritten caller uses skipLoginRedirect=true/hideErrorToast=true. Reads response.userId and token; no TTL field consumed."
+      ]
+    },
+    {
+      "key": "zpImTicketH5",
+      "path": "/wapi/user/auth/zp/chat/ticket/h5",
+      "method": "GET",
+      "parameter_placement": "query on handwritten hwe; generated kot has none",
+      "observed_fields": [
+        "forceRefresh"
+      ],
+      "defaults": {
+        "actual_pwe_path": false,
+        "handwritten_hwe_default": false
+      },
+      "actual_caller": "pwe Promise.all -> hwe({forceRefresh:false})",
+      "client_auth": "Shared request interceptor may add API Bearer, metadata and withCredentials; server requirement unknown",
+      "evidence": [
+        "SDA033",
+        "SDA043",
+        "SDA044"
+      ],
+      "notes": [
+        "Reads response.webTicket2/productId; no TTL field consumed."
+      ]
+    },
+    {
+      "key": "zpImTokenMp",
+      "path": "/wapi/user/auth/zp/chat/token/mp",
+      "method": "GET",
+      "parameter_placement": "query",
+      "observed_fields": [
+        "forceRefresh"
+      ],
+      "defaults": {
+        "handwritten_eqe_default": false,
+        "generated_Cot_default": "true"
+      },
+      "actual_caller": "Generated wrapper only; no established active call in this investigation",
+      "client_auth": "Shared request interceptor may add API Bearer, metadata and withCredentials; server requirement unknown",
+      "evidence": [
+        "SDA033",
+        "SDA044"
+      ],
+      "notes": []
+    },
+    {
+      "key": "zpImTokenPc",
+      "path": "/wapi/user/auth/zp/chat/token/pc",
+      "method": "GET",
+      "parameter_placement": "query",
+      "observed_fields": [
+        "forceRefresh"
+      ],
+      "defaults": {
+        "generated_Eot_default": "true"
+      },
+      "actual_caller": "Generated wrapper only; no established active call in this investigation",
+      "client_auth": "Shared request interceptor may add API Bearer, metadata and withCredentials; server requirement unknown",
+      "evidence": [
+        "SDA033",
+        "SDA044"
+      ],
+      "notes": []
+    },
+    {
+      "key": "zpImTicketMp",
+      "path": "/wapi/user/auth/zp/chat/ticket/mp",
+      "method": "GET",
+      "parameter_placement": "no body/query constructed",
+      "observed_fields": [],
+      "defaults": {},
+      "actual_caller": "Generated wrapper only; no established active call in this investigation",
+      "client_auth": "Shared request interceptor may add API Bearer, metadata and withCredentials; server requirement unknown",
+      "evidence": [
+        "SDA033"
+      ],
+      "notes": []
+    },
+    {
+      "key": "zpImTicketPc",
+      "path": "/wapi/user/auth/zp/chat/ticket/pc",
+      "method": "GET",
+      "parameter_placement": "generated wrapper has no query; handwritten ZVe forwards query",
+      "observed_fields": [],
+      "defaults": {},
+      "actual_caller": "Generated wrapper only; no established active call in this investigation",
+      "client_auth": "Shared request interceptor may add API Bearer, metadata and withCredentials; server requirement unknown",
+      "evidence": [
+        "SDA033",
+        "SDA044"
+      ],
+      "notes": []
+    },
+    {
+      "key": "userInfo",
+      "path": "/wapi/user/info",
+      "method": "GET",
+      "parameter_placement": "no body/query constructed",
+      "observed_fields": [],
+      "defaults": {},
+      "actual_caller": "gn.fetchUserInfo -> V1e",
+      "client_auth": "Shared request interceptor may add API Bearer, metadata and withCredentials; server requirement unknown",
+      "evidence": [
+        "SDA014",
+        "SDA051",
+        "SDA057"
+      ],
+      "notes": []
+    }
+  ],
+  "refresh": {
+    "implemented": false,
+    "observed_method": "gn.refreshToken -> throw Error(\"单token模式不支持刷新token\")",
+    "http_endpoint": null,
+    "http_method": null,
+    "http_query": null,
+    "http_body": null,
+    "tryGetValidToken": "updateNowTime(); return validToken; does not refresh",
+    "automatic_401_retry": false,
+    "server_refresh_schema": "unknown / unsupported by this build",
+    "sdk_design_boundary": "Any optional refresh callback/singleflight/new token adoption is SDK policy, not recovered server protocol; no invented default refresh URL.",
+    "evidence": [
+      "SDA007",
+      "SDA013",
+      "SDA035",
+      "SDA054"
+    ]
+  },
+  "token_models": {
+    "current_phone_or_zp_login": {
+      "input_fields": [
+        "status",
+        "userId",
+        "accessToken",
+        "accessExpiresIn",
+        "expiresIn"
+      ],
+      "accept_status": "status === \"success\" && userId != null (not a positive-number schema check)",
+      "adoption": "Only truthy accessToken is mapped to {token:accessToken,expiresIn:ttlSeconds}; other result fields remain returned data",
+      "ttl_priority": [
+        "typeof accessExpiresIn === \"number\"",
+        "typeof expiresIn === \"number\"",
+        "7200"
+      ],
+      "units": "seconds at TTL input; absolute deadline milliseconds",
+      "deadline": "Date.now() + ttlSeconds * 1000",
+      "numeric_edges": "No finite/positive guard in this exact fallback; numeric 0/negative/NaN/Infinity are not replaced solely by the typeof test; numeric strings fall back.",
+      "absent_access_token": "No new tokenInfo is assigned by b; old token may remain. userInfo fetch still follows, possibly using cookie/raw fallback. Server semantics unknown.",
+      "evidence": [
+        "SDA008",
+        "SDA009"
+      ]
+    },
+    "legacy_single_token": {
+      "shape": [
+        "token",
+        "expiresIn"
+      ],
+      "predicate": "\"token\" in object && !(\"refreshToken\" in object)",
+      "legacy_entry": "POST /auth/login -> g(result) -> clear user/IM -> setTokenInfo(result) -> fetchUserInfo()",
+      "ttl": "setTokenInfo uses expiresIn * 1000, no coercion/type validation before arithmetic",
+      "evidence": [
+        "SDA001",
+        "SDA002",
+        "SDA008",
+        "SDA020",
+        "SDA021"
+      ]
+    },
+    "compatibility_dual_token": {
+      "shape": [
+        "accessToken",
+        "refreshToken",
+        "accessExpiresIn",
+        "refreshExpiresIn"
+      ],
+      "predicate": "\"accessToken\" in object && \"refreshToken\" in object",
+      "setter": "Records both expire-time keys, multiplying TTL values by 1000",
+      "limitations": [
+        "Phone/ZP b does not adopt result as this shape",
+        "validToken and hasLogin require single-token predicate, so dual shape is not recognized by them",
+        "Interceptor can still fallback raw accessToken",
+        "No refresh endpoint/rotation/scheduler exists"
+      ],
+      "evidence": [
+        "SDA002",
+        "SDA008",
+        "SDA009",
+        "SDA013",
+        "SDA040"
+      ]
+    },
+    "h5_authorization_import": {
+      "page": "resume-analyze-panel-h5",
+      "input": "route.authorization, URI-decoded up to 5 rounds",
+      "normalization": "remove /^Bearer\\s+/i then trim",
+      "local_ttl_seconds": 86400,
+      "write": "direct tokenInfo={token,expiresIn:86400}; accessTokenExpireTime=Date.now()+86400000",
+      "meaning": "Synthetic local validity for an embedded-page supplied credential; not a refresh or observed server TTL",
+      "evidence": [
+        "SDA053"
+      ]
+    }
+  },
+  "token_selection": {
+    "validToken": "expired ? \"\" : kV(tokenInfo) ? tokenInfo.token : \"\"",
+    "hasLogin": "kV(tokenInfo) && truthy token && !expired",
+    "expired": "missing tokenInfo or falsy/missing stored accessTokenExpireTime, else now>=deadline",
+    "http_and_fetch": "validToken || tokenInfo.accessToken || tokenInfo.token || \"\"",
+    "http_explicit_header": "truthy exact Authorization survives; lower-case authorization does not block this property check",
+    "effect": "Local expiry is not proof no Bearer is sent; raw fallback can send locally expired token. Server validity unknown.",
+    "evidence": [
+      "SDA008",
+      "SDA013",
+      "SDA027",
+      "SDA040",
+      "SDA055"
+    ]
+  },
+  "captcha": {
+    "prefetch": {
+      "endpoint": "captchaGetTypeV2",
+      "failure": "swallowed"
+    },
+    "external_sdk": {
+      "url": "https://static.zhipin.com/assets/zhipin/geek/verify-sdk/verify-sdk-cm-v5.js?t=20251222",
+      "global_constructor": "VerifyCodeSDKV5",
+      "config": {
+        "scene": "dh-login",
+        "mode": "popup"
+      },
+      "missing": "Remote SDK implementation is not packaged; no actual getcaptcha/verify HTTP contract recovered"
+    },
+    "proof_normalization": {
+      "type": "Number(input.type), finite else 0; strings except type are retained only when typeof string",
+      "headers": "All non-null, nonempty callback headers converted with String(value); names are not fixed here"
+    },
+    "body": {
+      "common": [
+        "phone",
+        "loginDevice:H5",
+        "captchaType",
+        "geetVerify:{}",
+        "wyVerify:{}",
+        "imageVerify:{}"
+      ],
+      "type_1": {
+        "geetVerify": [
+          "key=randKey",
+          "clientType=type",
+          "challenge",
+          "validate",
+          "seccode"
+        ]
+      },
+      "type_3": {
+        "imageVerify": [
+          "key=randKey",
+          "captcha"
+        ]
+      },
+      "type_4": {
+        "wyVerify": [
+          "captchaId=wyCaptchaId",
+          "validate"
+        ]
+      }
+    },
+    "header_overwrite": {
+      "path": "Q/S passes options.header -> Y$ keeps default options.headers Content-Type -> jt sets n.header=e.headers",
+      "observed_constructed_request_effect": "O1e custom headers, including any custom Authorization, are replaced at jt; interceptor may later add API Authorization/metadata.",
+      "suggested_sdk_difference": "Expose explicit captcha proof headers and merge them; label as repaired handling rather than exact App behavior."
+    },
+    "sms_acceptance": "After returnEnvelope, code=Number(envelope.code ?? 0); reject if finite && not 0 && not 200; generic code 4 success does not carry through this caller.",
+    "native_flow": "Native page opens remote /h5/pages/auth/captcha-h5?requestId&phone&resultKey; H5 sends SMS and returns status sms_sent; parent does not send again for sms_sent.",
+    "evidence": [
+      "SDA005",
+      "SDA022",
+      "SDA023",
+      "SDA024",
+      "SDA025",
+      "SDA026",
+      "SDA028",
+      "SDA029",
+      "SDA030",
+      "SDA031",
+      "SDA033",
+      "SDA034"
+    ]
+  },
+  "response": {
+    "envelope": "non-nullish data first, then result when !==undefined, else undefined",
+    "first_401": "HTTP statusCode==401 OR numeric envelope.code===401; occurs before returnEnvelope/business success",
+    "on_401": "skipLoginRedirect: reject original response; else await logout then navigate and reject",
+    "numeric_success_codes": [
+      0,
+      200,
+      4
+    ],
+    "nonnumeric_code": "not rejected by generic code check",
+    "login_business_error": "loginBizHandled creates LoginBizApiError(code, message, extracted result, raw)",
+    "sms_business_success_override": [
+      0,
+      200
+    ],
+    "retries": "No generic retry loop; SSE JSON-401 helper returns false after initiating logout/navigation, so conditional D5e resend is not enabled by it.",
+    "evidence": [
+      "SDA035",
+      "SDA036",
+      "SDA037",
+      "SDA038",
+      "SDA039",
+      "SDA054"
+    ]
+  },
+  "login_business_codes": {
+    "2002": "USER_FROZEN",
+    "7002": "INVALID_VERIFICATION_CODE",
+    "400403": "NEED_INVITE_CODE",
+    "400404": "BOSS_ZP_ACCOUNT_NOT_FOUND",
+    "400405": "BOSS_ZP_SCHOOL_NOT_MATCH",
+    "400429": "TOO_MANY_REGISTER",
+    "400430": "ZP_HOME_BANNER_DAILY_LIMIT",
+    "400457": "INVITE_CODE_NOT_FOUND",
+    "400458": "INVITE_CODE_USED",
+    "400460": "INVITE_CODE_EXPIRED",
+    "400461": "INVITE_CODE_INVALID",
+    "400462": "INVITE_CODE_CONTEXT_EXPIRED",
+    "400464": "INVITE_CODE_GRANT_NOT_FOUND",
+    "3401": "IntroGet login UI handles as expired ZP authorization; not a proven App refresh code"
+  },
+  "entrypoints": {
+    "phone": "Active login page -> store loginWithPhoneCode",
+    "legacy": "Store login(input) -> /auth/login; exposed, no direct UI call located",
+    "weixin": "Store wxLogin -> uni.login(provider=weixin); caller/wrapper mismatch, no direct member invocation located",
+    "boss_host": "Current/deprecated intro route.wt2, environment navigator UA BossZhipin or window.wst -> loginWithZpGetToken",
+    "guest": "isGuestMode is local userId-not-positive state; no guest-login HTTP endpoint found in bounded package search",
+    "native": "Captcha uses plus.webview/storage; Weixin code acquisition uses uni.login. No recovered native Apple/one-click auth protocol.",
+    "evidence": [
+      "SDA001",
+      "SDA002",
+      "SDA007",
+      "SDA010",
+      "SDA011",
+      "SDA012",
+      "SDA013",
+      "SDA031",
+      "SDA032",
+      "SDA048",
+      "SDA049",
+      "SDA060"
+    ]
+  },
+  "concurrency": [
+    {
+      "scope": "Phone login UI",
+      "protection": "u busy flag and button/dn checks",
+      "boundary": "Not a store-wide login singleflight",
+      "evidence": [
+        "SDA032"
+      ]
+    },
+    {
+      "scope": "App.vue hydration",
+      "protection": "pending r Promise reused and finally nulled",
+      "boundary": "Only this caller; not refresh or universal fetchUserInfo deduplication",
+      "evidence": [
+        "SDA052"
+      ]
+    },
+    {
+      "scope": "User store hydration",
+      "protection": "capture i; ignore stale 401 clear if i changed",
+      "boundary": "m success writes userInfo before any i comparison; B itself has no pending Promise",
+      "evidence": [
+        "SDA014",
+        "SDA015",
+        "SDA017"
+      ]
+    },
+    {
+      "scope": "User-store getIMTokenInfo",
+      "protection": "None at F assignment after pwe",
+      "boundary": "Conditional stale overwrite possible if account clear/switch overlaps; no runtime overlap proven",
+      "evidence": [
+        "SDA019"
+      ]
+    },
+    {
+      "scope": "IM initSdk/reconnect",
+      "protection": "pending e Promise; destroy increments o; S/C/x compare captured o",
+      "boundary": "Generation belongs to IM destroy lifecycle, not App token refresh; login account-switch paths do not call destroySdk here",
+      "evidence": [
+        "SDA009",
+        "SDA015",
+        "SDA018",
+        "SDA045"
+      ]
+    },
+    {
+      "scope": "HTTP 401 logout",
+      "protection": "No request token/epoch comparison in xi",
+      "boundary": "An old request 401 is not proven harmless after a new login; logout finally has no account-generation guard",
+      "evidence": [
+        "SDA018",
+        "SDA035"
+      ]
+    }
+  ],
+  "boss_credentials": {
+    "api_bearer": "App access/raw fallback authenticates own /auth/zp/chat APIs; server requirements unknown",
+    "acquisition": "pwe parallel token/h5 and ticket/h5 with forceRefresh=false",
+    "fields": {
+      "token": "String(tokenResponse.token ?? \"\")",
+      "wt2": "String(ticketResponse.webTicket2 ?? \"\")",
+      "zpUserId": "Number(tokenResponse.userId ?? 0)",
+      "productId": "String(ticketResponse.productId ?? \"\")",
+      "identity": 0
+    },
+    "validation": "Throw if !zpUserId || !token || !wt2; productId not checked equally; no positive-safe-integer schema check",
+    "persistence": "du is separate reactive object; persist.paths only userInfo/tokenInfo; no IM TTL/expiry consumed",
+    "singleflight": "User-store F has none; IM-store initialization has e/o protection",
+    "mqtt": {
+      "username": "${token}|${identity}",
+      "password": "wt2",
+      "query": "wt=${wt2}&zp_product_id=${productId}",
+      "headers": [
+        "wt:wt2",
+        "wt2:wt2",
+        "zp_product_id:productId"
+      ]
+    },
+    "refresh_boundary": "lc reconnect reads same config; no automatic credential HTTP reacquisition on MQTT LOGIN_FAILED/CONNACK auth error. Calling fwe(forceRefresh:true) is an available wrapper option, not established active pwe policy.",
+    "separation": "Inbound IntroGet wt2 and IM webTicket2 are not proven equal. IM token is not API Bearer, and IM reconnect is not App access refresh.",
+    "evidence": [
+      "SDA006",
+      "SDA014",
+      "SDA019",
+      "SDA033",
+      "SDA043",
+      "SDA044",
+      "SDA045",
+      "SDA046",
+      "SDA047",
+      "SDA048"
+    ]
+  },
+  "sdk_recommendations": [
+    "Implement known login paths/TTL adoption with raw response retention; surface profile/guide authorization separately from access-token presence.",
+    "Do not provide a guessed refresh endpoint. Optional externally supplied refresh adapter and local singleflight must be labeled SDK behavior.",
+    "Use an account generation and token identity around async login/refresh/401 adoption, so old completion cannot restore/clear a new account; never blindly replay non-idempotent writes.",
+    "Keep IM credentials separate and clear by account generation; do not substitute IM forceRefresh for App refresh.",
+    "Expose the captcha challenge callback contract and explicit headers; do not try to solve or synthesize proof. Remote challenge network schema is unknown.",
+    "Do not implement current wxLogin params.req expression as a proven server request body; expose opaque body or mark unsupported until another source/authorized runtime establishes it."
+  ],
+  "unknowns": [
+    "Server refresh route/schema/rotation/revocation/TTL not recovered",
+    "Token JWT format/signature and Cookie necessity not observed",
+    "External captcha SDK getcaptcha/verify internals missing",
+    "Generated auth wrapper existence is not runtime use or service availability",
+    "No actual login/IM requests, credentials or response samples used"
+  ]
+}

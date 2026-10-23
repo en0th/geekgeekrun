@@ -1,0 +1,149 @@
+// Static partial subset of shipped schema, BOSS021; not a server schema.
+// Source SHA-256: 85df0d8ca64906e303f261512d32fb695450ec70dcc6862aedcee796533da79e
+// Unrelated fields are intentionally omitted; wire tags are preserved.
+syntax = "proto2";
+
+message TechwolfUser {
+  required int64 uid = 1;
+  optional string name = 2;
+  optional string avatar = 3;
+  optional string company = 4;
+  optional int32 headImg = 5;
+  optional int32 certification = 6;
+  optional int32 source = 7;
+}
+
+message TechwolfAction {
+  required int32 aid = 1;
+  optional string extend = 2;
+}
+
+message TechwolfButton {
+  required string text = 1;
+  optional string url = 2;
+  optional int32 templateId = 3;
+}
+
+message TechwolfDialog {
+  required string text = 1;
+  repeated TechwolfButton buttons = 2;
+  required bool operated = 3;
+  optional bool clickMore = 4;
+  optional int32 type = 5;
+  optional string backgroundUrl = 6;
+  optional int64 timeout = 7;
+  optional string statisticParameters = 8;
+  optional string title = 9;
+  optional string url = 10;
+  optional int32 selectedIndex = 11;
+  optional string extend = 12;
+  optional string content = 13;
+}
+
+message TechwolfMessageBody {
+  required int32 type = 1;
+  required int32 templateId = 2;
+  optional string headTitle = 11;
+  optional string text = 3;
+  optional TechwolfAction action = 6;
+  optional TechwolfDialog dialog = 9;
+  optional string extend = 28;
+  optional int32 style = 29;
+}
+
+message TechwolfMessage {
+  required TechwolfUser from = 1;
+  required TechwolfUser to = 2;
+  required int32 type = 3;
+  optional int64 mid = 4;
+  optional int64 time = 5;
+  required TechwolfMessageBody body = 6;
+  optional bool offline = 7;
+  optional bool received = 8;
+  optional string pushText = 9;
+  optional int64 taskId = 10;
+  optional int64 cmid = 11;
+  optional int32 status = 12;
+  optional int32 uncount = 13;
+  optional int32 pushSound = 14;
+  optional int32 flag = 15;
+  optional bytes encryptedBody = 16;
+  optional string bizId = 17;
+  optional int32 bizType = 18;
+  optional string securityId = 19;
+  optional int64 quoteId = 20;
+}
+
+message TechwolfClientInfo {
+  optional string version = 1;
+  optional string system = 2;
+  optional string systemVersion = 3;
+  optional string model = 4;
+  optional string uniqid = 5;
+  optional string network = 6;
+  optional int32 appid = 7;
+  optional string platform = 8;
+  optional string channel = 9;
+  optional string ssid = 10;
+  optional string bssid = 11;
+  optional double longitude = 12;
+  optional double latitude = 13;
+}
+
+message TechwolfClientTime {
+  optional int64 startTime = 1;
+  optional int64 resumeTime = 2;
+  optional int64 locateTime = 3;
+}
+
+message TechwolfPresence {
+  required int32 type = 1;
+  required int32 uid = 2;
+  optional TechwolfClientInfo clientInfo = 3;
+  optional TechwolfClientTime clientTime = 4;
+  optional int64 lastMessageId = 5;
+  optional int64 lastGroupMessageId = 6;
+  optional int64 userId = 7;
+}
+
+message TechwolfKVEntry {
+  required string key = 1;
+  required string value = 2;
+}
+
+message TechwolfIq {
+  required int64 qid = 1;
+  required string query = 2;
+  repeated TechwolfKVEntry params = 3;
+}
+
+message TechwolfIqResponse {
+  required int64 qid = 1;
+  required string query = 2;
+  repeated TechwolfKVEntry results = 3;
+}
+
+message TechwolfMessageSync {
+  required int64 clientMid = 1;
+  required int64 serverMid = 2;
+}
+
+message TechwolfMessageRead {
+  required int64 userId = 1;
+  required int64 messageId = 2;
+  required int64 readTime = 3;
+  optional bool sync = 4 [default = false];
+  optional int32 userSource = 5;
+}
+
+message TechwolfChatProtocol {
+  required int32 type = 1;
+  optional string version = 2;
+  repeated TechwolfMessage messages = 3;
+  optional TechwolfPresence presence = 4;
+  optional TechwolfIq iq = 5;
+  optional TechwolfIqResponse iqResponse = 6;
+  repeated TechwolfMessageSync messageSync = 7;
+  repeated TechwolfMessageRead messageRead = 8;
+  optional int32 domain = 10;
+}

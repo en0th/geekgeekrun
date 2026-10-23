@@ -1,0 +1,43 @@
+{
+  "sdk_version": "0.2.0",
+  "source_sha256": "85df0d8ca64906e303f261512d32fb695450ec70dcc6862aedcee796533da79e",
+  "generic_ai_aux_http_operations": 124,
+  "auth_endpoints_catalogued": 24,
+  "auth_sdk": [
+    "phone captcha/code login",
+    "inbound ZP ticket login",
+    "profile",
+    "explicit data consent",
+    "logout",
+    "memory session",
+    "pluggable verified renewal"
+  ],
+  "boss_sdk": [
+    "app HTTP credentials/history/peer/exchange",
+    "MQTT4 WSS text/read",
+    "proto2 codec",
+    "explicit Node socket adapter"
+  ],
+  "protobuf_messages": 47,
+  "protobuf_fields": 318,
+  "target_refresh_endpoint": "not established; build explicitly throws unsupported",
+  "runtime_integration_verified": false,
+  "unknown_edges": [
+    "AI result R -> pending P",
+    "confirmation -> delivery record",
+    "backend effective authorization/renewal/idempotency",
+    "actual live MQTT receipt compatibility"
+  ],
+  "mock_tests_passed": 83,
+  "typescript_build": true,
+  "example_compile": true,
+  "offline_workflow_executed": true,
+  "offline_workflow_http_fixtures": 13,
+  "business_http_or_websocket_requests": false,
+  "target_app_or_js_executed": false,
+  "test_environment": {
+    "node": "v26.11.1",
+    "typescript": "Version 5.9.3"
+  },
+  "refresh_is_sdk_adapter_policy_not_recovered_backend": true
+}

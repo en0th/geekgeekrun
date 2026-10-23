@@ -1,0 +1,38 @@
+{
+  "name": "@recovered/zhijue-ai-sdk",
+  "version": "0.2.1",
+  "description": "Recovered Zhijue login/session, AI HTTP/SSE, delivery and BOSS MQTT/protobuf SDK; not official",
+  "type": "module",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./contracts": "./contracts/ai-api-catalog.json"
+  },
+  "files": [
+    "src",
+    "dist",
+    "dist-examples",
+    "contracts",
+    "examples",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "build:examples": "tsc -p tsconfig.examples.json",
+    "test": "npm run build && npm run build:examples && node --test test/*.test.mjs",
+    "check:example": "tsc --noEmit -p tsconfig.examples.json",
+    "example:mock": "node examples/mock-workflow.mjs"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  },
+  "license": "AGPL-3.0-only"
+}
