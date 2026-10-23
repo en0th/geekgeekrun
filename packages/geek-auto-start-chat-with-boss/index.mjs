@@ -648,10 +648,10 @@ async function toRecommendPage (hooks) {
     }, { timeout: 30 * 1000 }).then(async (res) => ({
       body: await res.json().catch(() => null), httpStatus: res.status()
     })).catch(() => ({ body: null, httpStatus: 0 }))
-  page.goto(recommendJobPageUrl, { timeout: 1 * 1000 }).catch(e => { void e })
+  await page.goto(recommendJobPageUrl, { waitUntil: 'domcontentloaded', timeout: 30 * 1000 }).catch(() => {})
   await sleep(3000)
   await page.waitForFunction(() => {
-    return document.readyState === 'complete'
+    return document.readyState === 'interactive' || document.readyState === 'complete'
   }, { timeout: 30 * 1000, polling: 100 }).catch(() => {
     if (/^(?:about:blank|chrome-error:|about:neterror)/.test(page.url())) throw taskBrowserError('blank')
     throw bossLoginError({ status: 'unknown', detail: 'BOSS页面未能完成加载，凭证已保留；请检查网络或在浏览器中完成验证' })
@@ -679,7 +679,9 @@ async function toRecommendPage (hooks) {
   }
   if (loginResult.status === 'valid') {
     await page.waitForFunction(({ recommendJobPageUrl }) => {
-      return location.href.startsWith(recommendJobPageUrl) && document.readyState === 'complete'
+      const view = document.querySelector('.page-jobs-main')?.__vue__
+      return location.href.startsWith(recommendJobPageUrl) &&
+        (document.readyState === 'interactive' || document.readyState === 'complete') && Array.isArray(view?.jobList)
     }, { timeout: 30 * 1000, polling: 100 }, { recommendJobPageUrl }).catch(() => {
       throw bossLoginError({ status: 'unknown', detail: '登录后未能确认岗位页面，凭证已保留；请在BOSS检查页面后恢复任务' })
     })
@@ -1925,6 +1927,7 @@ async function runBrowserLoop (hooks) {
         autoStartChatEventBus.emit('BOSS_LIST_RESPONSE', summary)
       }
     })
+    await jobResponseMonitor.assertHealthy()
     hooks.pageGotten?.call(page)
     const ownPage = page
     // tell the task as soon as BOSS shows a verification page, and when the user has passed it

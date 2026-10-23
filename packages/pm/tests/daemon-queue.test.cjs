@@ -313,13 +313,18 @@ test('a crashed task keeps its turn while it is restarted', async () => {
   } finally { d.close() }
 })
 
-test('finished runs are kept in the history file across daemon restarts', async () => {
+test('finished runs are kept in the history file across daemon restarts', async t => {
   const fs = require('fs')
-  const file = path.join(fs.mkdtempSync(path.join(tmpdir(), 'ggr-hist-')), 'task-history.json')
+  const dir = fs.mkdtempSync(path.join(tmpdir(), 'ggr-hist-'))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  const file = path.join(dir, 'task-history.json')
   const d = await startDaemon(60000, { GEEKGEEKRUND_TASK_HISTORY_FILE: file })
   try {
     await d.start(POLL, { FAKE_KIND: 'finite', FAKE_MS: '200' }, ['--run-record-id=7', '--run-mode=collect'])
-    await sleep(600)
+    // Slow hosts can still be starting the child after a fixed delay. Wait for
+    // the finished transition before shutdown, so the history must be durable.
+    await d.waitForStatus(state => !state.workers.length && state.history.some(row =>
+      row.workerId === POLL && row.runRecordId === 7 && row.outcome === 'finished'))
   } finally { d.close() }
   const saved = JSON.parse(fs.readFileSync(file, 'utf8'))
   assert.equal(saved[0].workerId, POLL)
