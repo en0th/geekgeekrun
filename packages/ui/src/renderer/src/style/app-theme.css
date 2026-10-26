@@ -1,6 +1,10 @@
 /* One light-theme palette for every renderer window and body-teleported overlay.
    Import after Element Plus; local layouts must not replace semantic button colours. */
 :root {
+  --ggr-font-size-page: 24px;
+  --ggr-font-size-section: 18px;
+  --ggr-font-size-body: 14px;
+  --ggr-font-size-small: 12px;
   --el-color-primary: #1668dc;
   --el-color-primary-light-3: #5c95e7;
   --el-color-primary-light-5: #8bb4ee;

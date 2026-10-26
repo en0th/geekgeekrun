@@ -89,9 +89,9 @@ test('minimized controls do not wait for IntersectionObserver or stale painted h
   assert.ok(!f.calls.includes('activate'))
 })
 
-test('background choice survives task snapshots with explicit false and defaults enabled', () => {
+test('legacy window choice remains readable but runtime always uses background', () => {
   assert.equal(readRunSettings({}).runInBackground, true)
-  assert.equal(readRunSettings({ autoChatRunInBackground: false }).runInBackground, false)
+  assert.equal(readRunSettings({ autoChatRunInBackground: false }).runInBackground, true)
   const config = jobConfigSnapshot({ 'boss.json': { autoChatRunInBackground: false }, 'target-company-list.json': [] })
   assert.equal(config['boss.json'].autoChatRunInBackground, false)
 })

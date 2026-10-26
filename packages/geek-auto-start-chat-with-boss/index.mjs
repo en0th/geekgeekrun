@@ -51,6 +51,15 @@ import { readRunSettings } from './run-settings.mjs'
 import { isSecurityCheckUrl, waitForSecurityCheck } from './security-check.mjs'
 import { classifyBossLoginResponse, bossLoginError } from '@geekgeekrun/utils/boss-login.mjs'
 import { bindRunAccount } from './run-account.mjs'
+import { createDailyQuotaStore, dayKey } from './daily-chat-quota.mjs'
+import { normalizeRunPolicy, RUN_POLICY_FILE } from './run-policy.mjs'
+const dailyQuota = createDailyQuotaStore(storageFilePath)
+const dailyLimit = () => normalizeRunPolicy(readConfigFile(RUN_POLICY_FILE), { legacy: true }).dailyLimit
+const publishDailyQuota = () => {
+  if (runAccountId && !isCollectMode) autoStartChatEventBus.emit('TASK_PROGRESS', {
+    dailyQuota: dailyQuota.status(runAccountId, dailyLimit())
+  })
+}
 import { applyJobNatureFilter } from './job-nature-filter.mjs'
 import { watchJobResponses } from './boss-job-responses.mjs'
 import { createRunBudget, budgetStateError } from './run-budget.mjs'
@@ -639,6 +648,20 @@ async function setFilterCondition (selectedFilters, source) {
   return true
 }
 
+export async function recheckAfterRest() {
+  await runBudget?.checkpoint('定时休息结束，检查运行保护')
+  const response = await page.evaluate(async () => {
+    const res = await fetch('https://www.zhipin.com/wapi/zpuser/wap/getUserInfo.json', {
+      credentials: 'include', signal: AbortSignal.timeout(10000)
+    })
+    return { httpStatus: res.status, body: await res.json().catch(() => null) }
+  }).catch(() => ({ httpStatus: 0, body: null }))
+  const result = classifyBossLoginResponse(response.httpStatus, response.body)
+  if (result.status !== 'valid') throw bossLoginError(result)
+  bindRunAccount(runAccountId, response.body.zpData.encryptUserId)
+  if (!isCollectMode) { dailyQuota.assert(runAccountId, dailyLimit()); publishDailyQuota() }
+}
+
 async function toRecommendPage (hooks) {
   let userInfoPromise = page.waitForResponse((response) => {
       if (response.url().startsWith('https://www.zhipin.com/wapi/zpuser/wap/getUserInfo.json')) {
@@ -685,10 +708,17 @@ async function toRecommendPage (hooks) {
     }, { timeout: 30 * 1000, polling: 100 }, { recommendJobPageUrl }).catch(() => {
       throw bossLoginError({ status: 'unknown', detail: '登录后未能确认岗位页面，凭证已保留；请在BOSS检查页面后恢复任务' })
     })
+    bindRunAccount(readConfigFile('boss.json').autoChatExpectedAccountId, userInfoResponse.zpData.encryptUserId)
     runAccountId = bindRunAccount(runAccountId, userInfoResponse.zpData.encryptUserId)
   }
   hooks.pageLoaded?.call()
   await hooks.userInfoResponse?.promise({ userInfoResponse, browser, httpStatus })
+  if (loginResult.status === 'valid' && !isCollectMode) {
+    const seed = await hooks.dailyQuotaSeed?.promise(0, { accountId: runAccountId, day: dayKey() })
+    dailyQuota.seed(runAccountId, seed ?? 0)
+    publishDailyQuota()
+    dailyQuota.assert(runAccountId, dailyLimit())
+  }
   if (loginResult.status !== 'valid') {
     autoStartChatEventBus.emit('LOGIN_STATUS_INVALID', {
       userInfoResponse
@@ -1674,6 +1704,7 @@ async function toRecommendPage (hooks) {
           //#region click the chat button
           await checkJobResponses()
           runBudget?.checkpoint()
+          dailyQuota.assert(runAccountId, dailyLimit())
           if (computedSourceList[currentSourceIndex].type === 'company') {
             const live = await page.evaluate(() => {
               const root = document.querySelector('.page-company-position')?.__vue__
@@ -1683,6 +1714,8 @@ async function toRecommendPage (hooks) {
             assertCompanyPlatformFilters(computedSourceList[currentSourceIndex], live.row, live.detail, filterCondition)
             if (live.row?.encryptJobId !== targetJobData.jobInfo.encryptId) throw new Error('AUTO_CHAT_COMPANY_SOURCE_NOT_CONFIRMED')
           }
+          const dailyOperation = `${runAccountId}:${targetJobData.jobInfo.encryptId}`
+          dailyQuota.reserve(runAccountId, dailyLimit(), dailyOperation)
           autoStartChatEventBus.emit('CHAT_CONFIRMATION', true)
           beginChatConfirmation(page)
           await clickTaskElement(page, startChatButtonProxy)
@@ -1715,6 +1748,8 @@ async function toRecommendPage (hooks) {
             }
           }
           const waitAndHandleChatSuccess = async ({ hasGoToChatPage = false } = {}) => {
+            dailyQuota.confirm(runAccountId, dailyOperation)
+            publishDailyQuota()
             await hooks.newChatStartup?.promise(
               targetJobData,
               {
@@ -1728,6 +1763,7 @@ async function toRecommendPage (hooks) {
             const rotateSource = countSourceSuccess()
             autoStartChatEventBus.emit('TASK_PROGRESS', { kind: 'sent', detail: 'BOSS已确认开聊成功' })
             await storeStorage(page)
+            dailyQuota.assert(runAccountId, dailyLimit())
             if (rotateSource) {
               autoStartChatEventBus.emit('TASK_PROGRESS', { detail: `本来源已开聊 ${sourceSuccessCount} 个岗位，达到换源数量（${perSourceSuccessLimit}），切换下一个来源`, state: 'searching' })
               chatSourceRotationDone = true
@@ -1750,7 +1786,10 @@ async function toRecommendPage (hooks) {
           }
           const handleAddFriendResponse = async (res, { hasGoToChatPage = false } = {}) => {
             const access = classifyBossLoginResponse(200, res)
-            if (access.status === 'restricted' || access.status === 'invalid') throw bossLoginError(access)
+            if (access.status === 'restricted' || access.status === 'invalid') {
+              dailyQuota.rejected(runAccountId, dailyOperation)
+              throw bossLoginError(access)
+            }
             if (res.code === 0) {
               await waitAndHandleChatSuccess({ hasGoToChatPage })
             }
@@ -1792,6 +1831,10 @@ async function toRecommendPage (hooks) {
               )
             ) {
               // startup chat error, may the chance of today has used out
+              dailyQuota.platformExhausted(runAccountId, dailyOperation)
+              publishDailyQuota()
+              autoStartChatEventBus.emit('CHAT_CONFIRMATION', false)
+              finishChatConfirmation(page)
               await storeStorage(page)
               throw new Error('STARTUP_CHAT_ERROR_DUE_TO_TODAY_CHANCE_HAS_USED_OUT')
             }
@@ -1838,11 +1881,6 @@ async function toRecommendPage (hooks) {
                 break iterateFilterCondition
               }
               case 'STARTUP_CHAT_ERROR_DUE_TO_TODAY_CHANCE_HAS_USED_OUT': {
-                let nextTrySeconds = 60 * 60
-                const msg = `Today chance has used out. Just explore positions you\'ve chatted. New chat will be tried to start after ${nextTrySeconds} seconds.`
-                hooks.errorEncounter?.call(msg)
-                console.error(msg)
-                await sleep(nextTrySeconds * 1000)
                 throw err
               }
               case 'STARTUP_CHAT_ERROR_WITH_UNKNOWN_ERROR': {

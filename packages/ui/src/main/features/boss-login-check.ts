@@ -12,7 +12,7 @@ export type BossLoginStatus = 'missing' | 'valid' | 'invalid' | 'restricted' | '
 
 const TIMEOUT_MS = 10 * 1000
 
-export async function checkBossLoginStatus(): Promise<{ status: BossLoginStatus; detail: string }> {
+export async function checkBossLoginStatus(): Promise<{ status: BossLoginStatus; detail: string; accountId?: string }> {
   const cookies = readStorageFile('boss-cookies.json')
   if (!checkCookieListFormat(cookies)) return { status: 'missing', detail: '' }
   const cookie = cookieHeaderFor(cookies)
@@ -29,10 +29,15 @@ export async function checkBossLoginStatus(): Promise<{ status: BossLoginStatus;
       redirect: 'manual',
       signal: AbortSignal.timeout(TIMEOUT_MS)
     })
-    return interpretUserInfoResponse(res.status, await res.text()) as {
-      status: BossLoginStatus
-      detail: string
+    const text = await res.text()
+    const result = interpretUserInfoResponse(res.status, text) as { status: BossLoginStatus; detail: string; accountId?: string }
+    if (result.status === 'valid') {
+      try {
+        const id = JSON.parse(text)?.zpData?.encryptUserId
+        if (typeof id === 'string' && id.trim()) result.accountId = id.trim()
+      } catch { /* Unknown identity cannot authorize scheduled sends. */ }
     }
+    return result
   } catch (error) {
     const timedOut = (error as Error)?.name === 'TimeoutError'
     return {

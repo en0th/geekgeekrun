@@ -15,7 +15,7 @@ const bossKeys = [
   'posterHrNotMatchStrategy', 'blockCompanyNameRegExpStr', 'blockCompanyNameRegMatchStrategy',
   'markAsNotActiveSelectedTimeRange', 'jobNotActiveStrategy', 'fieldsForUseCommonConfig', 'jobSourceList',
   'autoChatRunMode', 'autoChatRunInBackground', 'collectOnlyMatchingJobs', 'skipUnparseableSalaryJob', 'autoChatPerSourceSuccessLimit',
-  'autoChatNoMatchStreakLimit', 'autoChatFilterCombinationLimit', 'autoChatRunBudget', 'jobListLoadWaitSeconds', 'jobDetailViewWaitSeconds',
+  'autoChatNoMatchStreakLimit', 'autoChatFilterCombinationLimit', 'autoChatRunBudget', 'autoChatRunPolicy', 'autoChatTimedRest', 'autoChatExpectedAccountId', 'jobListLoadWaitSeconds', 'jobDetailViewWaitSeconds',
   'isSageTimeEnabled', 'sageTimeOpTimes', 'sageTimePauseMinute'
 ]
 const copy = value => JSON.parse(JSON.stringify(value))

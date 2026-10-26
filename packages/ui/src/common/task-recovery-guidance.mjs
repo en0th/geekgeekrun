@@ -1,5 +1,6 @@
 import { checkpointRecovery } from './task-recovery.mjs'
 import { normalizeRunBudget } from '@geekgeekrun/geek-auto-start-chat-with-boss/run-settings.mjs'
+import { ACCOUNT_DAILY_CHAT_LIMIT, beijingDay } from '@geekgeekrun/geek-auto-start-chat-with-boss/run-policy.mjs'
 
 export function runBudgetHasRoom(limits, usage) {
   if (!usage || !['requests', 'detailRequests', 'activeMs'].every(key => Number.isFinite(usage[key]) && usage[key] >= 0)) return false
@@ -27,13 +28,16 @@ const plans = {
   95: ['先核对页面城市筛选', 'BOSS页面上的城市选择未能确认，已暂停。', '核对页面城市筛选后继续；原有求职条件仍然生效。', 'filters', '核对页面筛选'],
   97: ['先检查运行数据', '暂时无法确认累计用量，任务已暂停。', '检查原数据目录和浏览器是否可用，再继续；已用额度不会清零。', 'data', '检查数据目录'],
   98: ['先检查数据目录', '任务暂时无法读写数据，已停止。', '检查可用空间和读写权限，保留原文件；无法自行处理时可反馈问题。', 'data', '检查数据目录'],
-  99: ['先检查浏览器显示方式', '后台窗口状态未能确认，任务已暂停。', '可以改为显示普通浏览器窗口，再继续；不会改变筛选和运行方式。', 'display', '检查显示方式'],
+  99: ['先检查浏览器', '后台窗口状态未能确认，任务已暂停。', '请检查或更新浏览器后再继续；不会改变筛选和运行方式。', 'browser', '检查浏览器设置'],
+  102: ['已达到今日自动打招呼目标', '本软件今日自动打招呼人数已达到你设置的数量，结果和进度保留。', '查看结果，或明确为今天追加数量；不会自动清零。', 'daily-quota', '追加今日数量'],
+  103: ['该账号今日沟通额度已用尽', 'BOSS已阻止继续开聊，自动打招呼已停止，结果保留。', '可查看结果；请在平台额度恢复后再运行，换号不能直接继续旧任务。', 'results', '查看本次结果'],
+  104: ['先检查每日数量记录', '每日数量暂时无法确认，任务已停止。', '检查数据目录或恢复备份，不会清零后发送。', 'data', '检查数据目录'],
   100: ['先核对BOSS页面筛选', '页面筛选没有得到确认，任务已暂停。', '核对薪资、经验、学历等页面条件，再继续；系统不会自动放宽范围。', 'filters', '核对页面筛选'],
   101: ['先检查浏览器和网络', '任务浏览器、页面或连接中断，查找已暂停。', '确认浏览器和网络可用后继续；如页面已关闭，继续会重新打开它。', 'browser', '检查浏览器设置'],
 }
 
 export function taskRecoveryGuidance({ checkpoint = null, history = [], code = null, progress = {},
-  active = false, readError = false, currentMode, runBudget, task = 'auto' } = {}) {
+  active = false, readError = false, currentMode, runBudget, task = 'auto', today = beijingDay() } = {}) {
   if (readError === 'service') return {
     kind: 'read-error', title: '暂时无法连接任务服务',
     message: '最新运行状态尚未确认，保留上次已知信息。',
@@ -51,7 +55,7 @@ export function taskRecoveryGuidance({ checkpoint = null, history = [], code = n
   if (recovery.reason === 'send-unconfirmed' || exitCode === 87) return {
     kind: 'send-unconfirmed', title: '先核对上次发送结果',
     message: '上次消息是否发送成功还不能确认，任务保持停止。',
-    nextStep: '先在BOSS会话核对结果。此任务不能直接继续；核对后可结束本次任务，再按需新建。已有数据保留。',
+    nextStep: '先在BOSS会话核对结果。找岗位任务可到设置→任务运行，核对待确认发送并保守计入今日已用人数；原任务不能直接继续，请结束后按需新建。已有数据保留。',
     primaryAction: 'boss-chat', primaryLabel: '去BOSS核对', canContinue: false,
   }
   if (readError) return {
@@ -98,14 +102,25 @@ export function taskRecoveryGuidance({ checkpoint = null, history = [], code = n
   if (exitCode === 96) {
     const room = runBudgetHasRoom(runBudget, progress.budget?.usage ?? checkpoint?.progress?.budget?.usage)
     return {
-      kind: 'budget', title: room ? '上限已调整，可以继续' : '本次查找已达到上限',
+      kind: 'budget', title: room ? '运行模式已调整，可以继续' : '本轮已达到运行保护上限',
       message: '已保存的岗位、进度和累计用量保留。',
-      nextStep: room ? '继续后用量接着累计，不会重新从零开始。' : '先调整本次上限，再继续运行；已用额度不会清零。',
-      primaryAction: room ? 'continue' : 'limits', primaryLabel: room ? '继续运行' : '调整运行上限',
+      nextStep: room ? '继续后用量接着累计，不会重新从零开始。' : '可在设置中改用深度模式后继续；若仍达到上限，请结束本轮后再新建任务。每日打招呼人数不会因此清零。',
+      primaryAction: room ? 'continue' : 'limits', primaryLabel: room ? '继续运行' : '查看任务运行设置',
       canContinue: Boolean(checkpoint && recovery.canResume && room),
     }
   }
   if (exitCode === 92 || (!checkpoint && (exitCode === null || exitCode === 0))) return null
+  const quota = progress.dailyQuota ?? checkpoint?.progress?.dailyQuota
+  if (exitCode === 102 && quota?.day && quota.day !== today) return {
+    kind: 'daily-goal', title: '可以检查今天的自动目标', message: '上次因每日目标暂停，原有进度保留。',
+    nextStep: '继续前会核对原账号、今日累计和平台状态。',
+    primaryAction: 'daily-quota', primaryLabel: '检查今日目标并继续', canContinue: false,
+  }
+  if (exitCode === 102 && (quota?.limit >= ACCOUNT_DAILY_CHAT_LIMIT || quota?.confirmed >= ACCOUNT_DAILY_CHAT_LIMIT)) return {
+    kind: 'daily-ceiling', title: '已达到该账号今日自动上限', message: '本软件每日最多自动打招呼150人，结果和进度保留。',
+    nextStep: '查看本次结果，明日再运行。手机等入口的沟通无法准确计入本软件统计。',
+    primaryAction: 'results', primaryLabel: '查看本次结果', canContinue: false,
+  }
   const row = plans[exitCode] ?? (checkpoint && recovery.canResume ? plans[0] : null)
   if (!row) return {
     kind: 'unknown', title: '任务已停止，需要检查', message: '任务遇到暂时无法确认的异常。',
@@ -113,7 +128,7 @@ export function taskRecoveryGuidance({ checkpoint = null, history = [], code = n
     primaryAction: 'feedback', primaryLabel: '反馈问题', canContinue: false,
   }
   return { kind: 'paused', title: row[0], message: task === 'follow' ? row[1].replaceAll('查找', '消息跟进') : row[1], nextStep: row[2],
-    primaryAction: row[3], primaryLabel: row[4], canContinue: Boolean(checkpoint && recovery.canResume),
+    primaryAction: row[3], primaryLabel: row[4], canContinue: Boolean(checkpoint && recovery.canResume && ![102, 103].includes(exitCode)),
     canRestart: task === 'follow',
     continueLabel: task === 'auto' ? '处理后继续运行' : '重新开始',
   }

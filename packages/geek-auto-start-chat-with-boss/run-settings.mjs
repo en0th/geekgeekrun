@@ -59,7 +59,7 @@ function rotationLimit(value, fallback) {
 
 export function readRunSettings(bossConfig = {}) {
   return {
-    runInBackground: bossConfig.autoChatRunInBackground !== false,
+    runInBackground: true,
     runBudget: normalizeRunBudget(bossConfig.autoChatRunBudget),
     filterCombinationLimit: filterCombinationLimit(bossConfig.autoChatFilterCombinationLimit),
     runMode: RUN_MODES.includes(bossConfig.autoChatRunMode) ? bossConfig.autoChatRunMode : DEFAULT_RUN_MODE,

@@ -1,6 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { cookieHeaderFor, interpretUserInfoResponse } from '../src/common/boss-login.mjs'
+import fs from 'node:fs'
+import vm from 'node:vm'
+import { transform } from 'esbuild'
+import { cookieHeaderFor, interpretUserInfoResponse, BOSS_USER_INFO_URL } from '../src/common/boss-login.mjs'
 
 const cookie = (name, domain, extra = {}) => ({
   name,
@@ -46,4 +49,34 @@ test('platform restrictions and unknown failures do not invalidate credentials',
 test('pages that are not the API answer are reported as unknown', () => {
   assert.equal(interpretUserInfoResponse(200, '<html>安全验证</html>').status, 'unknown')
   assert.equal(interpretUserInfoResponse(502, '{"code":1}').status, 'unknown')
+})
+
+const loginSource = fs.readFileSync(new URL('../src/main/features/boss-login-check.ts', import.meta.url), 'utf8')
+const loginBody = (await transform(loginSource.slice(loginSource.indexOf('export async function checkBossLoginStatus')).replace('export async function', 'async function'), { loader: 'ts' })).code
+function identityFixture() {
+  let session = 'a-first-login'
+  const ids = { 'a-first-login': 'account-a', 'b-login': 'account-b', 'a-new-cookie': 'account-a' }
+  const ctx = vm.createContext({ cookieHeaderFor, interpretUserInfoResponse, BOSS_USER_INFO_URL, TIMEOUT_MS: 10000, AbortSignal,
+    checkCookieListFormat: cookies => Array.isArray(cookies) && cookies.length > 0,
+    readStorageFile: () => [{ name: 'wt2', value: session, domain: '.zhipin.com', session: true }],
+    fetch: async (url, options) => {
+      assert.equal(url, BOSS_USER_INFO_URL); assert.equal(options.headers.Cookie, 'wt2=' + session)
+      return { status: 200, text: async () => JSON.stringify({ code: 0, zpData: { encryptUserId: ids[session], name: '相同昵称' } }) }
+    },
+  })
+  vm.runInContext(loginBody, ctx)
+  return { check: () => ctx.checkBossLoginStatus(), switchTo: value => { session = value } }
+}
+
+test('the actual login check identifies A/B/A by returned user ID rather than cookies or nickname', async () => {
+  const f = identityFixture()
+  assert.equal((await f.check()).accountId, 'account-a')
+  f.switchTo('b-login'); assert.equal((await f.check()).accountId, 'account-b')
+  f.switchTo('a-new-cookie'); assert.equal((await f.check()).accountId, 'account-a')
+})
+
+test('a response without an account ID cannot authorize a guessed identity', async () => {
+  const f = identityFixture(); f.switchTo('missing-id')
+  const result = await f.check()
+  assert.equal(result.status, 'unknown'); assert.equal(result.accountId, undefined)
 })

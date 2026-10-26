@@ -1,7 +1,7 @@
 {
   "name": "geekgeekrun-ui",
   "license": "AGPL-3.0-only",
-  "version": "0.23.0",
+  "version": "0.23.6",
   "description": "BOSS 炸弹 - 自动开聊BOSS，助力每位打工人求职！",
   "main": "./out/main/index.js",
   "author": "geekgeekrun",

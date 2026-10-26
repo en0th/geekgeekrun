@@ -257,6 +257,7 @@ test('the shipped final click rechecks company and job after the last asynchrono
     const confirmations = []
     const context = { page: f.page, computedSourceList: [source], currentSourceIndex: 0, filterCondition: {},
       targetJobData: detail('first'), runBudget: null, assertCompanyPlatformFilters, startChatButtonProxy: {}, beginChatConfirmation,
+      dailyQuota: { assert() {}, reserve() {} }, runAccountId: 'fixture', dailyLimit: () => 100,
       autoStartChatEventBus: { emit: (event, pending) => { assert.equal(event, 'CHAT_CONFIRMATION'); confirmations.push(pending) } },
       checkJobResponses: async () => {
         if (mode === 'changed-brand') f.view.currentJob = row('first', other)

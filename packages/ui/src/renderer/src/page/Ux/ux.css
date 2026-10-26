@@ -1,6 +1,7 @@
 /* Layout only: controls and overlays share the app-wide Element Plus theme. */
 :root {
   --replica-scale: 1;
+  --ggr-number-input-width: 112px;
 }
 .ux-explanation {
   margin: 8px 0;
@@ -360,7 +361,8 @@ html:not(.replica-child) body {
   width: 100%;
 }
 .ux-field .el-input-number {
-  width: 100%;
+  width: var(--ggr-number-input-width);
+  max-width: 100%;
 }
 .ux-required {
   display: inline-flex;
@@ -442,8 +444,9 @@ html:not(.replica-child) body {
   min-width: 180px;
 }
 .ux-inline .el-input-number {
-  flex: 1;
-  min-width: 140px;
+  flex: 0 0 auto;
+  width: var(--ggr-number-input-width);
+  min-width: 0;
 }
 .ux-condition {
   border: 1px solid var(--el-border-color-lighter);
@@ -759,8 +762,9 @@ html:not(.replica-child) body {
   margin: 8px 0;
 }
 .ux-rhythm-line .el-input-number {
-  width: 96px;
+  width: var(--ggr-number-input-width);
 }
+.ux-rhythm-line > span:first-child { flex: 0 0 84px; }
 .ux-inline > .ux-field {
   align-self: flex-start;
 }
@@ -1137,13 +1141,13 @@ html:not(.replica-child) body {
   box-shadow: none;
 }
 .ux-inner--config .ux-card h2 {
-  font-size: 20px;
+  font-size: var(--ggr-font-size-section);
   font-weight: 600;
   line-height: 1.5;
   margin: 0 0 24px;
 }
 .ux-inner--config .ux-card h3 {
-  font-size: 17px;
+  font-size: var(--ggr-font-size-body);
   font-weight: 600;
   line-height: 1.5;
   margin: 0 0 12px;
@@ -1473,13 +1477,7 @@ html:not(.replica-child) body {
   margin-left: 0;
 }
 
-/* Two-model settings: one reading column and a persistent action bar. */
-.ux-inner.ux-inner--ai {
-  padding-bottom: calc(var(--ux-ai-footer-height, 76px) + 24px);
-}
-.ux-main:has(.ux-inner--ai) {
-  scroll-padding-bottom: calc(var(--ux-ai-footer-height, 76px) + 24px);
-}
+/* Two-model settings: one reading column, with actions below the form. */
 .ux-inner--ai #ai-model-settings {
   max-width: 968px;
 }
@@ -1523,32 +1521,25 @@ html:not(.replica-child) body {
 .ux-ai-ok {
   color: #238b80;
 }
-.ux-footer.ux-footer--ai {
-  display: block;
-  padding: 12px 20px;
-}
-.ux-footer--ai .ux-footer-actions {
+.ux-settings-actions {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
   gap: 12px;
   flex-wrap: wrap;
+  margin-top: 24px;
 }
-.ux-footer--ai .ux-footer-actions > .ux-hint {
-  margin: 0 auto 0 0;
+.ux-settings-actions > .ux-hint {
+  margin: 0;
   line-height: 24px;
 }
-.ux-footer--ai .el-button + .el-button {
+.ux-settings-actions .el-button + .el-button {
   margin-left: 0;
 }
-.ux-footer--ai .el-button {
+.ux-settings-actions .el-button {
   flex-shrink: 0;
 }
 @media (max-width: 720px) {
-  .ux-footer.ux-footer--ai {
-    padding: 10px 12px;
-  }
-  .ux-footer--ai .ux-footer-actions > .ux-hint {
+  .ux-settings-actions > .ux-hint {
     flex-basis: 100%;
   }
   .ux-ai-model > h3 {
@@ -2151,7 +2142,7 @@ html:not(.replica-child) body {
   opacity: 0.6;
 }
 .ux-data-card .el-input-number {
-  width: 140px;
+  width: var(--ggr-number-input-width);
 }
 
 /* left navigation groups */
@@ -3313,3 +3304,57 @@ label > .ux-tip {
   border-color: var(--el-color-primary);
   outline: 2px solid var(--el-color-primary-light-8);
 }
+.ux-running-expectation, .ux-start-schedule {
+  padding: 16px 20px;
+  margin: 16px 0;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 8px;
+  background: var(--el-fill-color-light);
+  line-height: 1.65;
+}
+.ux-running-expectation p { margin: 4px 0; }
+.ux-start-schedule input[type="datetime-local"] {
+  display: block;
+  margin: 12px 0;
+  padding: 8px 12px;
+  max-width: 100%;
+  min-height: 40px;
+  box-sizing: border-box;
+  font: inherit;
+  color: var(--el-text-color-primary);
+  border: 1px solid var(--el-border-color);
+  border-radius: 6px;
+  background: var(--el-fill-color-blank);
+}
+.ux-start-schedule input:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
+.ux-scheduled-runs { margin-bottom: 24px; }
+.ux-scheduled-runs h2 { margin: 0; font-size: 20px; }
+.ux-schedule-pagination { justify-content: flex-end; margin-top: 16px; }
+
+/* One typography scale for every settings category, including AI's form layout. */
+.ux-inner--settings { font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", sans-serif; font-size: var(--ggr-font-size-body); line-height: 1.6; }
+.ux-inner--settings .ux-page-title h1 { font-size: var(--ggr-font-size-page); font-weight: 600; line-height: 1.5; }
+.ux-inner--settings .ux-card h2 { font-size: var(--ggr-font-size-section); font-weight: 600; line-height: 1.5; margin: 0 0 20px; }
+.ux-inner--settings .ux-card h3 { font-size: var(--ggr-font-size-body); font-weight: 600; line-height: 1.6; }
+.ux-inner--settings .ux-field > label,
+.ux-inner--settings .ux-card .el-button,
+.ux-inner--settings .ux-card .el-input__inner,
+.ux-inner--settings .ux-card .el-textarea__inner,
+.ux-inner--settings .ux-card .el-select__wrapper,
+.ux-inner--settings .ux-card .el-radio__label,
+.ux-inner--settings .ux-card .el-checkbox__label,
+.ux-inner--settings .ux-card .el-alert__title { font-size: var(--ggr-font-size-body); }
+.ux-inner--settings .ux-field > label { font-weight: 500; }
+.ux-inner--settings .ux-hint { font-size: var(--ggr-font-size-small); line-height: 1.6; }
+.ux-settings-help.el-popper { font-size: var(--ggr-font-size-body); line-height: 1.7; color: var(--el-text-color-regular); }
+.ux-settings-help-trigger { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 24px; height: 24px; padding: 0; border: 0; background: transparent; color: var(--el-text-color-secondary); font: inherit; cursor: pointer; border-radius: 4px; }
+.ux-settings-help-trigger:hover { color: var(--el-color-primary); }
+.ux-settings-help-trigger:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
+.ux-source-rotation { margin-top: 24px; }
+.ux-source-rotation .ux-disclosure { margin-top: 0; }
+.ux-source-switch-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; font-size: var(--ggr-font-size-body); }
+.ux-source-switch-row > span:first-child { flex: 0 0 140px; }
+.ux-source-switch-row .el-input-number { flex: 0 0 auto; width: var(--ggr-number-input-width); }
+.ux-preview-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
+.ux-preview-button.el-button { min-height: 40px; padding: 10px 18px; border-color: var(--el-color-primary-light-3); background: var(--el-color-primary-light-9); }
+.ux-preview-button.el-button:hover { background: var(--el-color-primary); border-color: var(--el-color-primary); color: white; }

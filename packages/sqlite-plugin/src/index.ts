@@ -217,6 +217,20 @@ export default class SqlitePlugin {
       if (!this.userInfo?.encryptUserId) throw new Error('LOGIN_STATUS_UNKNOWN')
     })
 
+    hooks.dailyQuotaSeed?.tapPromise('SqlitePlugin', async (seed: number, { accountId, day }: { accountId: string; day: string }) => {
+      const ds = await this.initPromise
+      const from = new Date(`${day}T00:00:00+08:00`)
+      const to = new Date(from.getTime() + 86400000)
+      const count = await ds.getRepository(ChatStartupLog).createQueryBuilder('chat')
+        .where('chat.encryptCurrentUserId = :accountId', { accountId })
+        .andWhere('chat.date >= :from AND chat.date < :to', {
+          from: from.toISOString().replace('T', ' ').replace('Z', ''),
+          to: to.toISOString().replace('T', ' ').replace('Z', '')
+        })
+        .andWhere('chat.chatStartupFrom IS NULL').getCount()
+      return Math.max(seed || 0, count)
+    })
+
     hooks.newChatStartup.tapPromise("SqlitePlugin", async (_jobInfo, { chatStartupFrom = ChatStartupFrom.AutoFromRecommendList, jobSource = undefined } = {}) => {
       const ds = await this.initPromise;
       return await saveChatStartupRecord(ds, _jobInfo, this.userInfo, {

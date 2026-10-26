@@ -14,6 +14,7 @@ function context(successLimit = 20, noMatchLimit = 30) {
   const events = []
   const ctx = vm.createContext({
     perSourceSuccessLimit: successLimit, noMatchStreakLimit: noMatchLimit, finishChatConfirmation,
+    dailyQuota: { confirm() {}, assert() {} }, dailyOperation: 'fixture', dailyLimit: () => 100, publishDailyQuota() {},
     blockJobNotSuit: new ExpiringBlockSet(), blockBossNotActive: new ExpiringBlockSet(), blockBossNotNewChat: new Set(),
     positionFingerprint: '', computedSourceList: [{ type: 'recommend' }, { type: 'search' }],
     autoStartChatEventBus: { emit: (type, data) => events.push({ type, ...data }) }
@@ -141,7 +142,7 @@ test('greeting at the threshold emits one success and saves browser state', asyn
     hooks: { newChatStartup: { promise: async () => {} } },
     ChatStartupFrom: { AutoFromRecommendList: 1 }, JobSource: { recommend: 1 },
     page: { $: async () => null }, storeStorage: async () => { saves++ }, sleepWithRandomDelay: async () => {},
-    chatSourceRotationDone: false
+    chatSourceRotationDone: false, dailyQuota: { confirm() {}, assert() {} }, dailyOperation: 'fixture', dailyLimit: () => 100, publishDailyQuota() {}
   })
   const start = source.indexOf('          const waitAndHandleChatSuccess =')
   const end = source.indexOf('          const handleAddFriendResponse =', start)

@@ -1,6 +1,6 @@
 import DingtalkPlugin from '@geekgeekrun/dingtalk-plugin/index.mjs'
 import { app } from 'electron'
-import { SyncHook, AsyncSeriesHook } from 'tapable'
+import { SyncHook, AsyncSeriesHook, AsyncSeriesWaterfallHook } from 'tapable'
 import {
   readConfigFile,
   getPublicDbFilePath
@@ -102,7 +102,8 @@ const runAutoChat = async () => {
     importRunState,
     resumeFromCurrentPosition,
     runBudgetStatus,
-    waitUntilSecurityCheckPassed
+    waitUntilSecurityCheckPassed,
+    recheckAfterRest
   } = await import('@geekgeekrun/geek-auto-start-chat-with-boss/index.mjs')
   closeForShutdown = closeBrowserWindow
   // the same run started again (继续任务, or restarted after making way for another task):
@@ -198,7 +199,8 @@ const runAutoChat = async () => {
     ) ||
     data?.jobInfo?.encryptId ||
     ''
-  autoStartChatEventBus.on('TASK_PROGRESS', ({ kind, detail, state, listSummary }) => {
+  autoStartChatEventBus.on('TASK_PROGRESS', ({ kind, detail, state, listSummary, dailyQuota }) => {
+    if (dailyQuota) { taskProgress.setExtras({ dailyQuota }); if (!kind && !detail) return }
     const named = (prefix) => (currentJob ? `${prefix}：${currentJob}` : '')
     const logText =
       kind === 'viewed'
@@ -221,6 +223,7 @@ const runAutoChat = async () => {
     pageLoaded: new SyncHook(),
     cookieWillSet: new AsyncSeriesHook(['cookies']),
     userInfoResponse: new AsyncSeriesHook(['userInfo']),
+    dailyQuotaSeed: new AsyncSeriesWaterfallHook<[number, { accountId: string; day: string }]>(['count', 'identity']),
     mainFlowWillLaunch: new AsyncSeriesHook(['args']),
     jobDetailIsGetFromRecommendList: new AsyncSeriesHook(['userInfo']),
     jobMatchedForCollection: new AsyncSeriesHook(['detail']),
@@ -231,11 +234,12 @@ const runAutoChat = async () => {
     noPositionFoundAfterTraverseAllJob: new SyncHook(),
     errorEncounter: new SyncHook(['errorInfo']),
     encounterEmptyRecommendJobList: new AsyncSeriesHook(['args']),
-    sageTimeEnter: new AsyncSeriesHook(['args']),
+    sageTimeEnter: new AsyncSeriesHook<[{ until?: number }]>(['args']),
     sageTimeExit: new AsyncSeriesHook(['args']),
     // between jobs; see yieldIfRequested
     checkpoint: new AsyncSeriesHook<[]>([])
   }
+  hooks.sageTimeExit.tapPromise('RunPolicyGuard', recheckAfterRest)
   initPlugins(hooks)
   attachCollectAcceptance({ hooks, events: autoStartChatEventBus, runMode, runRecordId })
   hooks.jobDetailIsGetFromRecommendList.tapPromise('TaskProgress', async (data) => {
@@ -261,12 +265,14 @@ const runAutoChat = async () => {
       'waiting'
     )
   )
-  hooks.sageTimeEnter.tapPromise('TaskProgress', async () =>
-    taskProgress.update(undefined, '定时休息中', 'resting')
-  )
-  hooks.sageTimeExit.tapPromise('TaskProgress', async () =>
+  hooks.sageTimeEnter.tapPromise('TaskProgress', async (data) => {
+    taskProgress.setExtras({ restUntil: data?.until || 0 })
+    taskProgress.update(undefined, '定时休息中，到时会重新检查运行条件后继续', 'resting')
+  })
+  hooks.sageTimeExit.tapPromise('TaskProgress', async () => {
+    taskProgress.setExtras({ restUntil: 0 })
     taskProgress.update(undefined, '休息结束，继续查找')
-  )
+  })
 
   autoStartChatEventBus.once('LOGIN_STATUS_INVALID', () => {})
 
@@ -295,6 +301,19 @@ const runAutoChat = async () => {
       if (shutdown.isStopping()) return
       if (await stopForStorage(err)) return
       if (await stopForBudget(err)) return
+      if (err instanceof Error && (/AUTO_CHAT_DAILY_/.test(err.message) || err.message === 'STARTUP_CHAT_ERROR_DUE_TO_TODAY_CHANCE_HAS_USED_OUT')) {
+        const platform = /PLATFORM_LIMIT|TODAY_CHANCE/.test(err.message)
+        const goal = err.message.includes('GOAL_REACHED')
+        const unconfirmed = err.message.includes('UNCONFIRMED')
+        taskProgress.update(undefined, (err as Error & { detail?: string }).detail || (platform
+          ? 'BOSS提示该账号今日沟通额度已用尽，自动打招呼已停止，结果和进度已保留。请在平台额度恢复后再运行。'
+          : '每日数量记录需检查，任务已暂停，不会清零后继续发送。'), 'blocked')
+        saveResume()
+        await closeBrowserWindow?.()
+        process.exit(platform ? AUTO_CHAT_ERROR_EXIT_CODE.PLATFORM_DAILY_LIMIT : goal ? AUTO_CHAT_ERROR_EXIT_CODE.DAILY_GOAL_REACHED
+          : unconfirmed ? AUTO_CHAT_ERROR_EXIT_CODE.MESSAGE_SEND_UNCONFIRMED : AUTO_CHAT_ERROR_EXIT_CODE.DAILY_QUOTA_UNAVAILABLE)
+        return
+      }
       if (err instanceof Error && err.message.includes('AUTO_CHAT_SECURITY_CHECK')) {
         pauseForSecurityCheck()
         let result
