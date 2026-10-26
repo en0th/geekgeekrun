@@ -7,12 +7,12 @@ import { normalizeRunPolicy, ACCOUNT_DAILY_CHAT_LIMIT } from '../../geek-auto-st
 
 const mainSource = fs.readFileSync(new URL('../src/main/features/run-policy.ts', import.meta.url), 'utf8')
 const mainBody = (await transform(mainSource.slice(mainSource.indexOf('export function readGlobalRunPolicy')).replace(/^export /gm, ''), { loader: 'ts' })).code
-function mainFixture({ midnight = false, loginAccount = 'a', saved = { dailyLimit: 130 } } = {}) {
+function mainFixture({ midnight = false, loginAccount = 'a', saved = { dailyLimit: 130 }, active = false } = {}) {
   let day = '2026-10-26', mutations = []
   const ctx = vm.createContext({ normalizeRunPolicy, RUN_POLICY_FILE: 'run-policy.json', storageFilePath: '/offline',
     readConfigFile: () => saved, writeConfigFile: async (name, value) => mutations.push(['save', name, value.dailyLimit]),
     dayKey: () => day, checkBossLoginStatus: async () => { if (midnight) day = '2026-10-27'; return { status: 'valid', accountId: loginAccount } },
-    sendToDaemon: async () => ({ workers: [], queue: [] }),
+    sendToDaemon: async () => ({ workers: active ? [{ workerId: 'geekAutoStartWithBossMain' }] : [], queue: [] }),
     createDailyQuotaStore: () => ({ addToday: (...args) => mutations.push(['add', ...args]), acknowledgePending: (...args) => mutations.push(['ack', ...args]), status: () => ({}) }),
   })
   vm.runInContext(mainBody, ctx)
@@ -54,6 +54,17 @@ test('additions verify the account and use the current global target rather than
   assert.deepEqual(valid.mutations, [['add', 'a', 20, 130]])
 })
 
+test('acknowledging a send requires a stopped task and the same verified account', async () => {
+  for (const options of [{ active: true }, { loginAccount: 'b' }]) {
+    const f = mainFixture(options)
+    await assert.rejects(f.ctx.acknowledgeDailyPending('a', '2026-10-26', 1), /暂停|账号/)
+    assert.equal(f.mutations.length, 0)
+  }
+  const valid = mainFixture()
+  await valid.ctx.acknowledgeDailyPending('a', '2026-10-26', 1)
+  assert.deepEqual(valid.mutations, [['ack', 'a', 1]])
+})
+
 const renderer = fs.readFileSync(new URL('../src/renderer/src/page/Ux/index.js', import.meta.url), 'utf8')
 const start = renderer.indexOf('    async function addTodayQuota(')
 const actionBody = renderer.slice(start, renderer.indexOf('    async function acknowledgeDaily(', start))
@@ -89,4 +100,20 @@ test('platform exhaustion, ceiling, pending sends and account changes never offe
 test('a fresh day with available allowance resumes through the checked path without adding anything', async () => {
   const f = uiFixture({ available: true, accountId: 'a', confirmed: 0, limit: 130, remaining: 130 })
   await f.run(); assert.equal(f.prompts.length, 0); assert.deepEqual(f.calls, [['resume']])
+})
+
+test('reconciliation asks for an explicit in-software confirmation and never retries or resumes a send', async () => {
+  const start = renderer.indexOf('    async function acknowledgeDaily(')
+  const body = renderer.slice(start, renderer.indexOf('    async function saveGlobalPace(', start))
+  for (const confirmed of [false, true]) {
+    const calls = [], prompts = [], messages = []
+    const ctx = vm.createContext({ loadDailyQuota: async () => ({ available: true, accountId: 'a', day: '2026-10-26', pendingCount: 1 }),
+      confirmBox: async (...args) => { prompts.push(args); return confirmed }, dailyInfo: { value: null },
+      ipc: async (...args) => { calls.push(args); return { pendingCount: 0 } }, R: { message: value => messages.push(value) },
+    })
+    vm.runInContext(body, ctx); await ctx.acknowledgeDaily()
+    assert.match(prompts[0][0], /不会重发，也不会恢复原任务/)
+    assert.equal(calls.length, confirmed ? 1 : 0)
+    if (confirmed) { assert.equal(calls[0][0], 'daily-quota-acknowledge'); assert.equal(calls[0][1].pendingCount, 1); assert.match(messages[0].message, /结束原任务/)}
+  }
 })

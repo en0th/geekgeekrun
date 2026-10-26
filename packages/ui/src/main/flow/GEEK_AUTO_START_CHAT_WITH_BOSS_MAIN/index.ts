@@ -25,20 +25,12 @@ import { getLastUsedAndAvailableBrowser } from '../DOWNLOAD_DEPENDENCIES/utils/b
 import { configWithBrowserAssistant } from '../../features/config-with-browser-assistant'
 import { attachCollectAcceptance } from '../../features/collect-acceptance'
 import { installWorkerShutdown } from '@geekgeekrun/utils/worker-shutdown.mjs'
+import { createAutomaticRetry } from '@geekgeekrun/geek-auto-start-chat-with-boss/automatic-retry.mjs'
 const { default: SqlitePlugin } = SqlitePluginModule
 
 let closeForShutdown: () => Promise<void> = async () => {}
 let saveForShutdown: () => void = () => {}
 const shutdown = installWorkerShutdown({ close: () => closeForShutdown(), save: () => saveForShutdown() })
-
-const rerunInterval = (() => {
-  let v = Number(process.env.MAIN_BOSSGEEKGO_RERUN_INTERVAL)
-  if (isNaN(v)) {
-    v = 5000
-  }
-
-  return v
-})()
 
 const { groupRobotAccessToken: dingTalkAccessToken } = readConfigFile('dingtalk.json')
 
@@ -101,6 +93,7 @@ const runAutoChat = async () => {
     exportRunState,
     importRunState,
     resumeFromCurrentPosition,
+    prepareForAutomaticRetry,
     runBudgetStatus,
     waitUntilSecurityCheckPassed,
     recheckAfterRest
@@ -294,13 +287,36 @@ const runAutoChat = async () => {
     return true
   }
 
+  const automaticRetry = createAutomaticRetry({
+    prepare: prepareForAutomaticRetry,
+    isStopping: () => shutdown.isStopping(),
+    sendPending: () => messageSendPending,
+    progressKey: () => `${taskProgress.progress.viewed}:${taskProgress.progress.sent}:${taskProgress.progress.collected}`,
+    publish: ({ attempt, until, delayMs, reason }) => {
+      taskProgress.setExtras({ retryUntil: until, retryAttempt: attempt })
+      taskProgress.update(undefined, until ? `${reason}，${delayMs / 1000}秒后自动重试（第${attempt}次）；已有结果保留，无需重新启动。` : reason, 'retrying')
+      saveResume({ required: true })
+    },
+  })
+
   while (true) {
+    if (shutdown.isStopping()) return
     try {
       await mainLoop(hooks)
     } catch (err) {
       if (shutdown.isStopping()) return
       if (await stopForStorage(err)) return
       if (await stopForBudget(err)) return
+      try {
+        if (await automaticRetry.recover(err)) continue
+        if (shutdown.isStopping()) return
+      } catch (retryError) {
+        if (shutdown.isStopping()) return
+        if (await stopForStorage(retryError) || await stopForBudget(retryError)) return
+        err = retryError
+      }
+      if (messageSendPending && !(err instanceof Error && /AUTO_CHAT_DAILY_/.test(err.message)))
+        err = Object.assign(new Error('AUTO_CHAT_MESSAGE_SEND_UNCONFIRMED'), { detail: '上次发送结果尚未确认，请先核对；不会自动重发。' })
       if (err instanceof Error && (/AUTO_CHAT_DAILY_/.test(err.message) || err.message === 'STARTUP_CHAT_ERROR_DUE_TO_TODAY_CHANCE_HAS_USED_OUT')) {
         const platform = /PLATFORM_LIMIT|TODAY_CHANCE/.test(err.message)
         const goal = err.message.includes('GOAL_REACHED')
@@ -433,18 +449,14 @@ const runAutoChat = async () => {
           break
         }
       }
-      await closeBrowserWindow?.()
       console.error(err)
-      taskProgress.update(undefined, '遇到异常，等待重新检查任务', 'retrying')
       const shouldExit = await checkShouldExit()
       if (shouldExit) {
         app.exit()
         return
       }
-      console.log(
-        `[Run core main] An internal error is caught, and browser will be restarted in ${rerunInterval}ms.`
-      )
-      await sleep(rerunInterval)
+      try { await automaticRetry.recover(new Error('AUTO_CHAT_RETRY_UNEXPECTED')) }
+      catch (error) { if (await stopForStorage(error) || await stopForBudget(error)) return; throw error }
     }
   }
 }

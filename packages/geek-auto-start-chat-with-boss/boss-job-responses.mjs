@@ -54,6 +54,7 @@ export function watchJobResponses(page, { bodyTimeoutMs = 15000, onBlocked = () 
   let expectedSearch = null
   let expectedList = null
   let sequence = 0, latestList = null, listPages = new Map(), listScope = ''
+  let detailSequence = 0, latestDetailRequest = null
   let listGeneration = 0, listPageSequences = new Map()
   const document = watchJobDocument(page, { onNavigation: generation => {
     latestList = null
@@ -88,6 +89,8 @@ export function watchJobResponses(page, { bodyTimeoutMs = 15000, onBlocked = () 
     const searchCheck = expectedSearch
     const documentGeneration = document.generation
     const responseSequence = kind === 'list' ? ++sequence : 0
+    const detailResponseSequence = kind === 'detail' ? ++detailSequence : 0
+    const detailRequest = kind === 'detail' ? response.request?.() : null
     let listRequest = null
     if (kind === 'list') {
       try {
@@ -106,10 +109,15 @@ export function watchJobResponses(page, { bodyTimeoutMs = 15000, onBlocked = () 
         listRequest = { ...parsed, pageNumber, generation: listGeneration }
       } catch { /* An unreadable request cannot establish a matching list. */ }
     }
+    const superseded = () => kind === 'detail'
+      ? detailResponseSequence < detailSequence || Boolean(latestDetailRequest && detailRequest && latestDetailRequest !== detailRequest)
+      : Boolean(listRequest && listRequest.generation !== listGeneration)
     let timer, cancel
     const cancelled = new Promise((_, reject) => {
       cancel = () => reject(new Error('Job response monitor closed'))
       cancel.documentGeneration = documentGeneration
+      cancel.kind = kind
+      cancel.request = detailRequest
       cancelReads.add(cancel)
       timer = setTimeout(() => reject(new Error('Job response body timed out')), bodyTimeoutMs)
     })
@@ -118,7 +126,7 @@ export function watchJobResponses(page, { bodyTimeoutMs = 15000, onBlocked = () 
         const bodyRead = Promise.resolve().then(() => response.json()).then(body => {
           // A late, explicit authentication/restriction result still stops the run.
           // An abandoned body must never become a way to hide a known access failure.
-          if (!disposed && documentGeneration !== document.generation) {
+          if (!disposed && (documentGeneration !== document.generation || superseded())) {
             const result = classifyJobResponse(response.status(), body, kind)
             if (['invalid', 'restricted'].includes(result.status)) block(result)
           }
@@ -127,6 +135,10 @@ export function watchJobResponses(page, { bodyTimeoutMs = 15000, onBlocked = () 
         const body = await Promise.race([bodyRead, cancelled])
         if (documentGeneration !== document.generation) return
         const result = classifyJobResponse(response.status(), body, kind)
+        // Switching cards/filters can cancel an older body. It cannot invalidate
+        // the current selection; explicit authentication failures still stop it.
+        if (['invalid', 'restricted'].includes(result.status)) { block(result); return }
+        if (superseded()) return
         if (kind === 'list' && ['available', 'empty'].includes(result.status)) {
           try {
             const { path, parameters } = listRequest || readListRequest(response)
@@ -167,7 +179,7 @@ export function watchJobResponses(page, { bodyTimeoutMs = 15000, onBlocked = () 
         else if (searchCheck && response.url().split('?')[0].endsWith('/search/joblist.json') && !searchCheck(response.request()))
           block({ status: 'unknown', detail: 'BOSS搜索响应与本次搜索内容或平台职位类目不一致，已暂停任务，请检查页面后恢复' })
       } catch {
-        if (!disposed && documentGeneration === document.generation)
+        if (!disposed && documentGeneration === document.generation && !superseded())
           block(classifyJobResponse(response.status(), null, kind))
       } finally {
         clearTimeout(timer)
@@ -177,6 +189,12 @@ export function watchJobResponses(page, { bodyTimeoutMs = 15000, onBlocked = () 
     pending.add(reading)
     void reading.finally(() => pending.delete(reading))
   }
+  const onRequest = request => {
+    if (jobResponseKind(request.url()) !== 'detail') return
+    latestDetailRequest = request
+    for (const cancel of cancelReads) if (cancel.kind === 'detail' && cancel.request && cancel.request !== request) cancel()
+  }
+  page.on('request', onRequest)
   page.on('response', onResponse)
   async function assertHealthy() {
     if (failure) throw failure
@@ -204,6 +222,7 @@ export function watchJobResponses(page, { bodyTimeoutMs = 15000, onBlocked = () 
       disposed = true
       rejectFailure(failure || new Error('AUTO_CHAT_JOB_PAGE_CLOSED'))
       page.off('response', onResponse)
+      page.off('request', onRequest)
       document.dispose()
       for (const cancel of cancelReads) cancel()
       latestList = null

@@ -2659,9 +2659,6 @@ html:not(.replica-child) body {
 }
 .ux-task-curtain-actions .ux-task-curtain-end {
   margin-left: auto;
-  --el-button-text-color: var(--el-color-danger);
-  --el-button-hover-text-color: var(--el-color-danger-dark-2);
-  --el-button-hover-bg-color: var(--el-color-danger-light-9);
 }
 .ux-task-curtain-note {
   margin: 14px 0 0;
@@ -3347,6 +3344,7 @@ label > .ux-tip {
 .ux-inner--settings .ux-field > label { font-weight: 500; }
 .ux-inner--settings .ux-hint { font-size: var(--ggr-font-size-small); line-height: 1.6; }
 .ux-settings-help.el-popper { font-size: var(--ggr-font-size-body); line-height: 1.7; color: var(--el-text-color-regular); }
+.ux-profile-help.el-popper { white-space: pre-line; max-width: calc(100vw - 32px); }
 .ux-settings-help-trigger { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 24px; height: 24px; padding: 0; border: 0; background: transparent; color: var(--el-text-color-secondary); font: inherit; cursor: pointer; border-radius: 4px; }
 .ux-settings-help-trigger:hover { color: var(--el-color-primary); }
 .ux-settings-help-trigger:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }

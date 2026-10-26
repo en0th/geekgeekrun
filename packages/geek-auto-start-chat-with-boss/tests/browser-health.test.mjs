@@ -134,7 +134,7 @@ test('disposing the monitor before an owned browser closes releases listeners wi
   assert.throws(early.assertHealthy, /BROWSER_UNAVAILABLE/); early.dispose()
 })
 
-test('shipped GUI and CLI handlers stop without auto-retry; only pre-send browser errors are resumable', async () => {
+test('permanent browser faults and unconfirmed sends retain an explicit stop path after transient recovery', async () => {
   const files = ['../../ui/src/main/flow/GEEK_AUTO_START_CHAT_WITH_BOSS_MAIN/index.ts', '../../run-core-of-geek-auto-start-chat-with-boss/main.mjs']
   for (const file of files) {
     const raw = fs.readFileSync(new URL(file, import.meta.url), 'utf8')
@@ -143,7 +143,7 @@ test('shipped GUI and CLI handlers stop without auto-retry; only pre-send browse
     assert.ok(start > 0 && end > start)
     const { code } = transformSync('(async () => {' + raw.slice(start, end) + '})()', { loader: 'ts', target: 'es2022' })
     for (const unconfirmed of [false, true]) {
-      const calls = [], error = taskBrowserError('connection')
+      const calls = [], error = taskBrowserError('executable')
       if (unconfirmed) { error.message = 'AUTO_CHAT_MESSAGE_SEND_UNCONFIRMED'; error.detail = '发送结果未确认' }
       await vm.runInNewContext(code, { err: error, AUTO_CHAT_ERROR_EXIT_CODE,
         taskProgress: { update: (_kind, detail, state) => calls.push([state, detail]) }, saveResume: () => calls.push('save'),

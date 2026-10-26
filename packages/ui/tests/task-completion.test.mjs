@@ -46,7 +46,7 @@ test('an unconfirmed send never receives a normal resume suggestion', async () =
   const result = await exit(87)
   assert.equal(result.progress.state, 'blocked')
   assert.equal(result.progress.sent, 0)
-  assert.equal(result.messages[0].action.label, '去BOSS核对')
+  assert.equal(result.messages[0].action.label, '处理已核对记录')
   assert.doesNotMatch(result.messages[0].message, /可在任务列表中恢复/)
   assert.match(result.messages[0].message, /不能直接继续/)
 })
@@ -55,7 +55,7 @@ test('an unconfirmed send never receives a normal resume suggestion', async () =
 test('a manual stop with an unresolved send cannot be announced as completed', async () => {
   const result = await exit(0, { pending: true })
   assert.equal(result.messages[0].type, 'warning')
-  assert.equal(result.messages[0].action.label, '去BOSS核对')
+  assert.equal(result.messages[0].action.label, '处理已核对记录')
   assert.equal(result.progress.sent, 0)
 })
 

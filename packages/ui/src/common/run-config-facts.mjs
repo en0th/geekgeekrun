@@ -1,5 +1,23 @@
 import { RUN_PROFILES } from '@geekgeekrun/geek-auto-start-chat-with-boss/run-policy.mjs'
-import { experienceSelectionLabels } from '@geekgeekrun/geek-auto-start-chat-with-boss/job-filter-config.mjs'
+import { experienceSelectionLabels, normalizeRequiredJobConditions } from '@geekgeekrun/geek-auto-start-chat-with-boss/job-filter-config.mjs'
+
+export function requiredConditionFacts(value) {
+  let rules
+  try { rules = normalizeRequiredJobConditions(value) }
+  catch { return [['必需条件', '历史条件格式无法识别，请载入配置后核对']] }
+  const rows = [
+    ['求职类型', rules.jobNatures.join('、')],
+    ['学历要求', rules.degrees.join('、')],
+    ['所属行业', rules.industries.join('、')],
+    ['融资阶段', rules.financingStages.join('、')],
+    ['岗位屏蔽词', rules.excludedWords.join('、')],
+  ].filter(([, value]) => value)
+  const low = rules.companyScaleMin, high = rules.companyScaleMax
+  if (low != null || high != null) rows.splice(1, 0, ['公司人数', low != null && high != null
+    ? low === high ? `${low}人` : `${low}—${high}人`
+    : low != null ? `${low}人及以上` : `${high}人及以下`])
+  return rows.length ? rows : [['必需条件', '未设置额外条件']]
+}
 
 // Read the non-secret configuration frozen by the main process, including bookings
 // submitted while no renderer is open. Old renderer-only snapshots remain readable.
@@ -19,7 +37,7 @@ export function actualRunFacts(config) {
     ['工作城市', show(boss.expectCityList)],
     ['薪资范围', boss.expectSalaryLow == null && boss.expectSalaryHigh == null ? '不限' : `${boss.expectSalaryLow ?? '不限'}—${boss.expectSalaryHigh ?? '不限'}（${({ 1: '千元/月', 2: '万元/年', 3: '元/天', 4: '元/时' })[boss.expectSalaryCalculateWay || 1]}）`],
     ['工作经验', show(experienceSelectionLabels(boss.expectWorkExpList || []))],
-    ['必需条件', show(boss.requiredJobConditions)],
+    ...requiredConditionFacts(boss.requiredJobConditions),
     ['只看公司', show(boss.fieldsForUseCommonConfig?.expectCompanies ? common.expectCompanies : config['target-company-list.json'])],
     ['排除公司规则', show(boss.blockCompanyNameRegExpStr)],
     ['招聘者身份规则', boss.isPosterHrFilterEnabled ? show(boss.posterHrTitleRegExpStr) : '不限'],

@@ -80,7 +80,7 @@ test('mode changes and unreadable task state have their own actions instead of a
   assert.equal(service.primaryLabel, '重新读取状态')
   assert.equal(service.secondaryAction, 'feedback')
   assert.equal(service.canContinue, false)
-  assert.equal(taskRecoveryGuidance({ checkpoint: checkpoint({ runMode: 'chat', messageSendPending: true }), readError: true }).primaryAction, 'boss-chat')
+  assert.equal(taskRecoveryGuidance({ checkpoint: checkpoint({ runMode: 'chat', messageSendPending: true }), readError: true }).primaryAction, 'acknowledge-daily')
 })
 
 test('running status uses the worker mode even when the next-run draft has changed', () => {

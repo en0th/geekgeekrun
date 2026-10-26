@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import assert from 'node:assert/strict'
 const root = fileURLToPath(new URL('../../', import.meta.url)), require = createRequire(path.join(root, 'package.json'))
 const puppeteer = require('puppeteer'), wait = ms => new Promise(r => setTimeout(r, ms))
@@ -36,6 +36,13 @@ write('storage', 'auto-chat-resume.json', { runRecordId: 900001, runMode: 'chat'
 write('storage', 'scheduled-job-runs.json', { version: 1, items: [{ id: 'offline-booking', at: at + 86400000, accountId: 'offline-fixture', createdAt: at,
   state: 'pending', detail: '隔离验收合成预约，不连接BOSS', config: frozen }] })
 const executable = process.env.QA_EXECUTABLE || require('electron')
+function seedSyntheticTaskConfig(config) {
+  const dbFile = path.join(runtime, 'storage/public.db')
+  assert(dbFile.startsWith(output + path.sep))
+  const code = `const DB=require(${JSON.stringify(require.resolve('better-sqlite3'))});const db=new DB(process.argv[1],{fileMustExist:true});db.prepare('INSERT INTO auto_start_chat_run_record(id,date,configSnapshot) VALUES(900001,?,?) ON CONFLICT(id) DO UPDATE SET configSnapshot=excluded.configSnapshot').run(new Date().toISOString(),process.argv[2]);db.close()`
+  const result = spawnSync(require('electron'), ['-e', code, dbFile, JSON.stringify({ actualConfig: config })], { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, encoding: 'utf8' })
+  assert.equal(result.status, 0, result.stderr)
+}
 const args = process.env.QA_EXECUTABLE ? [] : [path.join(root, 'packages/ui')]
 const env = { ...process.env, GEEKGEEKRUN_RUNTIME_DIR: runtime }
 delete env.ELECTRON_RUN_AS_NODE; delete env.GEEKGEEKRUN_TASK_CONFIG_FILE
@@ -135,11 +142,29 @@ try {
   await page.click('button[aria-label="每日自动打招呼说明"]')
   await page.waitForFunction(() => ![...document.querySelectorAll('.ux-settings-help')].some(e => e.checkVisibility()))
   checks.push('long explanations open only on demand')
-  await page.click('.ux-run-policy .el-radio-button:last-child')
+  const helpIcons = await page.$$eval('.ux-profile-option .ux-settings-help-trigger .el-icon', els => els.map(e => ({ size: getComputedStyle(e).fontSize, width: e.getBoundingClientRect().width })))
+  assert.equal(helpIcons.length, 3); assert(helpIcons.every(icon => icon.size === '14px' && icon.width >= 14))
+  for (const [index, label, requests, details, minutes] of [[0, '安全模式', 500, 200, 120], [1, '深度模式', 1000, 400, 240], [2, '极速模式', 500, 200, 120]]) {
+    const selected = await page.$eval('.ux-profile-options .el-radio-button.is-active input', e => e.value)
+    await page.click(`button[aria-label="${label}说明"]`)
+    await page.waitForFunction(expected => [...document.querySelectorAll('.ux-profile-help')].some(e => e.checkVisibility() && e.textContent.includes(`读取${expected.requests}次`) && e.textContent.includes(`详情最多${expected.details}次`) && e.textContent.includes(`${expected.minutes}分钟`)), {}, { requests, details, minutes })
+    assert.equal(await page.$eval('.ux-profile-options .el-radio-button.is-active input', e => e.value), selected)
+    assert.equal((await dailyPolicy()).profile, 'safe')
+    if (!index) await capturePage('safe-mode-parameters', 1280, 900)
+    await page.click(`button[aria-label="${label}说明"]`)
+    await page.waitForFunction(() => ![...document.querySelectorAll('.ux-profile-help')].some(e => e.checkVisibility()))
+  }
+  const helpButton = await page.$('button[aria-label="安全模式说明"]')
+  await helpButton.focus(); await page.keyboard.press('Enter')
+  await page.waitForFunction(() => [...document.querySelectorAll('.ux-profile-help')].some(e => e.checkVisibility()))
+  await page.keyboard.press('Escape')
+  await page.waitForFunction(() => ![...document.querySelectorAll('.ux-profile-help')].some(e => e.checkVisibility()))
+  checks.push('all three mode help buttons show execution parameters, do not select or save a mode, and support keyboard open/close')
+  await page.click('.ux-run-policy .ux-profile-option:last-child .el-radio-button')
   await page.waitForSelector('.ux-policy-risk'); assert(await page.$eval('.ux-policy-risk', e => e.textContent.includes('更容易触发平台风控')))
   assert.equal(await page.$('.ux-run-policy .el-alert--error'), null)
   await capturePage('settings-fast-risk', 1280, 900); checks.push('fast mode visible red warning')
-  await page.click('.ux-run-policy .el-radio-button:nth-child(2)')
+  await page.click('.ux-run-policy .ux-profile-option:nth-child(2) .el-radio-button')
   const work = await page.$('input[aria-label="连续运行分钟"]'); await work.click({ clickCount: 3 }); await work.type('45'); await work.press('Tab')
   await button('保存设置'); await wait(500)
   const saved = await page.evaluate(() => window.electron.ipcRenderer.invoke('run-policy-info'))
@@ -181,6 +206,29 @@ try {
   await page.click('.ux-el-steps .el-step:nth-child(2)')
   await page.waitForSelector('.ux-source-rotation')
   const bossConfig = () => page.evaluate(async () => (await window.electron.ipcRenderer.invoke('fetch-config-file-content')).config['boss.json'])
+  await page.click('#source-order-toggle')
+  await page.waitForSelector('.ux-source-drag-list')
+  await page.$eval('.ux-source-drag-list', e => e.scrollIntoView({ block: 'center' }))
+  assert(!await page.$eval('#source-order', e => /先查看|后查看/.test(e.textContent)))
+  const grip = await page.$eval('.ux-source-drag-row', row => ({
+    circles: row.querySelectorAll('.ux-source-drag-handle svg circle').length,
+    right: row.querySelector('.ux-source-drag-handle').getBoundingClientRect().left > row.querySelector('.ux-source-order-label').getBoundingClientRect().right,
+  }))
+  assert.equal(grip.circles, 6); assert(grip.right)
+  const fromHandle = await page.$('.ux-source-drag-row[data-source-type="expect"] .ux-source-drag-handle')
+  const toRow = await page.$('.ux-source-drag-row[data-source-type="recommend"]')
+  const fromBox = await fromHandle.boundingBox(), toBox = await toRow.boundingBox()
+  await page.mouse.move(fromBox.x + fromBox.width / 2, fromBox.y + fromBox.height / 2)
+  await page.mouse.down(); await page.mouse.move(fromBox.x + 15, fromBox.y + 30, { steps: 4 }); await wait(150)
+  await page.mouse.move(fromBox.x + 15, toBox.y + toBox.height - 5, { steps: 10 }); await wait(100)
+  assert(await page.$('.ux-source-drag-chosen'))
+  await page.mouse.up()
+  await page.waitForFunction(async () => (await window.electron.ipcRenderer.invoke('fetch-config-file-content')).config['boss.json'].jobSourceList.filter(s => s.enabled).map(s => s.type).join(',') === 'recommend,expect')
+  await capturePage('source-order-dragged', 1280, 900)
+  const expectHandle = await page.$('.ux-source-drag-row[data-source-type="expect"] .ux-source-drag-handle')
+  await expectHandle.focus(); await page.keyboard.down('Alt'); await page.keyboard.press('ArrowUp'); await page.keyboard.up('Alt')
+  await page.waitForFunction(async () => (await window.electron.ipcRenderer.invoke('fetch-config-file-content')).config['boss.json'].jobSourceList.filter(s => s.enabled).map(s => s.type).join(',') === 'expect,recommend')
+  checks.push('source order supports pointer dragging with chosen/ghost feedback and animated sorting, real IPC persistence and keyboard reordering')
   assert.equal((await bossConfig()).autoChatPerSourceSuccessLimit, 1001)
   assert.equal(await page.$('.ux-source-mode-select'), null)
   assert.equal(await page.$eval('#source-switch-conditions-toggle', e => e.getAttribute('aria-expanded')), 'false')
@@ -227,7 +275,7 @@ try {
   await page.evaluate(() => { location.hash = '#/ux/tasks' })
   await page.waitForSelector('.ux-scheduled-runs .el-table')
   await capturePage('tasks-and-booking')
-  await button('取消预约'); await page.waitForSelector('.el-message-box .el-button--primary'); await page.click('.el-message-box .el-button--primary')
+  await button('取消定时启动'); await page.waitForSelector('.el-message-box .el-button--primary'); await page.click('.el-message-box .el-button--primary')
   await page.waitForFunction(() => document.querySelector('.ux-scheduled-runs')?.textContent.includes('已取消'))
   await page.waitForSelector('.el-message-box__wrapper', { hidden: true }); await wait(400)
   checks.push('real IPC cancels future booking without starting a task')
@@ -236,9 +284,29 @@ try {
   await page.waitForSelector('.ux-main .el-table__body-wrapper .ux-task-actions button')
   await page.click('.ux-main .el-table__body-wrapper .ux-task-actions button'); await wait(500)
   await page.waitForSelector('.ux-running-expectation', { timeout: 5000 })
+  const endStyle = await page.$eval('.ux-recovery .ux-task-end-button, .ux-task-end-button', e => ({ text: e.textContent.trim(), danger: e.classList.contains('el-button--danger'), plain: e.classList.contains('is-plain'), textOnly: e.classList.contains('is-text') || e.classList.contains('is-link') }))
+  assert.equal(endStyle.text, '结束任务'); assert(endStyle.danger && endStyle.plain && !endStyle.textOnly)
+  assert(await page.$eval('.ux-scheduled-runs', e => e.textContent.includes('定时启动') && !e.textContent.includes('预约启动')))
+  checks.push('paused task end action uses the same red outline style and one-time scheduling is named timed start')
   assert(await page.evaluate(() => document.body.textContent.includes('追加今日数量')))
   assert(await page.$eval('.ux-running-expectation', e => e.textContent.includes('不代表BOSS剩余额度')))
   await capturePage('daily-goal-and-estimate', 1280, 900); checks.push('goal recovery and sampled estimate shown with honest scope')
+  // Seed only the isolated synthetic database; render the saved snapshot through real read IPC.
+  seedSyntheticTaskConfig(frozen)
+  await button('任务配置')
+  await page.waitForFunction(() => document.querySelector('.ux-template-facts')?.textContent.includes('未设置额外条件'))
+  assert(!await page.$eval('.ux-template-facts', e => /companyScaleMin|jobNatures|\{/.test(e.textContent)))
+  await capturePage('task-config-empty-conditions', 1280, 900)
+  await button('运行概览')
+  const fixtureBoss = { ...frozen['boss.json'], requiredJobConditions: { jobNatures: ['全职'], degrees: ['本科', '硕士'], industries: ['互联网'], financingStages: ['A轮'], excludedWords: ['外包'], companyScaleMin: 100, companyScaleMax: 500 } }
+  seedSyntheticTaskConfig({ 'boss.json': fixtureBoss })
+  await button('任务配置')
+  await page.waitForFunction(() => document.querySelector('.ux-template-facts')?.textContent.includes('本科、硕士'))
+  const factText = await page.$eval('.ux-template-facts', e => e.textContent)
+  for (const text of ['全职', '100—500人', '互联网', 'A轮', '外包']) assert(factText.includes(text))
+  assert(!/companyScaleMin|jobNatures|\{/.test(factText))
+  await capturePage('task-config-readable-conditions', 1280, 900)
+  checks.push('saved empty and populated hard-condition snapshots render readable fields through real database IPC without JSON')
   assert.deepEqual(typographyIssues, []); assert.deepEqual(errors, []); assert.deepEqual(files, []); assert.equal(bossRequests, 0)
   await page.evaluate(() => window.electron.ipcRenderer.send('app-quit'))
   // If app-quit is unsupported, Browser.close closes only this isolated application.

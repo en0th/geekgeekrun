@@ -55,8 +55,9 @@ export function taskRecoveryGuidance({ checkpoint = null, history = [], code = n
   if (recovery.reason === 'send-unconfirmed' || exitCode === 87) return {
     kind: 'send-unconfirmed', title: '先核对上次发送结果',
     message: '上次消息是否发送成功还不能确认，任务保持停止。',
-    nextStep: '先在BOSS会话核对结果。找岗位任务可到设置→任务运行，核对待确认发送并保守计入今日已用人数；原任务不能直接继续，请结束后按需新建。已有数据保留。',
-    primaryAction: 'boss-chat', primaryLabel: '去BOSS核对', canContinue: false,
+    nextStep: task === 'auto' ? '原任务不能直接继续。在BOSS核对后，点击“处理已核对记录”确认计入今日已用，再结束原任务、重新开始。只在BOSS查看不会解除拦截。'
+      : '先在BOSS会话核对结果，再结束原任务；确认后按需新建，避免重复跟进。',
+    primaryAction: task === 'auto' ? 'acknowledge-daily' : 'boss-chat', primaryLabel: task === 'auto' ? '处理已核对记录' : '去BOSS核对', canContinue: false,
   }
   if (readError) return {
     kind: 'read-error', title: '暂时读不到任务进度',

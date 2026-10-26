@@ -28,8 +28,8 @@ export function notifyRunStatus(title: string, body: string) {
 }
 async function identity(expected?: string) {
   const login = await checkBossLoginStatus()
-  if (login.status !== 'valid' || !login.accountId) throw Error('BOSS登录未确认，请登录后重新预约')
-  if (expected && login.accountId !== expected) throw Error('当前BOSS账号与预约账号不同，未启动；请切回原账号或重新预约')
+  if (login.status !== 'valid' || !login.accountId) throw Error('BOSS登录未确认，请登录后重新设置定时启动')
+  if (expected && login.accountId !== expected) throw Error('当前BOSS账号与定时启动绑定的账号不同，未启动；请切回原账号或重新设置定时启动')
   if (!await getLastUsedAndAvailableBrowser()) throw Error('浏览器未配置或已不可用，请检查浏览器设置')
   return login.accountId
 }
@@ -55,8 +55,8 @@ export function startScheduledRuns() {
     notifyRunStatus(progress.state === 'resting' ? '找岗位任务正在休息' : progress.state === 'paused' ? '找岗位任务等待验证' : /额度.*用尽/.test(progress.detail) ? '今日沟通额度已用尽' : '找岗位任务需要处理', progress.detail)
   })
   const jobs = store()
-  try { for (const item of jobs.recoverOnOpen()) notifyRunStatus('预约需要处理', item.detail) }
-  catch (error) { notifyRunStatus('预约记录无法读取', (error as Error).message); return }
+  try { for (const item of jobs.recoverOnOpen()) notifyRunStatus('定时启动需要处理', item.detail) }
+  catch (error) { notifyRunStatus('定时启动记录无法读取', (error as Error).message); return }
   const tick = createScheduleRunner({ store: jobs,
     busy: async () => {
       const status = await sendToDaemon({ type: 'get-status' }, { needCallback: true }) as any
@@ -65,12 +65,12 @@ export function startScheduledRuns() {
     },
     start: async (item) => {
       const checkpoint = readAutoChatResume({ strict: true })
-      if (checkpoint && checkpointRecovery(checkpoint).reason !== 'completed') throw Error('已有暂停或待核对的找岗位任务，请先继续或结束原任务，再重新预约；未替换原进度。')
+      if (checkpoint && checkpointRecovery(checkpoint).reason !== 'completed') throw Error('已有暂停或待核对的找岗位任务，请先继续或结束原任务，再重新设置定时启动；未替换原进度。')
       const accountId = await identity(item.accountId)
       return runCommon({ mode: 'geekAutoStartWithBossMain', capturedConfig: item.config, expectedAccountId: accountId })
     }, notify: notifyRunStatus })
   let lastError = ''
-  const timer = setInterval(() => { void tick().catch(error => { if (lastError !== error.message) { lastError = error.message; notifyRunStatus('预约暂未执行', error.message) } }) }, 5000)
+  const timer = setInterval(() => { void tick().catch(error => { if (lastError !== error.message) { lastError = error.message; notifyRunStatus('定时启动暂未执行', error.message) } }) }, 5000)
   timer.unref()
   app.once('before-quit', () => clearInterval(timer))
 }

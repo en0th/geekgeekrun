@@ -19,6 +19,22 @@ function fixture({ requests = 3, detailRequests = 3, persist, send } = {}) {
   return { page, session, budget, calls, request: (url, id = 'req') => session.emit('Fetch.requestPaused', { requestId: id, request: { url } }) }
 }
 
+test('reusing a live page keeps one interceptor, aborts recovery-time reads and rebinds the preserved budget', async () => {
+  const f = fixture(), monitor = await attachJobRequestBudget(f.page, f.budget)
+  f.request(detail, 'first'); await flush()
+  monitor.suspend(); await monitor.settled()
+  f.request(detail, 'while-recovering'); await flush()
+  assert.equal(f.budget.snapshot().usage.requests, 1)
+  assert.equal(f.calls.find(c => c.args?.requestId === 'while-recovering').method, 'Fetch.failRequest')
+  const next = createRunBudget({ limits: { requests: 3, detailRequests: 3, activeMinutes: 0 }, saved: f.budget.snapshot() })
+  monitor.setBudget(next)
+  f.request(detail, 'after-recovery'); await flush()
+  assert.equal(next.snapshot().usage.requests, 2)
+  assert.equal(f.calls.filter(c => c.method === 'Fetch.enable').length, 1)
+  assert.equal(f.calls.some(c => c.method === 'Fetch.disable'), false)
+  monitor.dispose()
+})
+
 test('concurrent intercepted requests cannot overrun the cap and are charged before release', async () => {
   let saved = 0, released = 0
   const f = fixture({ persist: state => { saved = state.usage.requests }, send: method => {

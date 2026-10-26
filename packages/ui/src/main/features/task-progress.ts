@@ -58,6 +58,8 @@ export function createTaskProgress(seed?: TaskProgressSeed | null) {
     budget: null as unknown,
     dailyQuota: null as unknown,
     restUntil: 0,
+    retryUntil: 0,
+    retryAttempt: 0,
   };
   if (seed) {
     for (const key of ["startedAt", "viewed", "sent", "skipped", "collected", "marked"] as const) {
@@ -120,7 +122,7 @@ export function createTaskProgress(seed?: TaskProgressSeed | null) {
     send();
   }
   function setBudget(budget: unknown) { progress.budget = budget; send(); }
-  function setExtras(extras: { dailyQuota?: unknown; restUntil?: number }) { Object.assign(progress, extras); send(); }
+  function setExtras(extras: { dailyQuota?: unknown; restUntil?: number; retryUntil?: number; retryAttempt?: number }) { Object.assign(progress, extras); send(); }
   return { update, log, progress, setBudget, setExtras };
 }
 

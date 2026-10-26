@@ -58,7 +58,7 @@ export function createDailyQuotaStore(folder, { now = Date.now, write = writeJso
     assert(account, limit) {
       const s = status(account, limit)
       if (s.platformExhausted) throw quotaError('PLATFORM_LIMIT', 'BOSS已提示该账号今日沟通额度用尽，自动打招呼已停止，结果和进度已保留。请在平台额度恢复后再运行。')
-      if (s.pendingCount) throw quotaError('UNCONFIRMED', '有一次开聊结果尚未确认，请先在BOSS中核对。为避免重复发送，不能直接继续或清零人数。')
+      if (s.pendingCount) throw quotaError('UNCONFIRMED', '有一次发送记录待处理。在BOSS核对后，还需到设置→任务运行→每日自动打招呼目标，点击“去核对”并确认计入今日已用，再结束原任务、重新开始。仅在BOSS查看不会解除拦截。')
       if (!s.remaining) throw quotaError('GOAL_REACHED', `本软件今日已自动打招呼${s.confirmed}人，已暂停并保留进度。` + (s.limit >= ACCOUNT_DAILY_CHAT_LIMIT ? `已达到该账号今日${ACCOUNT_DAILY_CHAT_LIMIT}人的软件保护上限，可查看结果，明日再运行。` : `达到你设置的${s.limit}人目标，可查看结果或仅为今天追加数量。`))
       return s
     },

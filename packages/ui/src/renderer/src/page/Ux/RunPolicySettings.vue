@@ -3,6 +3,7 @@ import { reactive, ref, computed, watch, defineComponent, h } from 'vue'
 import { ElRadioGroup, ElRadioButton, ElSwitch, ElInput, ElInputNumber, ElButton, ElPopover, ElIcon } from 'element-plus'
 import { QuestionFilled, WarningFilled } from '@element-plus/icons-vue'
 import { normalizeRunPolicy, dailyTargetError } from '@geekgeekrun/geek-auto-start-chat-with-boss/run-policy.mjs'
+import { runProfileHelp } from '../../../../common/run-profile-help.mjs'
 const props = defineProps({ policy: Object, daily: Object, saving: Boolean })
 const emit = defineEmits(['save', 'acknowledge-daily'])
 const form = reactive(normalizeRunPolicy(props.policy)), error = reactive({ text: '' })
@@ -19,10 +20,15 @@ const profiles = [
   { key: 'fast', label: '极速模式', detail: '更快查找' },
 ]
 const HelpTip = defineComponent({
-  props: { label: { type: String, required: true }, text: { type: String, required: true } },
-  setup: p => () => h(ElPopover, { trigger: 'click', width: 320, placement: 'top-start', content: p.text, popperClass: 'ux-settings-help' }, {
-    reference: () => h('button', { type: 'button', class: 'ux-settings-help-trigger', 'aria-label': p.label + '说明' }, [h(ElIcon, () => h(QuestionFilled))]),
-  }),
+  props: { label: { type: String, required: true }, text: { type: String, required: true }, multiline: Boolean },
+  setup: p => {
+    const visible = ref(false)
+    return () => h(ElPopover, { visible: visible.value, 'onUpdate:visible': (value: boolean) => { visible.value = value }, trigger: 'click', width: p.multiline ? 360 : 320, placement: 'top-start', content: p.text, popperClass: p.multiline ? 'ux-settings-help ux-profile-help' : 'ux-settings-help' }, {
+      reference: () => h('button', { type: 'button', class: 'ux-settings-help-trigger', 'aria-label': p.label + '说明', onKeydown: (event: KeyboardEvent) => {
+        if (event.key === 'Escape') { visible.value = false; event.preventDefault(); event.stopPropagation() }
+      } }, [h(ElIcon, () => h(QuestionFilled))]),
+    })
+  },
 })
 function save() {
   dailyTouched.value = true
@@ -37,10 +43,13 @@ function save() {
     <div class="ux-policy-section">
       <h3>运行模式 <HelpTip label="运行模式" text="只影响找岗位。安全与深度的查找间隔相同，深度允许查看更多岗位；极速间隔更短。所有模式都保留运行保护，不会放宽筛选条件，也不保证免于平台验证。" /></h3>
       <ElRadioGroup v-model="form.profile" class="ux-profile-options" aria-label="找岗位运行模式">
-        <ElRadioButton v-for="profile in profiles" :key="profile.key" :value="profile.key">
-          <span class="ux-profile-title">{{ profile.label }}<span v-if="profile.recommended" class="ux-profile-recommended">推荐</span></span>
-          <span class="ux-profile-detail">{{ profile.detail }}</span>
-        </ElRadioButton>
+        <div v-for="profile in profiles" :key="profile.key" class="ux-profile-option">
+          <ElRadioButton :value="profile.key">
+            <span class="ux-profile-title">{{ profile.label }}</span>
+            <span class="ux-profile-detail">{{ profile.detail }}<span v-if="profile.recommended"> · 推荐</span></span>
+          </ElRadioButton>
+          <HelpTip :label="profile.label" :text="runProfileHelp(profile.key)" multiline />
+        </div>
       </ElRadioGroup>
       <p v-if="form.profile === 'fast'" class="ux-policy-risk" role="note"><ElIcon><WarningFilled /></ElIcon>更容易触发平台风控 <HelpTip label="极速模式风险" text="可能出现验证码、限流或账号限制。极速模式仍保留运行保护，不能突破BOSS额度；如频繁遇到验证，建议改用安全模式。" /></p>
     </div>
@@ -72,12 +81,14 @@ function save() {
 .ux-policy-section-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .ux-policy-section-head h3 { margin: 0; }
 .ux-profile-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; gap: 12px; }
+.ux-profile-option { position: relative; min-width: 0; }
+.ux-profile-option :deep(.el-radio-button) { width: 100%; }
+.ux-profile-option :deep(.ux-settings-help-trigger) { position: absolute; top: 12px; right: 12px; font-size: var(--ggr-font-size-body); }
 .ux-profile-options :deep(.el-radio-button__inner) { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; width: 100%; min-height: 76px; padding: 16px; border: 1px solid var(--el-border-color); border-radius: 8px; color: var(--el-text-color-primary); background: var(--el-bg-color); box-shadow: none; text-align: left; font-size: var(--ggr-font-size-body); }
 .ux-profile-options :deep(.el-radio-button.is-active .el-radio-button__inner) { border-color: var(--el-color-primary); color: var(--el-color-primary); background: var(--el-color-primary-light-9); box-shadow: none; }
 .ux-profile-options :deep(.el-radio-button__original-radio:focus-visible + .el-radio-button__inner) { outline: 2px solid var(--el-color-primary); outline-offset: 3px; }
-.ux-profile-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 600; }
+.ux-profile-title { padding-right: 24px; font-weight: 600; }
 .ux-profile-detail { color: var(--el-text-color-regular); font-size: var(--ggr-font-size-small); line-height: 1.5; }
-.ux-profile-recommended { font-size: var(--ggr-font-size-small); font-weight: 400; }
 .ux-policy-risk { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; color: var(--el-color-danger); font-size: var(--ggr-font-size-body); line-height: 1.6; }
 .ux-policy-line, .ux-policy-usage { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
 .ux-policy-line label { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }

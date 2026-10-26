@@ -7,6 +7,39 @@ const listUrl = 'https://www.zhipin.com/wapi/zpgeek/search/joblist.json'
 const available = { code: 0, zpData: { jobList: [{ encryptJobId: 'job-a' }] } }
 const response = (body, { url = listUrl, status = 200, json = async () => body, request } = {}) =>
   ({ url: () => url, status: () => status, json, request: () => request })
+
+test('a detail request cancelled by switching cards does not poison the newer current card', async t => {
+  const { page, monitor, blocked } = monitored(t)
+  const url = 'https://www.zhipin.com/wapi/zpgeek/job/detail.json'
+  const first = { url: () => url + '?jobId=a' }, second = { url: () => url + '?jobId=b' }
+  let rejectFirst
+  page.emit('request', first)
+  page.emit('response', response(null, { url, request: first, json: () => new Promise((_resolve, reject) => { rejectFirst = reject }) }))
+  await new Promise(resolve => setImmediate(resolve))
+  page.emit('request', second)
+  rejectFirst(Error('Response body was cancelled by the next card'))
+  page.emit('response', response({ code: 0, zpData: { jobInfo: { encryptId: 'b' } } }, { url, request: second }))
+  await monitor.assertHealthy(); assert.equal(blocked.length, 0)
+})
+
+test('an unreadable latest card and explicit restrictions on an old card still stop the send guard', async t => {
+  for (const restriction of [false, true]) {
+    const { page, monitor } = monitored(t)
+    const url = 'https://www.zhipin.com/wapi/zpgeek/job/detail.json'
+    const old = { url: () => url }, latest = { url: () => url }
+    page.emit('request', old)
+    if (restriction) {
+      let finish
+      page.emit('response', response(null, { url, request: old, json: () => new Promise(resolve => { finish = resolve }) }))
+      await new Promise(resolve => setImmediate(resolve)); page.emit('request', latest)
+      finish({ code: 37, message: '环境存在异常' })
+    } else {
+      page.emit('request', latest)
+      page.emit('response', response(null, { url, request: latest, json: async () => { throw Error('current response unreadable') } }))
+    }
+    await assert.rejects(monitor.assertHealthy(), restriction ? /LOGIN_STATUS_RESTRICTED/ : /LOGIN_STATUS_UNKNOWN/)
+  }
+})
 function monitored(t, options) {
   const page = new EventEmitter()
   const blocked = []

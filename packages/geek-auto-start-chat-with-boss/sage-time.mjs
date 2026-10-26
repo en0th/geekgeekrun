@@ -1,5 +1,5 @@
 import { readConfigFile } from './runtime-file-utils.mjs'
-import { sleep } from "@geekgeekrun/utils/sleep.mjs"
+import { sleep } from './attempt-sleep.mjs'
 import { createTimedRest } from './timed-rest.mjs'
 const timedSettings = readConfigFile('boss.json').autoChatTimedRest
 let timedHooks

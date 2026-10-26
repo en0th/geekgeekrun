@@ -1,7 +1,9 @@
 import {
   sleep,
-  sleepWithRandomDelay
-} from '@geekgeekrun/utils/sleep.mjs'
+  sleepWithRandomDelay,
+  beginBrowserAttempt,
+  abortBrowserAttempt,
+} from './attempt-sleep.mjs'
 
 import fs from 'node:fs'
 import os from 'node:os'
@@ -9,6 +11,7 @@ import { get__dirname } from '@geekgeekrun/utils/legacy-path.mjs';
 import path from 'node:path';
 import JSON5 from 'json5'
 import { EventEmitter } from 'node:events'
+import { retryProblem } from './automatic-retry.mjs'
 import { setDomainLocalStorage } from '@geekgeekrun/utils/puppeteer/local-storage.mjs'
 
 import { readConfigFile, writeStorageFile, writeBossSession, ensureConfigFileExist, readStorageFile, ensureStorageFileExist, storageFilePath } from './runtime-file-utils.mjs'
@@ -75,7 +78,7 @@ import { closeOwnedBrowser } from './browser-cleanup.mjs'
 import { applyPageFilters } from './page-filters.mjs'
 import { waitForCurrentJobList } from './job-list-ready.mjs'
 import { activateCompanySource, applyCompanyPageFilters, assertCompanyPlatformFilters, isCompanyJobsDocument } from './company-page.mjs'
-import { watchTaskBrowser, taskBrowserError, beginChatConfirmation, finishChatConfirmation } from './browser-health.mjs'
+import { watchTaskBrowser, taskBrowserError, taskPageError, beginChatConfirmation, finishChatConfirmation } from './browser-health.mjs'
 const flattedCityList = []
 ;(cityGroupData?.zpData?.cityGroup ?? []).forEach(it => {
   const firstChar = it.firstChar
@@ -346,6 +349,9 @@ const blockJobNotSuit = new ExpiringBlockSet()
 // security check, or continued by the user, picks up here instead of starting over
 let runPosition = { sourceIndex: 0, filterConditionIndex: 0, fingerprint: '' }
 let runBudget = null
+let browserAttemptWork = null
+let keepBrowserForRecovery = false
+process.once('exit', () => { try { runBudget?.pause() } catch { /* failed state is already reported */ } })
 let pendingBudgetSeed = null
 let legacyBudgetSeed = false
 let runAccountId = null
@@ -437,6 +443,22 @@ export function resumeFromCurrentPosition () {
   pendingResume = { ...runPosition, sourceSuccessCount, noMatchStreak }
 }
 
+export async function prepareForAutomaticRetry () {
+  keepBrowserForRecovery = hasLiveTaskBrowser()
+  try {
+    if (keepBrowserForRecovery) { abortBrowserAttempt(); disposeTaskMonitors({ keepBudget: true }) }
+    else await closeBrowserWindow()
+    await browserAttemptWork?.catch(() => {})
+    await jobRequestBudgetMonitor?.settled()
+  } finally { keepBrowserForRecovery = false }
+  const state = exportRunState()
+  state.budget = runBudget?.snapshot() ?? state.budget
+  // Reload spent amounts, removing only the old connection's failed monitor.
+  // A depleted or unreadable budget still fails the next checkpoint.
+  runBudget = null
+  importRunState(state)
+}
+
 function ensureRunBudget () {
   if (runBudget) return runBudget
   const args = process.argv.slice(2)
@@ -450,7 +472,6 @@ function ensureRunBudget () {
   runBudget = createRunBudget({ limits: readRunSettings(readConfigFile('boss.json')).runBudget,
     saved, seed: pendingBudgetSeed, legacy: legacyBudgetSeed, persist: state => store.save(state),
     onUpdate: budget => autoStartChatEventBus.emit('RUN_BUDGET', budget) })
-  process.once('exit', () => { try { runBudget.pause() } catch { /* failed state is already reported */ } })
   return runBudget
 }
 
@@ -1928,7 +1949,8 @@ async function toRecommendPage (hooks) {
 export async function mainLoop (hooks) {
   const budget = ensureRunBudget()
   budget.resume()
-  try { return await budget.guard(() => runBrowserLoop(hooks)) }
+  beginBrowserAttempt()
+  try { return await budget.guard(() => { browserAttemptWork = runBrowserLoop(hooks); return browserAttemptWork }) }
   finally { budget.pause() }
 }
 
@@ -1937,40 +1959,52 @@ async function runBrowserLoop (hooks) {
     await initPuppeteer()
   }
   try {
-    const opening = launchTaskBrowser(puppeteer, { background: runInBackground })
-    browserOpening = opening
-    let launched
-    try { launched = await opening }
-    finally { if (browserOpening === opening) browserOpening = null }
-    if (browserClosing) {
-      await browserClosing
-      throw new Error('AUTO_CHAT_TASK_STOPPING')
+    const reused = hasLiveTaskBrowser()
+    if (!reused) {
+      const opening = launchTaskBrowser(puppeteer, { background: runInBackground })
+      browserOpening = opening
+      let launched
+      try { launched = await opening }
+      finally { if (browserOpening === opening) browserOpening = null }
+      if (browserClosing) {
+        await browserClosing
+        throw new Error('AUTO_CHAT_TASK_STOPPING')
+      }
+      browser = launched.browser
+      hooks.puppeteerLaunched?.call(browser)
+      page = launched.page
     }
-    browser = launched.browser
-    hooks.puppeteerLaunched?.call(browser)
-    page = launched.page
     browserHealthMonitor?.dispose()
     browserHealthMonitor = watchTaskBrowser(browser, page, { onFailure: error => {
       runBudget?.fail(error)
-      autoStartChatEventBus.emit('TASK_PROGRESS', { detail: error.detail, state: 'blocked' })
+      const retry = retryProblem(error)
+      autoStartChatEventBus.emit('TASK_PROGRESS', { detail: retry ? `${retry.text}，即将自动重试` : error.detail, state: retry ? 'retrying' : 'blocked' })
       if (error.diagnostic) console.debug('BOSS_BROWSER_DIAGNOSTIC', JSON.stringify(error.diagnostic))
     } })
-    jobRequestBudgetMonitor?.dispose()
-    jobRequestBudgetMonitor = await attachJobRequestBudget(page, runBudget, { onConnectionLost: () => browserHealthMonitor?.connectionLost() })
+    if (reused && jobRequestBudgetMonitor) {
+      if (!jobRequestBudgetMonitor.isActive()) throw budgetStateError('岗位读取监听已断开，需检查后恢复；已用数量保留')
+      jobRequestBudgetMonitor.setBudget(runBudget)
+    } else {
+      jobRequestBudgetMonitor?.dispose()
+      jobRequestBudgetMonitor = await attachJobRequestBudget(page, runBudget, { onConnectionLost: () => browserHealthMonitor?.connectionLost() })
+    }
     jobResponseMonitor?.dispose()
     jobResponseMonitor = watchJobResponses(page, {
-      onBlocked: error => autoStartChatEventBus.emit('TASK_PROGRESS', { detail: error.detail, state: 'blocked' }),
+      onBlocked: error => {
+        const retry = retryProblem(error)
+        autoStartChatEventBus.emit('TASK_PROGRESS', { detail: retry ? `${retry.text}，即将自动重试` : error.detail, state: retry ? 'retrying' : 'blocked' })
+      },
       onListResponse: summary => {
         console.debug('BOSS_LIST_RESPONSE', JSON.stringify(summary))
         autoStartChatEventBus.emit('BOSS_LIST_RESPONSE', summary)
       }
     })
     await jobResponseMonitor.assertHealthy()
-    hooks.pageGotten?.call(page)
+    if (!reused) hooks.pageGotten?.call(page)
     const ownPage = page
     // tell the task as soon as BOSS shows a verification page, and when the user has passed it
     let onSecurityCheck = false
-    ownPage.on('framenavigated', (frame) => {
+    if (!reused) ownPage.on('framenavigated', (frame) => {
       if (frame !== ownPage.mainFrame()) return
       const checking = isSecurityCheckUrl(frame.url())
       if (checking && !onSecurityCheck) {
@@ -1981,18 +2015,20 @@ async function runBrowserLoop (hooks) {
       onSecurityCheck = checking
     })
     //set cookies
-    const bossCookies = readStorageFile('boss-cookies.json')
-    await hooks.cookieWillSet?.promise({ cookies: bossCookies, browser })
-    const bossLocalStorage = readStorageFile('boss-local-storage.json')
-    for(let i = 0; i < bossCookies.length; i++){
-      if (Object.hasOwn(bossCookies[i], 'sameSite')) {
-        bossCookies[i].sameSite = 'unspecified'
+    if (!reused) {
+      const bossCookies = readStorageFile('boss-cookies.json')
+      await hooks.cookieWillSet?.promise({ cookies: bossCookies, browser })
+      const bossLocalStorage = readStorageFile('boss-local-storage.json')
+      for(let i = 0; i < bossCookies.length; i++){
+        if (Object.hasOwn(bossCookies[i], 'sameSite')) {
+          bossCookies[i].sameSite = 'unspecified'
+        }
+        await page.setCookie(bossCookies[i]);
       }
-      await page.setCookie(bossCookies[i]);
+      await setDomainLocalStorage(browser, localStoragePageUrl, bossLocalStorage, { page })
     }
-    await setDomainLocalStorage(browser, localStoragePageUrl, bossLocalStorage, { page })
     if (!runInBackground) await page.bringToFront()
-    autoStartChatEventBus.emit('TASK_PROGRESS', { detail: runInBackground ? 'BOSS浏览器在后台最小化运行' : 'BOSS浏览器使用普通窗口' })
+    autoStartChatEventBus.emit('TASK_PROGRESS', { detail: reused ? '浏览器连接正常，按原进度继续核对岗位' : runInBackground ? 'BOSS浏览器在后台最小化运行' : 'BOSS浏览器使用普通窗口' })
     // __GGR_INJECT_ANTI_ANTI_DEBUGGER__
     await hooks.mainFlowWillLaunch?.promise({
       jobNotMatchStrategy,
@@ -2011,6 +2047,7 @@ async function runBrowserLoop (hooks) {
 
     // ;await browser.close()
   } catch (err) {
+    err = taskPageError(page, err)
     // Launch fails before the health monitor can record its allowlisted reason.
     if (err?.diagnostic?.stage === 'launch') console.debug('BOSS_BROWSER_DIAGNOSTIC', JSON.stringify(err.diagnostic))
     // a verification page needs the user: keep the window open for them (see waitUntilSecurityCheckPassed)
@@ -2024,7 +2061,10 @@ async function runBrowserLoop (hooks) {
       console.error(err)
       throw new Error('AUTO_CHAT_SECURITY_CHECK', { cause: err })
     }
-    await closeBrowserWindow()
+    if (hasLiveTaskBrowser() && (keepBrowserForRecovery || retryProblem(err))) {
+      abortBrowserAttempt()
+      disposeTaskMonitors({ keepBudget: true })
+    } else await closeBrowserWindow()
     throw err
   }
 }
@@ -2054,15 +2094,24 @@ async function waitForVerification () {
   return result
 }
 
-export function closeBrowserWindow () {
-  if (browserClosing) return browserClosing
-  try { runBudget?.pause() } catch { /* The stopped budget is saved independently. */ }
+function hasLiveTaskBrowser () {
+  try { return Boolean(browser?.connected && page && !page.isClosed()) } catch { return false }
+}
+
+function disposeTaskMonitors ({ keepBudget = false } = {}) {
   browserHealthMonitor?.dispose()
   browserHealthMonitor = null
-  jobRequestBudgetMonitor?.dispose()
-  jobRequestBudgetMonitor = null
+  if (keepBudget) jobRequestBudgetMonitor?.suspend()
+  else { jobRequestBudgetMonitor?.dispose(); jobRequestBudgetMonitor = null }
   jobResponseMonitor?.dispose()
   jobResponseMonitor = null
+}
+
+export function closeBrowserWindow () {
+  abortBrowserAttempt()
+  if (browserClosing) return browserClosing
+  try { runBudget?.pause() } catch { /* The stopped budget is saved independently. */ }
+  disposeTaskMonitors()
   const ownBrowser = browser
   const opening = browserOpening
   browser = null

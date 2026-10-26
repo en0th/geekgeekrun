@@ -5,6 +5,8 @@ import { checkpointRecovery, assertCheckpointCanResume } from "../../../../commo
 import { taskRecoveryGuidance } from "../../../../common/task-recovery-guidance.mjs";
 import { actualRunFacts } from "../../../../common/run-config-facts.mjs";
 import { sourceRotationLabel } from "../../../../common/source-rotation-options.mjs";
+import { reorderEnabledSources } from "../../../../common/source-order.mjs";
+import SourceOrderList from "./SourceOrderList.vue";
 import { experienceSelectionLabels, experienceSelectionCodes, matchesExperience, escapeKeyword, keywordPattern, allKeywordPattern, normalizeRequiredJobConditions, requiredJobConditionReasons, JOB_NATURE_OPTIONS, DEGREE_OPTIONS } from "@geekgeekrun/geek-auto-start-chat-with-boss/job-filter-config.mjs";
 import { parseSalaryDetails, matchesSalaryDetails } from "@geekgeekrun/utils/job-values.cjs";
 import { normalizeCitySelection, matchesCitySelection } from "@geekgeekrun/geek-auto-start-chat-with-boss/city-filter.mjs";
@@ -3216,38 +3218,10 @@ export default Vue.defineComponent({
           : null,
         enabledSources.length > 1
           ? disclosure("来源切换顺序", platformOpen, "source-order", [
-              ...enabledSources.map((s, index) =>
-                h("div", { class: "ux-source-order" }, [
-                  h(
-                    "span",
-                    index + 1 + ". " + (sourceInfo[s.type]?.[0] || s.type),
-                  ),
-                  inline(
-                    [-1, 1].map((delta) =>
-                      button(
-                        delta < 0 ? "先查看" : "后查看",
-                        () => {
-                          const from = d.sourceList.indexOf(s),
-                            to = d.sourceList.indexOf(
-                              enabledSources[index + delta],
-                            );
-                          moveItem(d.sourceList, from, to - from);
-                        },
-                        {
-                          size: "small",
-                          disabled:
-                            index + delta < 0 ||
-                            index + delta >= enabledSources.length,
-                          "aria-label":
-                            (sourceInfo[s.type]?.[0] || s.type) +
-                            (delta < 0 ? "先查看" : "后查看"),
-                        },
-                      ),
-                    ),
-                  ),
-                ]),
-              ),
-            ], "先查排在上面的来源，查完再换下一个。这只是查找顺序，不代表岗位更重要。")
+              h(SourceOrderList, { items: enabledSources, labels: Object.fromEntries(Object.entries(sourceInfo).map(([type, info]) => [type, info[0]])),
+                onReorder: order => { d.sourceList = reorderEnabledSources(d.sourceList, order); changed(); },
+              }),
+            ], "拖动右侧六点手柄调整顺序。运行中的任务仍按启动时保存的顺序执行。")
           : null,
         potentialSourceCount(d) > 1 ? sourceRotationControls(d) : null,
       ];
@@ -4034,6 +4008,12 @@ export default Vue.defineComponent({
       navigate(task);
       R.nextTick(() => begin(task));
     }
+    function endTaskButton(task, options = {}) {
+      return button("结束任务", () => terminateTask(task), {
+        ...options, type: "danger", plain: true, text: false, link: false,
+        class: ["ux-task-end-button", options.class], disabled: stopping.value || options.disabled,
+      });
+    }
     /** buttons for a task by its state: running, paused or ended */
     function taskControls(task, { size, running: isRunning, paused, curtain = false } = {}) {
       const small = size ? { size, link: true } : {};
@@ -4042,17 +4022,15 @@ export default Vue.defineComponent({
           ...(task === "auto" ? [button("暂停", pauseTask, {
             class: "ux-task-curtain-pause", loading: stopping.value, disabled: stopping.value,
           })] : []),
-          button("结束任务", () => terminateTask(task), {
-            class: "ux-task-curtain-end", type: "danger", text: true, disabled: stopping.value,
-          }),
+          endTaskButton(task, { class: "ux-task-curtain-end" }),
         ];
       if (isRunning)
         return task === "auto"
           ? [
               button("暂停", pauseTask, { ...small, plain: !size, loading: stopping.value }),
-              button("终止", () => terminateTask(task), { ...small, type: "danger", plain: !size }),
+              endTaskButton(task, small),
             ]
-          : [button("停止", () => stop(task), { ...small, type: "danger", plain: !size, loading: stopping.value })];
+          : [endTaskButton(task, { ...small, loading: stopping.value })];
       if (paused) {
         const guide = recoveryGuide();
         const busy = preparing.value || starting.value || stopping.value || resumeLoading.value;
@@ -4062,7 +4040,7 @@ export default Vue.defineComponent({
           }) : null,
           guide?.canContinue && guide.primaryAction !== "continue"
             ? button(guide.continueLabel || "处理后继续运行", resumeTask, { ...small, plain: !size, disabled: busy }) : null,
-          resumeReadError.value ? null : button("结束本次任务", () => terminateTask(task), { ...small, type: "danger", text: !size, disabled: busy }),
+          resumeReadError.value ? null : endTaskButton(task, { ...small, disabled: busy }),
         ];
       }
       return [
@@ -4078,6 +4056,7 @@ export default Vue.defineComponent({
       R.message({ type: "info", message: "请在BOSS会话中核对上次发送结果。这次任务保持停止，已保存的数据会保留。" });
     }
     async function recoveryAction(action, task = "auto") {
+      if (action === "acknowledge-daily") return acknowledgeDaily();
       if (action === "daily-quota") return addTodayQuota(true);
       if (action === "results") {
         await navigate("tasks");
@@ -4149,7 +4128,9 @@ export default Vue.defineComponent({
           ? "上次已知任务为只收集；请先重新读取并核对任务状态。"
           : "这次任务为只收集；继续时仍不发送消息、不标记不合适。") : null,
         guide.kind === "send-unconfirmed" ? h("p", { class: "ux-hint" }, "待核对的发送未计入已确认数量。") : null,
-        inline([...actions, !detail ? button("查看任务详情", () => openTaskDetail(workerIds[task]), { plain: true }) : null]),
+        inline([...actions,
+          guide.kind === "send-unconfirmed" && task === "auto" ? button("去BOSS查看", openBossForRecovery, { plain: true }) : null,
+          !detail ? button("查看任务详情", () => openTaskDetail(workerIds[task]), { plain: true }) : null]),
         p.detail || p.listSummary || resumeReadError.value ? h("details", { class: "ux-recovery-details" }, [
           h("summary", "查看问题详情"),
           resumeReadError.value ? hint(resumeReadError.value) : null,
@@ -4403,7 +4384,7 @@ export default Vue.defineComponent({
           scheduledRuns.value = await ipc("scheduled-runs-create", { at });
           modal.value = "";
           await navigate("tasks");
-          R.message({ type: "success", message: "已预约。请保持电脑和软件运行；错过时间不会自动补跑。" });
+          R.message({ type: "success", message: "已设置定时启动。请保持电脑和软件运行；错过时间不会自动补跑。" });
         } catch (error) { scheduleError.value = error.message; }
         finally { starting.value = false; }
         return;
@@ -4488,10 +4469,12 @@ export default Vue.defineComponent({
         );
         await taskStore.getRunningTasks();
       } catch (error) {
+        const pendingSend = /有一次发送记录待处理|有一次开聊结果尚未确认/.test(error.message || "");
         R.message({
           type: "error",
-          title: resume ? "任务未能继续" : "任务未启动",
-          message: error.message,
+          title: pendingSend ? "先处理上次发送记录" : resume ? "任务未能继续" : "任务未启动",
+          message: pendingSend ? "在BOSS核对后，还需在软件确认。点击下方按钮处理记录，再结束原任务、重新开始。" : error.message,
+          action: pendingSend ? { label: "处理已核对记录", onClick: acknowledgeDaily } : undefined,
         });
       } finally {
         starting.value = false;
@@ -4559,7 +4542,7 @@ export default Vue.defineComponent({
         blocked: "已停止，请检查条件",
         waiting: "等待新岗位或会话",
         resting: "定时休息中",
-        retrying: "正在重新检查",
+        retrying: "自动恢复中",
         stopped: "已停止",
         error: "任务异常结束",
         queued: "排队等待中",
@@ -4605,11 +4588,7 @@ export default Vue.defineComponent({
             : active
             ? inline([
                 button("查看任务", () => openTaskDetail(workerIds[task])),
-                button("停止运行", () => stop(task), {
-                  type: "danger",
-                  plain: true,
-                  loading: stopping.value,
-                }),
+                ...taskControls(task, { running: true }),
               ])
             : p.state === "blocked"
               ? inline([
@@ -4808,7 +4787,7 @@ export default Vue.defineComponent({
       blocked: "已停止，请检查条件",
       waiting: "等待新岗位或会话",
       resting: "定时休息中",
-      retrying: "正在重新检查",
+      retrying: "自动恢复中",
       stopped: "已停止",
       error: "任务异常结束",
       queued: "排队等待中",
@@ -5442,7 +5421,7 @@ export default Vue.defineComponent({
             : runningEntry
               ? task
                 ? taskControls(task, { running: true })
-                : button("停止任务", () => ipc("stop-task", workerId), { type: "danger", plain: true })
+                : button("结束任务", () => ipc("stop-task", workerId), { class: "ux-task-end-button", type: "danger", plain: true })
               : pausedGuide ? null : task
                 ? taskControls(task, { paused: pausedHere })
                 : null,
@@ -5467,6 +5446,7 @@ export default Vue.defineComponent({
         ]),
         workerId === workerIds.auto ? h("div", { class: "ux-running-expectation", role: "status" }, [
           p.state === "resting" && p.restUntil ? h("p", `定时休息中，预计还需${Math.max(0, Math.ceil((p.restUntil - progressClock.value) / 60000))}分钟；到时检查条件后继续。`) : null,
+          p.state === "retrying" && p.retryUntil ? h("p", { class: "ux-hint" }, `下次自动重试：${Math.max(0, Math.ceil((p.retryUntil - progressClock.value) / 1000))}秒后（第${p.retryAttempt || 1}次）`) : null,
           p.dailyQuota ? h("p", `本软件今日已确认打招呼${p.dailyQuota.confirmed}人／今日目标${p.dailyQuota.limit}人${p.dailyQuota.pendingCount ? "；有结果待核对" : ""}。此统计不代表BOSS剩余额度。`) : null,
           h("p", { class: "ux-hint" }, estimateRun(p).text),
         ]) : null,
@@ -5736,25 +5716,25 @@ export default Vue.defineComponent({
     }
     async function loadSchedules() {
       try { scheduledRuns.value = await ipc("scheduled-runs-list"); }
-      catch (error) { R.message({ type: "error", message: "预约读取失败：" + error.message }); }
+      catch (error) { R.message({ type: "error", message: "定时启动读取失败：" + error.message }); }
     }
     function scheduledRunsPanel() {
       const rows = scheduledRuns.value || [], page = Math.min(schedulePage.value, Math.max(1, Math.ceil(rows.length / 10)));
       const labels = { pending: "等待启动", waiting: "等待当前任务", starting: "核对启动条件", started: "已提交任务", blocked: "需要处理", missed: "已错过", cancelled: "已取消", "needs-review": "启动结果待核对" };
-      return h("section", { class: "ux-card ux-scheduled-runs", "aria-label": "预约任务" }, [
-        h("div", { class: "ux-inline" }, [h("h2", "预约任务"), button("预约当前找岗位配置", () => begin("auto", true), { plain: true }), button("刷新预约", loadSchedules, { text: true })]),
+      return h("section", { class: "ux-card ux-scheduled-runs", "aria-label": "定时启动" }, [
+        h("div", { class: "ux-inline" }, [h("h2", "定时启动"), button("定时启动当前配置", () => begin("auto", true), { plain: true }), button("刷新", loadSchedules, { text: true })]),
         hint("电脑和软件需保持运行；到期按原账号和已保存条件提交，找岗位任务串行执行。错过时间不会自动补跑。"),
         rows.length ? E("ElTable", { data: rows.slice((page - 1) * 10, page * 10), rowKey: "id", style: "width:100%" }, () => [
           E("ElTableColumn", { label: "计划启动", minWidth: 170 }, { default: ({ row }) => new Date(row.at).toLocaleString("zh-CN") }),
           E("ElTableColumn", { label: "状态", width: 150 }, { default: ({ row }) => labels[row.state] || row.state }),
           E("ElTableColumn", { prop: "detail", label: "说明", minWidth: 240 }),
           E("ElTableColumn", { label: "操作", width: 130 }, { default: ({ row }) => ["pending", "waiting", "blocked", "missed"].includes(row.state)
-            ? button("取消预约", async () => {
-              if (!(await confirmBox("取消这次预约，不会停止已经运行的任务。", "取消预约", "取消预约"))) return;
+            ? button("取消定时启动", async () => {
+              if (!(await confirmBox("取消这次定时启动，不会停止已经运行的任务。", "取消定时启动", "取消定时启动"))) return;
               try { scheduledRuns.value = await ipc("scheduled-runs-cancel", { id: row.id }); }
               catch (error) { R.message({ type: "error", message: error.message }); }
             }, { size: "small" }) : "—" }),
-        ]) : hint("暂无预约。完成找岗位配置后，可在开始前确认中选择预约启动。"),
+        ]) : hint("暂无定时启动。完成找岗位配置后，可在开始前确认中选择定时启动。"),
         rows.length > 10 ? h("div", { class: "ux-inline ux-schedule-pagination" }, [button("上一页", () => schedulePage.value = page - 1, { disabled: page <= 1 }), `第${page}页，共${rows.length}条`, button("下一页", () => schedulePage.value = page + 1, { disabled: page * 10 >= rows.length })]) : null,
       ]);
     }
@@ -7432,7 +7412,8 @@ export default Vue.defineComponent({
     }
     async function acknowledgeDaily() {
       const info = await loadDailyQuota();
-      if (!info?.available || !info.pendingCount) return;
+      if (!info?.available) { R.message({ type: "warning", message: info?.detail || "暂时无法读取待确认记录，请先检查BOSS登录。" }); return; }
+      if (!info.pendingCount) { R.message({ type: "info", message: "当前账号今日没有待处理的发送记录。若原任务仍提示待核对，请结束原任务后重新开始。" }); return; }
       if (!(await confirmBox(`请先在BOSS会话核对上次发送。确认后将${info.pendingCount}次待确认发送按已使用人数计入今天，避免超额；不会重发，也不会恢复原任务。已有记录保留。`, "核对待确认发送", "已核对，计入今日已用"))) return;
       try {
         dailyInfo.value = await ipc("daily-quota-acknowledge", { accountId: info.accountId, day: info.day, pendingCount: info.pendingCount });
@@ -8522,7 +8503,7 @@ export default Vue.defineComponent({
           checks.value === "auto" ? h("section", { class: "ux-start-schedule" }, [
             h("h3", "启动时间"),
             E("ElRadioGroup", { modelValue: startupChoice.value, "onUpdate:modelValue": v => startupChoice.value = v, "aria-label": "启动时间" }, () => [
-              E("ElRadio", { value: "now" }, () => "立即开始"), E("ElRadio", { value: "scheduled" }, () => "预约启动"),
+              E("ElRadio", { value: "now" }, () => "立即开始"), E("ElRadio", { value: "scheduled" }, () => "定时启动"),
             ]),
             startupChoice.value === "scheduled" ? h("div", [
               h("label", ["计划启动时间 ", h("input", { type: "datetime-local", class: "ux-schedule-input", value: scheduledTime.value, "aria-label": "计划启动时间", onInput: event => scheduledTime.value = event.target.value })]),
@@ -8533,7 +8514,7 @@ export default Vue.defineComponent({
         ];
         footerNodes = [
           button("返回修改", () => (modal.value = "")),
-          button(checks.value === "auto" && startupChoice.value === "scheduled" ? "确认预约" : "确认开始", confirmRun, {
+          button(checks.value === "auto" && startupChoice.value === "scheduled" ? "确认定时启动" : "确认开始", confirmRun, {
             type: "primary",
             loading: starting.value,
             disabled: preparing.value || runtimeSteps.value.some((s) => !s.ok),

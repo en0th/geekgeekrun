@@ -8,7 +8,7 @@ import { finishChatConfirmation } from '../browser-health.mjs'
 // Exercise the shipped checkpoints with browser/IPC effects isolated.
 const source = fs.readFileSync(new URL('../index.mjs', import.meta.url), 'utf8')
 const stateCode = source.slice(source.indexOf('let runPosition ='), source.indexOf('async function markJobAsNotSuitInRecommendPage'))
-  .replaceAll('export function', 'function')
+  .replace(/export (?=(?:async )?function)/g, '')
 const resumeCode = source.slice(source.indexOf('  const resumeFrom ='), source.indexOf('  afterPageLoad:'))
 function context(successLimit = 20, noMatchLimit = 30) {
   const events = []
@@ -17,7 +17,8 @@ function context(successLimit = 20, noMatchLimit = 30) {
     dailyQuota: { confirm() {}, assert() {} }, dailyOperation: 'fixture', dailyLimit: () => 100, publishDailyQuota() {},
     blockJobNotSuit: new ExpiringBlockSet(), blockBossNotActive: new ExpiringBlockSet(), blockBossNotNewChat: new Set(),
     positionFingerprint: '', computedSourceList: [{ type: 'recommend' }, { type: 'search' }],
-    autoStartChatEventBus: { emit: (type, data) => events.push({ type, ...data }) }
+    autoStartChatEventBus: { emit: (type, data) => events.push({ type, ...data }) },
+    process: { once() {} },
   })
   vm.runInContext(stateCode, ctx)
   return { ctx, events, run: code => vm.runInContext(code, ctx),

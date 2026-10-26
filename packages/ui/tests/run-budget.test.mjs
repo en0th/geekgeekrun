@@ -53,7 +53,7 @@ test('resume saves the latest budget before dispatching and stops when saving fa
 test('budget stops save progress and use terminal exit codes rather than the worker restart path', async () => {
   const file = fs.readFileSync(new URL('../src/main/flow/GEEK_AUTO_START_CHAT_WITH_BOSS_MAIN/index.ts', import.meta.url), 'utf8')
   const start = file.indexOf('  async function stopForBudget(')
-  const { code } = await transform(file.slice(start, file.indexOf('\n  while (true)', start)), { loader: 'ts' })
+  const { code } = await transform(file.slice(start, file.indexOf('\n  const automaticRetry =', start)), { loader: 'ts' })
   for (const [message, expected] of [['AUTO_CHAT_RUN_BUDGET_EXCEEDED', 96], ['AUTO_CHAT_RUN_BUDGET_UNAVAILABLE', 97]]) {
     const calls = []
     const context = vm.createContext({ Error, AUTO_CHAT_ERROR_EXIT_CODE,
