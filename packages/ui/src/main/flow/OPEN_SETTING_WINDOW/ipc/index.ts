@@ -11,6 +11,8 @@ import { modelPair, validModels } from '../../../../common/model-config.mjs'
 import { startJobStatusPoll, JOB_STATUS_POLL_MODE } from '../../../features/job-status-poll'
 import { JOB_STATUS_POLL_LAST_RUN_FILE } from '../../../features/job-hire-status'
 import { checkBossLoginStatus } from '../../../features/boss-login-check'
+import { readGlobalRunPolicy, saveGlobalRunPolicy, dailyQuotaInfo, addDailyQuota, acknowledgeDailyPending } from '../../../features/run-policy'
+import { listScheduledRuns, scheduleJobRun, cancelScheduledRun } from '../../../features/scheduled-runs'
 import { cleanupLogs, logDirPath } from '../../../utils/overrideConsole'
 import {
   LOG_LEVELS,
@@ -322,16 +324,9 @@ export default function initIpc() {
         if (!resumeRunRecordId) throw new Error('没有可以恢复的找岗位任务')
         if (!Number.isSafeInteger(options.runRecordId) || options.runRecordId !== resumeRunRecordId)
           throw new Error('任务信息已更新，请重新加载后再继续。')
-      } else {
-        // a new run replaces the paused one, which is terminated
-        const status = (await sendToDaemon({ type: 'get-status' }, { needCallback: true })) as
-          | { workers?: { workerId: string }[]; queue?: { workerId: string }[] }
-          | undefined
-        if (
-          ![...(status?.workers ?? []), ...(status?.queue ?? [])].some((it) => it.workerId === mode)
-        )
-          discardAutoChatResume()
       }
+      // runCommon validates account and quota before initializing a new checkpoint.
+      // A failed preflight must leave the paused run available.
       const result = await runCommon({ mode, resumeRunRecordId })
       daemonEE.on('message', function handler(message) {
         if (message.workerId !== mode) {
@@ -350,8 +345,10 @@ export default function initIpc() {
   // 任务详情 → 任务配置: the settings a run started with, saved by the renderer when the run begins
   ipcMain.handle(
     'save-run-config-snapshot',
-    (_ev, payload: { runRecordId: number; config: unknown }) =>
-      saveRunConfigSnapshot(payload)
+    async (_ev, payload: { runRecordId: number; config: Record<string, unknown> }) => {
+      const saved = await getRunConfigSnapshot({ runRecordId: payload.runRecordId }) as { actualConfig?: unknown } | null
+      return saveRunConfigSnapshot({ ...payload, config: { ...payload.config, ...(saved?.actualConfig ? { actualConfig: saved.actualConfig } : {}) } })
+    }
   )
   ipcMain.handle('get-run-config-snapshot', (_ev, payload: { runRecordId: number }) =>
     getRunConfigSnapshot(payload)
@@ -516,6 +513,14 @@ export default function initIpc() {
     // until it is saved once, start from the pace boss.json already uses
     return saved ? readRunPace(saved) : runPaceFromBossConfig(readConfigFile('boss.json') ?? {})
   })
+  ipcMain.handle('run-policy-info', () => readGlobalRunPolicy())
+  ipcMain.handle('run-policy-save', (_, payload) => saveGlobalRunPolicy(payload))
+  ipcMain.handle('daily-quota-info', () => dailyQuotaInfo())
+  ipcMain.handle('daily-quota-add', (_, { amount, accountId, day }) => addDailyQuota(amount, accountId, day))
+  ipcMain.handle('daily-quota-acknowledge', (_, { accountId, day, pendingCount }) => acknowledgeDailyPending(accountId, day, pendingCount))
+  ipcMain.handle('scheduled-runs-list', () => listScheduledRuns())
+  ipcMain.handle('scheduled-runs-create', (_, { at }) => scheduleJobRun(at))
+  ipcMain.handle('scheduled-runs-cancel', (_, { id }) => cancelScheduledRun(id))
   ipcMain.handle('run-pace-save', async (_, payload) => {
     const pace = readRunPace(payload)
     await writeConfigFile(RUN_PACE_FILE, pace)

@@ -11,7 +11,7 @@ import JSON5 from 'json5'
 import { readRunSettings } from '@geekgeekrun/geek-auto-start-chat-with-boss/run-settings.mjs'
 import { jobComparisonScope } from '@geekgeekrun/geek-auto-start-chat-with-boss/job-comparison-scope.mjs'
 import { normalizeJobSources } from '@geekgeekrun/geek-auto-start-chat-with-boss/search-source.mjs'
-import { sleep } from '@geekgeekrun/utils/sleep.mjs'
+import { createAutomaticRetry } from '@geekgeekrun/geek-auto-start-chat-with-boss/automatic-retry.mjs'
 import { installWorkerShutdown } from '@geekgeekrun/utils/worker-shutdown.mjs'
 import {
   AUTO_CHAT_ERROR_EXIT_CODE
@@ -21,15 +21,6 @@ import SqlitePluginModule from '@geekgeekrun/sqlite-plugin'
 const {
   default: SqlitePlugin
 } = SqlitePluginModule
-
-const rerunInterval = (() => {
-  let v = Number(process.env.MAIN_BOSSGEEKGO_RERUN_INTERVAL)
-  if (isNaN(v)) {
-    v = 5000
-  }
-
-  return v
-})()
 
 const initPlugins = (hooks, { readConfigFile, getPublicDbFilePath }) => {
   const { groupRobotAccessToken: dingTalkAccessToken } = readConfigFile('dingtalk.json')
@@ -46,7 +37,7 @@ const initPlugins = (hooks, { readConfigFile, getPublicDbFilePath }) => {
 const main = async () => {
   const { readConfigFile, readStorageFile, getPublicDbFilePath } = await import('@geekgeekrun/geek-auto-start-chat-with-boss/runtime-file-utils.mjs')
   const bossCookies = readStorageFile('boss-cookies.json')
-  const { mainLoop, closeBrowserWindow } = await import('@geekgeekrun/geek-auto-start-chat-with-boss/index.mjs')
+  const { mainLoop, closeBrowserWindow, prepareForAutomaticRetry, autoStartChatEventBus } = await import('@geekgeekrun/geek-auto-start-chat-with-boss/index.mjs')
   const shutdown = installWorkerShutdown({ close: closeBrowserWindow })
   if (!bossCookies?.length) {
     console.error('There is no cookies. You can save a copy with EditThisCookie extension.')
@@ -74,12 +65,36 @@ const main = async () => {
   }
   initPlugins(hooks, { readConfigFile, getPublicDbFilePath })
   await hooks.daemonInitialized.promise()
+  let sendPending = false, progress = 0
+  autoStartChatEventBus.on('CHAT_CONFIRMATION', pending => { sendPending = pending })
+  autoStartChatEventBus.on('TASK_PROGRESS', event => { if (['viewed', 'sent', 'collected'].includes(event.kind)) progress++ })
+  const automaticRetry = createAutomaticRetry({ prepare: prepareForAutomaticRetry,
+    sendPending: () => sendPending, isStopping: () => shutdown.isStopping(), progressKey: () => progress,
+    publish: ({ attempt, until, delayMs, reason }) => {
+      const detail = until ? `${reason}，${delayMs / 1000}秒后自动重试（第${attempt}次）；已有结果保留。` : reason
+      console.log(detail)
+      autoStartChatEventBus.emit('TASK_PROGRESS', { detail, state: 'retrying' })
+    },
+  })
   while (true) {
+    if (shutdown.isStopping()) return
     try {
       await mainLoop(hooks)
     } catch (err) {
       if (shutdown.isStopping()) return
+      try {
+        if (await automaticRetry.recover(err)) continue
+        if (shutdown.isStopping()) return
+      } catch (retryError) { if (shutdown.isStopping()) return; err = retryError }
+      if (sendPending && !/AUTO_CHAT_DAILY_/.test(err?.message || ''))
+        err = Object.assign(new Error('AUTO_CHAT_MESSAGE_SEND_UNCONFIRMED'), { detail: '发送结果尚未确认，请先核对；不会自动重发。' })
       if (err instanceof Error) {
+        if (/AUTO_CHAT_DAILY_|STARTUP_CHAT_ERROR_DUE_TO_TODAY_CHANCE_HAS_USED_OUT/.test(err.message)) {
+          console.error(err.detail || err.message)
+          await closeBrowserWindow?.()
+          process.exit(/PLATFORM_LIMIT|TODAY_CHANCE/.test(err.message) ? 103 : /GOAL_REACHED/.test(err.message) ? 102 : /UNCONFIRMED/.test(err.message) ? 87 : 104)
+          return
+        }
         if (err.message === 'AUTO_CHAT_SECURITY_CHECK') {
           console.error('BOSS需要人工安全验证，任务已暂停；请完成验证并更新登录状态后重新运行')
           await closeBrowserWindow?.()
@@ -153,10 +168,8 @@ const main = async () => {
           break
         }
       }
-      closeBrowserWindow?.()
       console.error(err)
-      console.log(`[Run core main] An internal error is caught, and browser will be restarted in ${rerunInterval}ms.`)
-      await sleep(rerunInterval)
+      await automaticRetry.recover(new Error('AUTO_CHAT_RETRY_UNEXPECTED'))
     }
   }
 }

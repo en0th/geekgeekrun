@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import vm from 'node:vm'
 import { transform } from 'esbuild'
+import { policyRunConfig, normalizeRunPolicy } from '../../geek-auto-start-chat-with-boss/run-policy.mjs'
+import { jobConfigSnapshot } from '../../geek-auto-start-chat-with-boss/task-config-snapshot.mjs'
 import { DEFAULT_RUN_BUDGET, MAX_RUN_BUDGET, normalizeRunBudget, readRunSettings } from '../../geek-auto-start-chat-with-boss/run-settings.mjs'
 import { normalizeJobSources } from '../../geek-auto-start-chat-with-boss/search-source.mjs'
 import { AUTO_CHAT_ERROR_EXIT_CODE } from '../../run-core-of-geek-auto-start-chat-with-boss/enums.mjs'
@@ -30,7 +32,7 @@ test('the real budget form binds all three independent limits to the persisted d
 })
 
 test('resume saves the latest budget before dispatching and stops when saving fails', async () => {
-  const start = source.indexOf('    async function resumeTask()')
+  const start = source.indexOf('    async function resumeTask(')
   const code = source.slice(start, source.indexOf('    // pause keeps', start))
   for (const saved of [true, false]) {
     const calls = []
@@ -51,7 +53,7 @@ test('resume saves the latest budget before dispatching and stops when saving fa
 test('budget stops save progress and use terminal exit codes rather than the worker restart path', async () => {
   const file = fs.readFileSync(new URL('../src/main/flow/GEEK_AUTO_START_CHAT_WITH_BOSS_MAIN/index.ts', import.meta.url), 'utf8')
   const start = file.indexOf('  async function stopForBudget(')
-  const { code } = await transform(file.slice(start, file.indexOf('\n  while (true)', start)), { loader: 'ts' })
+  const { code } = await transform(file.slice(start, file.indexOf('\n  const automaticRetry =', start)), { loader: 'ts' })
   for (const [message, expected] of [['AUTO_CHAT_RUN_BUDGET_EXCEEDED', 96], ['AUTO_CHAT_RUN_BUDGET_UNAVAILABLE', 97]]) {
     const calls = []
     const context = vm.createContext({ Error, AUTO_CHAT_ERROR_EXIT_CODE,
@@ -67,13 +69,16 @@ test('budget stops save progress and use terminal exit codes rather than the wor
 
 test('newly queued workers freeze budgets and declare both budget exits non-restartable', async () => {
   const file = fs.readFileSync(new URL('../src/main/features/run-common.ts', import.meta.url), 'utf8')
-  const { code } = await transform(file.slice(file.indexOf('export async function runCommon(')).replace('export async', 'async'), { loader: 'ts' })
+  const { code } = await transform(file.slice(file.indexOf('let startLock:')).replace('export function', 'function'), { loader: 'ts' })
   let dispatched = null, frozen = null
   const initializations = [], checkpoints = []
   const config = { 'boss.json': { autoChatRunBudget: { requests: 7, detailRequests: 3, activeMinutes: 15 } }, 'common-job-condition-config.json': {}, 'target-company-list.json': [] }
   const context = vm.createContext({ AUTO_CHAT_ERROR_EXIT_CODE,
     sendToDaemon: async message => { if (message.type === 'get-status') return {}; if (message.type === 'start-worker') dispatched = message; return {} },
-    saveAndGetCurrentRunRecord: async () => ({ data: { id: 42 } }),
+    saveAndGetCurrentRunRecord: async () => ({ data: { id: 42 } }), saveRunConfigSnapshot: async () => {}, jobConfigSnapshot,
+    withGlobalRunPolicy: config => ({ ...config, 'boss.json': { ...config['boss.json'], ...policyRunConfig({}) } }),
+    readGlobalRunPolicy: () => normalizeRunPolicy({}), checkBossLoginStatus: async () => ({ status: 'valid', accountId: 'fixture' }),
+    createDailyQuotaStore: () => ({ assert() {} }),
     process: { env: {}, argv: ['electron'] }, app: { isPackaged: true }, daemonEE: { on() {} },
     readConfigFile: name => config[name], readRunSettings, normalizeJobSources,
     assertCheckpointCanResume, readAutoChatResume: () => ({ runRecordId: 42, runMode: 'chat', exitCode: 0, messageSendPending: false }),
@@ -83,7 +88,8 @@ test('newly queued workers freeze budgets and declare both budget exits non-rest
     writeTaskConfigSnapshot: (_folder, _id, captured) => { frozen = captured; return '/isolated-fixture/42.json' } })
   vm.runInContext(code, context)
   await vm.runInContext("runCommon({mode:'geekAutoStartWithBossMain'})", context)
-  assert.deepEqual(frozen['boss.json'].autoChatRunBudget, config['boss.json'].autoChatRunBudget)
+  assert.deepEqual(frozen['boss.json'].autoChatRunBudget, policyRunConfig({}).autoChatRunBudget)
+  assert.equal(frozen['boss.json'].autoChatRunInBackground, true)
   const codes = dispatched.env.GEEKGEEKRUND_NO_AUTO_RESTART_EXIT_CODE.split(',').map(Number)
   assert.ok(codes.includes(96) && codes.includes(97))
   assert.ok(codes.includes(98))

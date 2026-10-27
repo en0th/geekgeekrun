@@ -47,7 +47,7 @@ export async function launchTaskBrowser(puppeteer, { background = true } = {}) {
     await closeOwnedBrowser(browser)
     if (!background) throw browserLaunchError(cause)
     throw Object.assign(new Error(BACKGROUND_WINDOW_ERROR, { cause }), {
-      detail: '无法确认BOSS浏览器已在后台最小化，任务已暂停；请检查浏览器，或关闭“后台运行浏览器”后恢复。',
+      detail: '无法确认BOSS浏览器已在后台最小化，任务已暂停；请检查或更新浏览器后恢复。不会改成前台运行。',
     })
   } finally {
     await session?.detach().catch(() => {})

@@ -13,10 +13,21 @@ const checkpoint = (extra = {}) => ({ runRecordId: 42, runMode: 'collect', exitC
 const source = fs.readFileSync(new URL('../src/renderer/src/page/Ux/index.js', import.meta.url), 'utf8')
 const shipped = (from, to) => source.slice(source.indexOf(from), source.indexOf(to, source.indexOf(from)))
 
+test('a 150-person account-day ceiling offers results; a past day checks fresh usage before continuing', () => {
+  const state = checkpoint({ runMode: 'chat', exitCode: 102, progress: { dailyQuota: { confirmed: 150, limit: 150, day: '2026-10-26' } } })
+  const before = structuredClone(state)
+  const atCap = taskRecoveryGuidance({ checkpoint: state, today: '2026-10-26' })
+  assert.equal(atCap.primaryAction, 'results'); assert.equal(atCap.canContinue, false)
+  assert.doesNotMatch(atCap.nextStep, /追加/)
+  const tomorrow = taskRecoveryGuidance({ checkpoint: state, today: '2026-10-27' })
+  assert.equal(tomorrow.primaryAction, 'daily-quota'); assert.match(tomorrow.primaryLabel, /检查今日/)
+  assert.equal(tomorrow.canContinue, false); assert.deepEqual(state, before)
+})
+
 test('each known stop gives a concrete next action without changing the checkpoint or conditions', () => {
   const cases = [[0, 'continue'], [81, 'login'], [82, 'login'], [83, 'boss-site'], [84, 'boss-site'], [85, 'browser'],
     [88, 'preferences'], [89, 'boss-site'], [91, 'continue'], [93, 'boss-site'], [94, 'login'], [95, 'filters'],
-    [97, 'data'], [98, 'data'], [99, 'display'], [100, 'filters'], [101, 'browser']]
+    [97, 'data'], [98, 'data'], [99, 'browser'], [100, 'filters'], [101, 'browser'], [102, 'daily-quota'], [103, 'results'], [104, 'data']]
   for (const [exitCode, action] of cases) {
     const state = checkpoint({ exitCode }), before = structuredClone(state)
     const guide = taskRecoveryGuidance({ checkpoint: state, currentMode: 'collect' })
@@ -69,7 +80,7 @@ test('mode changes and unreadable task state have their own actions instead of a
   assert.equal(service.primaryLabel, '重新读取状态')
   assert.equal(service.secondaryAction, 'feedback')
   assert.equal(service.canContinue, false)
-  assert.equal(taskRecoveryGuidance({ checkpoint: checkpoint({ runMode: 'chat', messageSendPending: true }), readError: true }).primaryAction, 'boss-chat')
+  assert.equal(taskRecoveryGuidance({ checkpoint: checkpoint({ runMode: 'chat', messageSendPending: true }), readError: true }).primaryAction, 'acknowledge-daily')
 })
 
 test('running status uses the worker mode even when the next-run draft has changed', () => {
@@ -132,7 +143,7 @@ test('real Vue watchers do not turn fresh status arrays into a refresh feedback 
 test('recovery actions open the right controls and restore only the task mode', async () => {
   const calls = [], state = checkpoint(), draft = { value: { runMode: 'chat', cities: ['深圳'], runBudget: { requests: 500 } } }
   const ctx = vm.createContext({ draft, pausedAutoRun: () => state, closeTaskDetail: () => calls.push('close'),
-    navigate: async route => calls.push(route), goStep: step => calls.push(step), R: { nextTick() {} },
+    navigate: async route => calls.push(route), goStep: step => calls.push(step), R: { nextTick() {} }, loadGlobalPace: async () => {},
     platformFiltersOpen: ref(false), runBudgetOpen: ref(false), browserOptionsOpen: ref(false), settingTab: ref(''),
     switchRunMode: async (value, mode) => { value.runMode = mode },
     resumeTask: () => assert.fail('a follow action cannot resume the finding task'), restartTask: task => calls.push('restart:' + task) })
@@ -140,7 +151,7 @@ test('recovery actions open the right controls and restore only the task mode', 
   await ctx.recoveryAction('filters')
   assert.equal(ctx.platformFiltersOpen.value, true)
   assert.ok(calls.includes('job-preferences'))
-  await ctx.recoveryAction('limits'); assert.equal(ctx.runBudgetOpen.value, true)
+  await ctx.recoveryAction('limits'); assert.equal(ctx.settingTab.value, 'pace'); assert.ok(calls.includes('settings'))
   await ctx.recoveryAction('browser'); assert.equal(ctx.settingTab.value, 'browser')
   await ctx.recoveryAction('data'); assert.equal(ctx.settingTab.value, 'data')
   await ctx.recoveryAction('restore-mode')

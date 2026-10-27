@@ -1,5 +1,10 @@
 import { readConfigFile } from './runtime-file-utils.mjs'
-import { sleep } from "@geekgeekrun/utils/sleep.mjs"
+import { sleep } from './attempt-sleep.mjs'
+import { createTimedRest } from './timed-rest.mjs'
+const timedSettings = readConfigFile('boss.json').autoChatTimedRest
+let timedHooks
+const timedRest = timedSettings ? createTimedRest({ ...timedSettings, sleep,
+  onEnter: data => timedHooks?.sageTimeEnter?.promise(data), onExit: () => timedHooks?.sageTimeExit?.promise() }) : null
 let {
   isSageTimeEnabled,
   sageTimeOpTimes,
@@ -26,6 +31,7 @@ export const waitForSageTimeOrJustContinue = async ({
   tag,
   hooks,
 } = {}) => {
+  if (timedRest) { timedHooks = hooks; await timedRest(); return }
   if (!isSageTimeEnabled) {
     return
   }

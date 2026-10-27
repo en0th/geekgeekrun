@@ -8,15 +8,17 @@ import { finishChatConfirmation } from '../browser-health.mjs'
 // Exercise the shipped checkpoints with browser/IPC effects isolated.
 const source = fs.readFileSync(new URL('../index.mjs', import.meta.url), 'utf8')
 const stateCode = source.slice(source.indexOf('let runPosition ='), source.indexOf('async function markJobAsNotSuitInRecommendPage'))
-  .replaceAll('export function', 'function')
+  .replace(/export (?=(?:async )?function)/g, '')
 const resumeCode = source.slice(source.indexOf('  const resumeFrom ='), source.indexOf('  afterPageLoad:'))
 function context(successLimit = 20, noMatchLimit = 30) {
   const events = []
   const ctx = vm.createContext({
     perSourceSuccessLimit: successLimit, noMatchStreakLimit: noMatchLimit, finishChatConfirmation,
+    dailyQuota: { confirm() {}, assert() {} }, dailyOperation: 'fixture', dailyLimit: () => 100, publishDailyQuota() {},
     blockJobNotSuit: new ExpiringBlockSet(), blockBossNotActive: new ExpiringBlockSet(), blockBossNotNewChat: new Set(),
     positionFingerprint: '', computedSourceList: [{ type: 'recommend' }, { type: 'search' }],
-    autoStartChatEventBus: { emit: (type, data) => events.push({ type, ...data }) }
+    autoStartChatEventBus: { emit: (type, data) => events.push({ type, ...data }) },
+    process: { once() {} },
   })
   vm.runInContext(stateCode, ctx)
   return { ctx, events, run: code => vm.runInContext(code, ctx),
@@ -141,7 +143,7 @@ test('greeting at the threshold emits one success and saves browser state', asyn
     hooks: { newChatStartup: { promise: async () => {} } },
     ChatStartupFrom: { AutoFromRecommendList: 1 }, JobSource: { recommend: 1 },
     page: { $: async () => null }, storeStorage: async () => { saves++ }, sleepWithRandomDelay: async () => {},
-    chatSourceRotationDone: false
+    chatSourceRotationDone: false, dailyQuota: { confirm() {}, assert() {} }, dailyOperation: 'fixture', dailyLimit: () => 100, publishDailyQuota() {}
   })
   const start = source.indexOf('          const waitAndHandleChatSuccess =')
   const end = source.indexOf('          const handleAddFriendResponse =', start)

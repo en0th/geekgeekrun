@@ -15,6 +15,7 @@ function run({ url = 'https://www.zhipin.com/web/geek/job', body, timeout = fals
   const calls = [], navigation = []
   const ctx = vm.createContext({
     classifyBossLoginResponse, bossLoginError, bindRunAccount, isSecurityCheckUrl, taskBrowserError,
+    readConfigFile: () => ({}), isCollectMode: true,
     runAccountId: null, browser: {}, recommendJobPageUrl: 'https://www.zhipin.com/web/geek/job',
     document: { readyState, querySelector: () => rootReady ? { __vue__: { jobList: [] } } : null }, location: { href: url },
     sleep: async () => {}, storeStorage: async () => calls.push('store'),

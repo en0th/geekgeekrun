@@ -3,6 +3,10 @@ import { toast } from "../../features/Toast";
 import { isSuccessfulTaskExit } from "@geekgeekrun/pm/task-exit.cjs";
 import { checkpointRecovery, assertCheckpointCanResume } from "../../../../common/task-recovery.mjs";
 import { taskRecoveryGuidance } from "../../../../common/task-recovery-guidance.mjs";
+import { actualRunFacts } from "../../../../common/run-config-facts.mjs";
+import { sourceRotationLabel } from "../../../../common/source-rotation-options.mjs";
+import { reorderEnabledSources } from "../../../../common/source-order.mjs";
+import SourceOrderList from "./SourceOrderList.vue";
 import { experienceSelectionLabels, experienceSelectionCodes, matchesExperience, escapeKeyword, keywordPattern, allKeywordPattern, normalizeRequiredJobConditions, requiredJobConditionReasons, JOB_NATURE_OPTIONS, DEGREE_OPTIONS } from "@geekgeekrun/geek-auto-start-chat-with-boss/job-filter-config.mjs";
 import { parseSalaryDetails, matchesSalaryDetails } from "@geekgeekrun/utils/job-values.cjs";
 import { normalizeCitySelection, matchesCitySelection } from "@geekgeekrun/geek-auto-start-chat-with-boss/city-filter.mjs";
@@ -66,6 +70,7 @@ import {
   QuestionFilled,
   Close,
   ArrowRight,
+  View,
 } from "@element-plus/icons-vue";
 import { getAutoStartChatSteps } from "../../../../common/prerequisite-step-by-step-check";
 import {
@@ -79,6 +84,8 @@ import "./keyword-examples.js";
 import "./ux.css";
 import { refractionMap } from "./glass.js";
 import { sidebarGlassPresentation } from "./glass-support.js";
+import RunPolicySettings from "./RunPolicySettings.vue";
+import { RUN_PROFILES, normalizeRunPolicy, policyRunConfig, estimateRun, ACCOUNT_DAILY_CHAT_LIMIT } from "@geekgeekrun/geek-auto-start-chat-with-boss/run-policy.mjs";
 import {
   missingJobFields,
   scopedMarkStrategy,
@@ -231,8 +238,8 @@ export default Vue.defineComponent({
       pause: original.isSageTimeEnabled,
       actions: original.sageTimeOpTimes,
       minutes: original.sageTimePauseMinute,
-      runBudget: readRunSettings(original).runBudget,
-      runInBackground: readRunSettings(original).runInBackground,
+      runBudget: { ...DEFAULT_RUN_BUDGET },
+      runInBackground: true,
       perSourceSuccessLimit:
         original.autoChatPerSourceSuccessLimit == null
           ? null
@@ -356,7 +363,7 @@ export default Vue.defineComponent({
     shared.value.requiredConditions ??= clone(commonDraft.requiredConditions);
     // Run settings were added after drafts could be cached; fill them from the saved config.
     {
-      const runSettings = readRunSettings(original);
+      const runSettings = readRunSettings({ ...original, autoChatRunBudget: DEFAULT_RUN_BUDGET, autoChatRunInBackground: true });
       for (const key of Object.keys(runSettings))
         if (draft.value[key] === undefined) draft.value[key] = runSettings[key];
     }
@@ -466,7 +473,7 @@ export default Vue.defineComponent({
       settingTab = ref("account");
     const platformOpen = ref(false),
       searchRotationOpen = ref(false),
-      sourceRotationOpen = ref(false),
+      sourceSwitchOpen = ref(false),
       runBudgetOpen = ref(false),
       platformFiltersOpen = ref(false),
       extraConditionsOpen = ref(false),
@@ -481,6 +488,8 @@ export default Vue.defineComponent({
       globalPace = ref(null),
       paceForm = ref(null),
       paceSaving = ref(false);
+    const globalPolicy = ref(null), dailyInfo = ref(null), scheduledRuns = ref([]);
+    const startupChoice = ref("now"), scheduledTime = ref(""), scheduleError = ref(""), schedulePage = ref(1);
     const companyEditor = ref(null),
       companyKey = ref("companies"),
       companyBusy = ref(false),
@@ -1174,6 +1183,7 @@ export default Vue.defineComponent({
       const d = effective();
       d.inherit = false;
       d.inheritedFields = [];
+      for (const key of ["runBudget", "runInBackground", "runPolicy", "pause", "actions", "minutes", "jobListLoadWaitSeconds", "jobDetailViewWaitSeconds"]) delete d[key];
       return d;
     }
     function templateModified() {
@@ -1813,14 +1823,14 @@ export default Vue.defineComponent({
       const pace = globalPace.value || d;
       return {
         autoChatRunMode: d.runMode === "collect" ? "collect" : "chat",
-        autoChatRunInBackground: d.runInBackground !== false,
+        autoChatRunInBackground: true,
         collectOnlyMatchingJobs: d.collectOnlyMatchingJobs !== false,
         skipUnparseableSalaryJob: d.skipUnparseableSalaryJob !== false,
         // null keeps the runtime defaults; 0 disables that rotation trigger
         autoChatPerSourceSuccessLimit: d.perSourceSuccessLimit ?? null,
         autoChatNoMatchStreakLimit: d.noMatchStreakLimit ?? null,
         autoChatFilterCombinationLimit: filterCombinationLimit(d.filterCombinationLimit),
-        autoChatRunBudget: normalizeRunBudget(d.runBudget),
+        autoChatRunBudget: policyRunConfig(globalPolicy.value).autoChatRunBudget,
         isSageTimeEnabled: pace.pause,
         ...(pace.pause
           ? { sageTimeOpTimes: pace.actions, sageTimePauseMinute: pace.minutes }
@@ -2031,8 +2041,6 @@ export default Vue.defineComponent({
       d.runMode === "collect" && d.collectOnlyMatchingJobs === false;
     function validation(d) {
       const a = [];
-      try { normalizeRunBudget(d.runBudget); }
-      catch (error) { a.push({ field: "run-budget", text: error.message }); }
       if (!isCollectAll(d)) conditionIssues(d, a);
       sourceIssues(d, a);
       return a;
@@ -2944,14 +2952,7 @@ export default Vue.defineComponent({
     // one-line summary of the source rotation settings; null when there is nothing to rotate
     function rotationFact(d) {
       if (potentialSourceCount(d) < 2) return null;
-      const succ = d.perSourceSuccessLimit ?? DEFAULT_PER_SOURCE_SUCCESS_LIMIT;
-      const streak = d.noMatchStreakLimit ?? DEFAULT_NO_MATCH_STREAK_LIMIT;
-      return (
-        [
-          succ > 0 ? `每个来源处理满 ${succ} 个换下一个` : "不按处理数量换源",
-          streak > 0 ? `连续 ${streak} 个不符换下一个` : "不按连续不符换源",
-        ].join("；") + "；全部来源轮完即结束"
-      );
+      return sourceRotationLabel(d);
     }
     function budgetFact(d) {
       try {
@@ -2973,18 +2974,18 @@ export default Vue.defineComponent({
       const g = globalPace.value;
       const pace = g
         ? g.pause
-          ? `每 ${g.actions} 次操作休息 ${g.minutes} 分钟`
+          ? `每运行 ${g.workMinutes} 分钟休息 ${g.minutes} 分钟`
           : "不定时休息"
         : "读取中…";
       const keys = isCollectAll(d)
-        ? ["运行方式", "浏览器窗口", "职位来源", "组合预算", "运行预算", ...(potentialSourceCount(d) > 1 ? ["换源规则"] : [])]
+        ? ["运行方式", "浏览器窗口", "职位来源", "组合预算", "运行预算", ...(potentialSourceCount(d) > 1 ? ["来源切换"] : [])]
         : [
             "运行方式",
             "浏览器窗口",
             "职位来源",
             "组合预算",
             "运行预算",
-            ...(potentialSourceCount(d) > 1 ? ["换源规则"] : []),
+            ...(potentialSourceCount(d) > 1 ? ["来源切换"] : []),
             "目标岗位",
             "工作城市",
             "期望薪资",
@@ -3005,11 +3006,13 @@ export default Vue.defineComponent({
             ...(d.runMode === "collect" ? [] : ["默认处理方式"]),
           ];
       return [
-        ...keys.map((k) => [k, facts[k]]),
+        ...keys.filter(k => k !== "运行预算" && k !== "浏览器窗口").map((k) => [k, facts[k]]),
         ...(d.runMode === "chat"
           ? [["发送内容", "BOSS账号设置的招呼语"]]
           : []),
-        ["运行节奏", pace],
+        ["运行偏好", RUN_PROFILES[globalPolicy.value?.profile || "safe"].label],
+        ["定时休息", pace],
+        ...(d.runMode === "chat" ? [["每日自动目标", `每个账号每天最多${globalPolicy.value?.dailyLimit || 100}人；跨任务累计，不等于平台余量`]] : []),
       ];
     }
     function checkFacts() {
@@ -3215,73 +3218,30 @@ export default Vue.defineComponent({
           : null,
         enabledSources.length > 1
           ? disclosure("来源切换顺序", platformOpen, "source-order", [
-              ...enabledSources.map((s, index) =>
-                h("div", { class: "ux-source-order" }, [
-                  h(
-                    "span",
-                    index + 1 + ". " + (sourceInfo[s.type]?.[0] || s.type),
-                  ),
-                  inline(
-                    [-1, 1].map((delta) =>
-                      button(
-                        delta < 0 ? "先查看" : "后查看",
-                        () => {
-                          const from = d.sourceList.indexOf(s),
-                            to = d.sourceList.indexOf(
-                              enabledSources[index + delta],
-                            );
-                          moveItem(d.sourceList, from, to - from);
-                        },
-                        {
-                          size: "small",
-                          disabled:
-                            index + delta < 0 ||
-                            index + delta >= enabledSources.length,
-                          "aria-label":
-                            (sourceInfo[s.type]?.[0] || s.type) +
-                            (delta < 0 ? "先查看" : "后查看"),
-                        },
-                      ),
-                    ),
-                  ),
-                ]),
-              ),
-            ], "先查排在上面的来源，查完再换下一个。这只是查找顺序，不代表岗位更重要。")
+              h(SourceOrderList, { items: enabledSources, labels: Object.fromEntries(Object.entries(sourceInfo).map(([type, info]) => [type, info[0]])),
+                onReorder: order => { d.sourceList = reorderEnabledSources(d.sourceList, order); changed(); },
+              }),
+            ], "拖动右侧六点手柄调整顺序。运行中的任务仍按启动时保存的顺序执行。")
           : null,
-        potentialSourceCount(d) > 1
-          ? disclosure(
-              "换源规则",
-              sourceRotationOpen,
-              "source-rotation",
-              [
-                h("div", { class: "ux-rhythm-line" }, [
-                  "每个来源处理满",
-                  number(d, "perSourceSuccessLimit", {
-                    min: 0,
-                    max: 9999,
-                    placeholder: String(DEFAULT_PER_SOURCE_SUCCESS_LIMIT),
-                    "aria-label": "换源数量",
-                  }),
-                  "个岗位后，换下一个来源",
-                ]),
-                h("div", { class: "ux-rhythm-line" }, [
-                  "连续",
-                  number(d, "noMatchStreakLimit", {
-                    min: 0,
-                    max: 9999,
-                    placeholder: String(DEFAULT_NO_MATCH_STREAK_LIMIT),
-                    "aria-label": "止损数量",
-                  }),
-                  "个岗位不符合条件后，换下一个来源",
-                ]),
-                explain(
-                  "处理指收集岗位或打招呼。填 0 表示不按这条规则换源；留空用默认值。连续 5 批没有可处理的岗位也会换源。所有来源轮换一遍后，任务正常结束。",
-                ),
-              ],
-              "多个搜索关键词也算多个来源，会一起按顺序轮换。",
-            )
-          : null,
+        potentialSourceCount(d) > 1 ? sourceRotationControls(d) : null,
       ];
+    }
+    function sourceRotationControls(d) {
+      const collect = d.runMode === "collect";
+      return h("div", { class: "ux-source-rotation" }, [disclosure("来源切换条件", sourceSwitchOpen, "source-switch-conditions", [
+        h("div", { class: "ux-source-switch-row" }, [
+          h("span", collect ? "每收集" : "每成功打招呼"),
+          number(d, "perSourceSuccessLimit", { min: 0, max: 9999, precision: 0, placeholder: String(DEFAULT_PER_SOURCE_SUCCESS_LIMIT), "aria-label": "每个来源最多处理岗位数" }),
+          h("span", "个岗位后切换来源"),
+          tip(`只计算${collect ? "已收集" : "成功打招呼"}的岗位。填0不按数量切换，留空默认${DEFAULT_PER_SOURCE_SUCCESS_LIMIT}。`, "每个来源的数量"),
+        ]),
+        h("div", { class: "ux-source-switch-row" }, [
+          h("span", "连续不符合条件"),
+          number(d, "noMatchStreakLimit", { min: 0, max: 9999, precision: 0, placeholder: String(DEFAULT_NO_MATCH_STREAK_LIMIT), "aria-label": "连续不合适岗位数" }),
+          h("span", "个岗位后切换来源"),
+          tip(`只计算连续不符合筛选条件的岗位，遇到合适岗位重新计数。填0关闭，留空默认${DEFAULT_NO_MATCH_STREAK_LIMIT}。`, "连续不符合条件的数量"),
+        ]),
+      ], "数量只在当前来源内累计，切换后重新计数。任一条件达到就切到下一个来源；来源没有可用岗位也会切换。填0关闭对应条件，留空采用默认值。")]);
     }
     function budgetControls() {
       const d = draft.value;
@@ -3830,9 +3790,9 @@ export default Vue.defineComponent({
       }
     }
     function previewControls() {
-      return inline([
-        button("预览筛选结果", previewMatches, { plain: true, loading: previewBusy.value }),
-        hint("用职位库已有岗位核对当前条件；预览不会开始任务。"),
+      return h("div", { class: "ux-preview-actions" }, [
+        button("预览筛选结果", previewMatches, { type: "primary", plain: true, icon: View, class: "ux-preview-button", loading: previewBusy.value,
+          title: "根据资料库中已保存的岗位预览当前筛选条件" }),
       ]);
     }
     const workerIds = {
@@ -3962,7 +3922,7 @@ export default Vue.defineComponent({
       return taskRecoveryGuidance({ task, checkpoint, history: taskStore.taskHistory,
         code: progress.exitCode ?? last?.code ?? null, progress,
         active: Boolean(running.value[task] || queued.value[task]),
-        currentMode: draft.value.runMode, runBudget: draft.value.runBudget,
+        currentMode: draft.value.runMode, runBudget: policyRunConfig(globalPolicy.value).autoChatRunBudget,
         readError: task === "auto" && resumeReadError.value ? resumeReadIssue.value : false });
     }
     function runningMode(task) {
@@ -3976,7 +3936,7 @@ export default Vue.defineComponent({
       return taskStore.taskHistory.find(t => t.workerId === workerIds.auto && (!id || Number(t.runRecordId) === Number(id)))?.runMode
         || draft.value.runMode;
     }
-    async function resumeTask() {
+    async function resumeTask(dailyConfirmed = false) {
       if (preparing.value || starting.value || stopping.value) return;
       const selectedRunId = pausedAutoRun()?.runRecordId;
       preparing.value = true;
@@ -3989,7 +3949,7 @@ export default Vue.defineComponent({
         }
         assertCheckpointCanResume(r, { runRecordId: r.runRecordId, runMode: draft.value.runMode, history: taskStore.taskHistory });
         const guide = recoveryGuide("auto", r);
-        if (!guide?.canContinue) {
+        if (!guide?.canContinue && !(dailyConfirmed === true && guide?.primaryAction === "daily-quota")) {
           R.message({ type: "warning", message: guide?.nextStep || "请先检查任务状态。" });
           return;
         }
@@ -4048,6 +4008,12 @@ export default Vue.defineComponent({
       navigate(task);
       R.nextTick(() => begin(task));
     }
+    function endTaskButton(task, options = {}) {
+      return button("结束任务", () => terminateTask(task), {
+        ...options, type: "danger", plain: true, text: false, link: false,
+        class: ["ux-task-end-button", options.class], disabled: stopping.value || options.disabled,
+      });
+    }
     /** buttons for a task by its state: running, paused or ended */
     function taskControls(task, { size, running: isRunning, paused, curtain = false } = {}) {
       const small = size ? { size, link: true } : {};
@@ -4056,17 +4022,15 @@ export default Vue.defineComponent({
           ...(task === "auto" ? [button("暂停", pauseTask, {
             class: "ux-task-curtain-pause", loading: stopping.value, disabled: stopping.value,
           })] : []),
-          button("结束任务", () => terminateTask(task), {
-            class: "ux-task-curtain-end", type: "danger", text: true, disabled: stopping.value,
-          }),
+          endTaskButton(task, { class: "ux-task-curtain-end" }),
         ];
       if (isRunning)
         return task === "auto"
           ? [
               button("暂停", pauseTask, { ...small, plain: !size, loading: stopping.value }),
-              button("终止", () => terminateTask(task), { ...small, type: "danger", plain: !size }),
+              endTaskButton(task, small),
             ]
-          : [button("停止", () => stop(task), { ...small, type: "danger", plain: !size, loading: stopping.value })];
+          : [endTaskButton(task, { ...small, loading: stopping.value })];
       if (paused) {
         const guide = recoveryGuide();
         const busy = preparing.value || starting.value || stopping.value || resumeLoading.value;
@@ -4076,7 +4040,7 @@ export default Vue.defineComponent({
           }) : null,
           guide?.canContinue && guide.primaryAction !== "continue"
             ? button(guide.continueLabel || "处理后继续运行", resumeTask, { ...small, plain: !size, disabled: busy }) : null,
-          resumeReadError.value ? null : button("结束本次任务", () => terminateTask(task), { ...small, type: "danger", text: !size, disabled: busy }),
+          resumeReadError.value ? null : endTaskButton(task, { ...small, disabled: busy }),
         ];
       }
       return [
@@ -4092,6 +4056,14 @@ export default Vue.defineComponent({
       R.message({ type: "info", message: "请在BOSS会话中核对上次发送结果。这次任务保持停止，已保存的数据会保留。" });
     }
     async function recoveryAction(action, task = "auto") {
+      if (action === "acknowledge-daily") return acknowledgeDaily();
+      if (action === "daily-quota") return addTodayQuota(true);
+      if (action === "results") {
+        await navigate("tasks");
+        if (selectedTask.value) detailTab.value = "data";
+        return;
+      }
+      if (action === "limits") { settingTab.value = "pace"; await navigate("settings"); await loadGlobalPace(); return; }
       if (action === "continue") return task === "auto" ? resumeTask() : restartTask(task);
       if (action === "restart") return restartTask(task);
       if (action === "reload") return refreshResume();
@@ -4156,7 +4128,9 @@ export default Vue.defineComponent({
           ? "上次已知任务为只收集；请先重新读取并核对任务状态。"
           : "这次任务为只收集；继续时仍不发送消息、不标记不合适。") : null,
         guide.kind === "send-unconfirmed" ? h("p", { class: "ux-hint" }, "待核对的发送未计入已确认数量。") : null,
-        inline([...actions, !detail ? button("查看任务详情", () => openTaskDetail(workerIds[task]), { plain: true }) : null]),
+        inline([...actions,
+          guide.kind === "send-unconfirmed" && task === "auto" ? button("去BOSS查看", openBossForRecovery, { plain: true }) : null,
+          !detail ? button("查看任务详情", () => openTaskDetail(workerIds[task]), { plain: true }) : null]),
         p.detail || p.listSummary || resumeReadError.value ? h("details", { class: "ux-recovery-details" }, [
           h("summary", "查看问题详情"),
           resumeReadError.value ? hint(resumeReadError.value) : null,
@@ -4262,15 +4236,18 @@ export default Vue.defineComponent({
       taskDetailId.value = null;
       selectedTask.value = null;
     }
-    async function begin(task) {
+    async function begin(task, booking = false) {
       if (
         preparing.value ||
         starting.value ||
-        running.value[task] ||
-        queued.value[task]
+        (!booking && running.value[task]) ||
+        (!booking && queued.value[task])
       )
         return;
       preparing.value = true;
+      startupChoice.value = booking ? "scheduled" : "now";
+      scheduleError.value = "";
+      scheduledTime.value = "";
       shortResume.value = false;
       try {
         if (task === "auto" && !(await refreshResume())) {
@@ -4282,6 +4259,7 @@ export default Vue.defineComponent({
             "先核对上次发送结果", "已核对，开始新任务"))) return;
         if (
           task === "auto" &&
+          !booking &&
           pausedAutoRun() &&
           !(await confirmBox(
             autoRecovery().reason === "send-unconfirmed"
@@ -4304,7 +4282,7 @@ export default Vue.defineComponent({
         }
         if (!(await ensureBossLogin(task))) return;
         // the run pace is a single global setting; load it so this run uses the latest value
-        if (task === "auto") await loadGlobalPace();
+        if (task === "auto" && !(await loadGlobalPace())) return;
         if (!(await save(false, task))) return;
         if (
           task === "follow" &&
@@ -4397,6 +4375,20 @@ export default Vue.defineComponent({
       }
     }
     async function confirmRun() {
+      if (checks.value === "auto" && startupChoice.value === "scheduled") {
+        scheduleError.value = "";
+        const at = new Date(scheduledTime.value).getTime();
+        if (!Number.isSafeInteger(at) || at < Date.now() + 60000) { scheduleError.value = "请选择至少1分钟后的启动时间。"; return; }
+        starting.value = true;
+        try {
+          scheduledRuns.value = await ipc("scheduled-runs-create", { at });
+          modal.value = "";
+          await navigate("tasks");
+          R.message({ type: "success", message: "已设置定时启动。请保持电脑和软件运行；错过时间不会自动补跑。" });
+        } catch (error) { scheduleError.value = error.message; }
+        finally { starting.value = false; }
+        return;
+      }
       await startTask(checks.value);
     }
     // resume: go on with the last 找岗位 run (its position, skipped jobs and counters)
@@ -4433,7 +4425,7 @@ export default Vue.defineComponent({
                 version: 1,
                 task,
                 savedAt: new Date().toISOString(),
-                draft: templateSnapshot(),
+                draft: { ...templateSnapshot(), runInBackground: true, runPolicy: clone(globalPolicy.value), runBudget: policyRunConfig(globalPolicy.value).autoChatRunBudget },
                 follow: clone(follow.value),
               },
             })
@@ -4477,10 +4469,12 @@ export default Vue.defineComponent({
         );
         await taskStore.getRunningTasks();
       } catch (error) {
+        const pendingSend = /有一次发送记录待处理|有一次开聊结果尚未确认/.test(error.message || "");
         R.message({
           type: "error",
-          title: resume ? "任务未能继续" : "任务未启动",
-          message: error.message,
+          title: pendingSend ? "先处理上次发送记录" : resume ? "任务未能继续" : "任务未启动",
+          message: pendingSend ? "在BOSS核对后，还需在软件确认。点击下方按钮处理记录，再结束原任务、重新开始。" : error.message,
+          action: pendingSend ? { label: "处理已核对记录", onClick: acknowledgeDaily } : undefined,
         });
       } finally {
         starting.value = false;
@@ -4548,7 +4542,7 @@ export default Vue.defineComponent({
         blocked: "已停止，请检查条件",
         waiting: "等待新岗位或会话",
         resting: "定时休息中",
-        retrying: "正在重新检查",
+        retrying: "自动恢复中",
         stopped: "已停止",
         error: "任务异常结束",
         queued: "排队等待中",
@@ -4594,11 +4588,7 @@ export default Vue.defineComponent({
             : active
             ? inline([
                 button("查看任务", () => openTaskDetail(workerIds[task])),
-                button("停止运行", () => stop(task), {
-                  type: "danger",
-                  plain: true,
-                  loading: stopping.value,
-                }),
+                ...taskControls(task, { running: true }),
               ])
             : p.state === "blocked"
               ? inline([
@@ -4749,7 +4739,6 @@ export default Vue.defineComponent({
           return card(sourceTitle(), [
             hint("收集全部岗位，无需配置求职条件，选择下面的职位来源即可。"),
             ...sourceControls(),
-            budgetControls(),
             previewControls(),
           ], { id: "job-preferences", tabIndex: -1 });
         return [
@@ -4757,7 +4746,7 @@ export default Vue.defineComponent({
             id: "job-preferences",
             tabIndex: -1,
           }),
-          card(sourceTitle(), [...sourceControls(), budgetControls(), previewControls()], {
+          card(sourceTitle(), [...sourceControls(), previewControls()], {
             id: "job-sources",
             tabIndex: -1,
           }),
@@ -4798,7 +4787,7 @@ export default Vue.defineComponent({
       blocked: "已停止，请检查条件",
       waiting: "等待新岗位或会话",
       resting: "定时休息中",
-      retrying: "正在重新检查",
+      retrying: "自动恢复中",
       stopped: "已停止",
       error: "任务异常结束",
       queued: "排队等待中",
@@ -5174,10 +5163,6 @@ export default Vue.defineComponent({
                   : "不符合条件的岗位直接略过。")),
               ])
             : null,
-          disclosure("浏览器显示方式", browserOptionsOpen, "browser-options", [
-            check(d, "runInBackground", "后台运行浏览器"),
-            hint("自动任务使用最小化窗口，不主动切到前台；登录或需要安全验证时会显示窗口。关闭后使用普通窗口。"),
-          ], undefined, d.runInBackground !== false ? "后台查找，不打断你；需要登录或验证时会显示窗口。" : "查找时显示浏览器窗口。"),
         ],
         { id: "job-run-mode", class: "ux-card ux-run-mode" },
       );
@@ -5436,7 +5421,7 @@ export default Vue.defineComponent({
             : runningEntry
               ? task
                 ? taskControls(task, { running: true })
-                : button("停止任务", () => ipc("stop-task", workerId), { type: "danger", plain: true })
+                : button("结束任务", () => ipc("stop-task", workerId), { class: "ux-task-end-button", type: "danger", plain: true })
               : pausedGuide ? null : task
                 ? taskControls(task, { paused: pausedHere })
                 : null,
@@ -5459,6 +5444,12 @@ export default Vue.defineComponent({
             minutes && viewed ? " 个/小时" : "",
           ),
         ]),
+        workerId === workerIds.auto ? h("div", { class: "ux-running-expectation", role: "status" }, [
+          p.state === "resting" && p.restUntil ? h("p", `定时休息中，预计还需${Math.max(0, Math.ceil((p.restUntil - progressClock.value) / 60000))}分钟；到时检查条件后继续。`) : null,
+          p.state === "retrying" && p.retryUntil ? h("p", { class: "ux-hint" }, `下次自动重试：${Math.max(0, Math.ceil((p.retryUntil - progressClock.value) / 1000))}秒后（第${p.retryAttempt || 1}次）`) : null,
+          p.dailyQuota ? h("p", `本软件今日已确认打招呼${p.dailyQuota.confirmed}人／今日目标${p.dailyQuota.limit}人${p.dailyQuota.pendingCount ? "；有结果待核对" : ""}。此统计不代表BOSS剩余额度。`) : null,
+          h("p", { class: "ux-hint" }, estimateRun(p).text),
+        ]) : null,
         workerId === workerIds.auto && p.budget?.usage
           ? h("details", { class: "ux-recovery-details ux-task-usage" }, [h("summary", "查看本次累计用量"), card("运行用量", [
               h("div", { class: "ux-task-metrics" }, [
@@ -5711,6 +5702,7 @@ export default Vue.defineComponent({
           ),
         ]),
         resumeReadError.value ? recoveryCard("auto") : null,
+        scheduledRunsPanel(),
         tabBar(
           tab,
           [
@@ -5721,6 +5713,30 @@ export default Vue.defineComponent({
         ),
         h("div", { class: "ux-data-panel", key: tab }, [taskTable(tab)]),
       ];
+    }
+    async function loadSchedules() {
+      try { scheduledRuns.value = await ipc("scheduled-runs-list"); }
+      catch (error) { R.message({ type: "error", message: "定时启动读取失败：" + error.message }); }
+    }
+    function scheduledRunsPanel() {
+      const rows = scheduledRuns.value || [], page = Math.min(schedulePage.value, Math.max(1, Math.ceil(rows.length / 10)));
+      const labels = { pending: "等待启动", waiting: "等待当前任务", starting: "核对启动条件", started: "已提交任务", blocked: "需要处理", missed: "已错过", cancelled: "已取消", "needs-review": "启动结果待核对" };
+      return h("section", { class: "ux-card ux-scheduled-runs", "aria-label": "定时启动" }, [
+        h("div", { class: "ux-inline" }, [h("h2", "定时启动"), button("定时启动当前配置", () => begin("auto", true), { plain: true }), button("刷新", loadSchedules, { text: true })]),
+        hint("电脑和软件需保持运行；到期按原账号和已保存条件提交，找岗位任务串行执行。错过时间不会自动补跑。"),
+        rows.length ? E("ElTable", { data: rows.slice((page - 1) * 10, page * 10), rowKey: "id", style: "width:100%" }, () => [
+          E("ElTableColumn", { label: "计划启动", minWidth: 170 }, { default: ({ row }) => new Date(row.at).toLocaleString("zh-CN") }),
+          E("ElTableColumn", { label: "状态", width: 150 }, { default: ({ row }) => labels[row.state] || row.state }),
+          E("ElTableColumn", { prop: "detail", label: "说明", minWidth: 240 }),
+          E("ElTableColumn", { label: "操作", width: 130 }, { default: ({ row }) => ["pending", "waiting", "blocked", "missed"].includes(row.state)
+            ? button("取消定时启动", async () => {
+              if (!(await confirmBox("取消这次定时启动，不会停止已经运行的任务。", "取消定时启动", "取消定时启动"))) return;
+              try { scheduledRuns.value = await ipc("scheduled-runs-cancel", { id: row.id }); }
+              catch (error) { R.message({ type: "error", message: error.message }); }
+            }, { size: "small" }) : "—" }),
+        ]) : hint("暂无定时启动。完成找岗位配置后，可在开始前确认中选择定时启动。"),
+        rows.length > 10 ? h("div", { class: "ux-inline ux-schedule-pagination" }, [button("上一页", () => schedulePage.value = page - 1, { disabled: page <= 1 }), `第${page}页，共${rows.length}条`, button("下一页", () => schedulePage.value = page + 1, { disabled: page * 10 >= rows.length })]) : null,
+      ]);
     }
     // the details drawer, over any page
     const detailColumns = {
@@ -5853,8 +5869,8 @@ export default Vue.defineComponent({
       const rows =
         t.workerId === workerIds.follow
           ? followFactRows(snap.follow)
-          : templateFacts(snap.draft);
-      const diff = snapshotDiffOpen.value ? snapshotDiffRows(snap) : null;
+          : snap.actualConfig ? actualRunFacts(snap.actualConfig) : templateFacts(snap.draft);
+      const diff = snapshotDiffOpen.value && snap.draft ? snapshotDiffRows(snap) : null;
       return [
         h("div", { class: "ux-task-data-head" }, [
           h("span", "这次运行使用的配置"),
@@ -5865,7 +5881,7 @@ export default Vue.defineComponent({
           { class: "ux-template-facts" },
           rows.flatMap(([k, v]) => [h("dt", k), h("dd", v || "—")]),
         ),
-        t.workerId === workerIds.follow
+        t.workerId === workerIds.follow || !snap.draft
           ? null
           : inline([
               button("载入此配置", () => loadRunConfig(snap), {
@@ -6556,7 +6572,7 @@ export default Vue.defineComponent({
       ]);
     }
     function settingsPage() {
-      const tab = settingTab.value;
+      const tab = { browser: "account", templates: "pace" }[settingTab.value] || settingTab.value;
       return [
         heading(
           "设置",
@@ -6565,14 +6581,12 @@ export default Vue.defineComponent({
         tabBar(
           tab,
           [
-            ["account", "账号与登录"],
-            ["browser", "浏览器"],
-            ["ai", "AI模型配置"],
-            ["notify", "钉钉通知"],
-            ["templates", "配置模板"],
-            ["pace", "运行节奏"],
-            ["data", "数据、备份与日志"],
-            ["updates", "软件更新"],
+            ["account", "账号与浏览器"],
+            ["pace", "任务运行"],
+            ["ai", "AI助手"],
+            ["notify", "通知提醒"],
+            ["data", "数据管理"],
+            ["updates", "关于与更新"],
           ],
           (v) => {
             settingTab.value = v;
@@ -6620,7 +6634,7 @@ export default Vue.defineComponent({
               !browser.value ? hint("打开BOSS网站前，请先配置浏览器。") : null,
             ])
           : null,
-        tab === "browser"
+        tab === "account"
           ? card("浏览器", [
               alert(
                 browser.value ? "浏览器已配置" : "浏览器未配置",
@@ -6714,33 +6728,12 @@ export default Vue.defineComponent({
           : null,
         tab === "ai" ? aiSettings() : null,
         tab === "updates" ? updateSettingsCard() : null,
-        tab === "ai" ? aiFooter() : null,
         ...(tab === "data" ? dataSettings() : []),
-        ...(tab === "templates" ? templateSettings() : []),
         tab === "pace"
-          ? card(
-              [
-                "运行节奏",
-                tip(
-                  "所有找岗位任务都按这里的节奏跑，改动自下次运行生效。",
-                  "运行节奏",
-                ),
-              ],
-              [
-                ...(paceForm.value
-                  ? rhythmControls(paceForm.value, "global-rhythm")
-                  : [hint("正在读取…")]),
-                inline([
-                  button("保存运行节奏", saveGlobalPace, {
-                    type: "primary",
-                    loading: paceSaving.value,
-                    disabled: !paceForm.value,
-                  }),
-                ]),
-              ],
-              { class: "ux-card ux-data-card" },
-            )
+          ? h(RunPolicySettings, { policy: globalPolicy.value, daily: dailyInfo.value, saving: paceSaving.value,
+              onSave: savePolicy, onAcknowledgeDaily: acknowledgeDaily })
           : null,
+        ...(tab === "pace" ? templateSettings() : []),
         tab === "notify"
           ? card("钉钉通知", [
               alert(
@@ -7013,9 +7006,7 @@ export default Vue.defineComponent({
         ["招聘者活跃", sn.activity || "不限"],
         ["职位来源", sources.join("；") || "未选择"],
         ["组合预算", sn.platformMode === 2 ? "固定组合，按顺序全部查看" : `每个来源最多 ${filterCombinationLimit(sn.filterCombinationLimit)} 种，优先已选条件`],
-        ["运行预算", budgetFact(sn)],
-        ["浏览器窗口", sn.runInBackground !== false ? "后台最小化运行" : "普通窗口"],
-        ...(rotationFact(sn) ? [["换源规则", rotationFact(sn)]] : []),
+        ...(rotationFact(sn) ? [["来源切换", rotationFact(sn)]] : []),
         ["默认处理方式", strategyLabel(sn.strategy)],
       ];
     }
@@ -7367,14 +7358,67 @@ export default Vue.defineComponent({
     }
     async function loadGlobalPace() {
       try {
-        const pace = await ipc("run-pace-info");
+        const policy = normalizeRunPolicy(await ipc("run-policy-info"));
+        globalPolicy.value = policy;
+        const conf = policyRunConfig(policy);
+        const pace = { pause: policy.rest.enabled, workMinutes: policy.rest.workMinutes, minutes: policy.rest.restMinutes, actions: 100,
+          jobListLoadWaitSeconds: conf.jobListLoadWaitSeconds, jobDetailViewWaitSeconds: conf.jobDetailViewWaitSeconds };
         globalPace.value = pace;
         // an open settings form keeps its unsaved edits
         if (!paceForm.value || route.value !== "settings" || settingTab.value !== "pace")
           paceForm.value = clone(pace);
+        return true;
       } catch (error) {
-        R.message({ type: "error", message: "读取运行节奏失败：" + error.message });
+        R.message({ type: "error", message: "读取运行偏好失败：" + error.message });
+        return false;
       }
+    }
+    async function savePolicy(value) {
+      paceSaving.value = true;
+      try {
+        await ipc("run-policy-save", normalizeRunPolicy(value));
+        await loadGlobalPace();
+        R.message({ type: "success", message: "设置已保存" });
+      } catch (error) { R.message({ type: "error", message: "保存失败：" + error.message }); }
+      finally { paceSaving.value = false; }
+    }
+    async function loadDailyQuota(silent = false) {
+      try { dailyInfo.value = await ipc("daily-quota-info"); return dailyInfo.value; }
+      catch (error) { if (!silent) R.message({ type: "error", message: error.message }); return null; }
+    }
+    async function addTodayQuota(continueAfter) {
+      const info = await loadDailyQuota();
+      if (!info?.available) { R.message({ type: "warning", message: info?.detail || "请先验证当前账号。" }); return; }
+      const originalAccount = pausedAutoRun()?.runState?.accountId;
+      if (continueAfter && originalAccount && info.accountId !== originalAccount) {
+        R.message({ type: "warning", message: "当前账号与原任务不同，请切回原账号后再追加并继续。" }); return;
+      }
+      if (info.platformExhausted || info.pendingCount) {
+        R.message({ type: "warning", message: info.platformExhausted ? "平台今日额度已用尽，追加软件目标不能恢复平台额度。" : "有一次发送结果待核对，不能直接追加后重发。" }); return;
+      }
+      if (continueAfter && info.remaining > 0) return resumeTask(true);
+      const headroom = Math.max(0, ACCOUNT_DAILY_CHAT_LIMIT - Math.max(info.limit, info.confirmed));
+      if (!headroom) { R.message({ type: "warning", message: "已达到该账号今日150人的软件保护上限，请查看结果，明日再运行。" }); return; }
+      try {
+        const result = await ElMessageBox.prompt(`本软件今日已确认打招呼${info.confirmed}人，最多再追加${headroom}人。仅今天生效；手机沟通无法计入，平台可能提前用尽额度。`, "今天再自动打招呼多少人？", {
+          inputValue: String(Math.min(10, headroom)), inputType: "number",
+          inputValidator: value => Number.isSafeInteger(Number(value)) && Number(value) >= 1 && Number(value) <= headroom || `请输入1—${headroom}之间的整数`,
+          confirmButtonText: continueAfter ? "追加并继续原任务" : "确认追加今日数量", cancelButtonText: "取消", closeOnClickModal: false,
+        });
+        dailyInfo.value = await ipc("daily-quota-add", { amount: Number(result.value), accountId: info.accountId, day: info.day });
+        if (continueAfter) await resumeTask(true);
+        else R.message({ type: "success", message: "已仅为今天追加数量，长期默认值不变。" });
+      } catch (error) { if (error !== "cancel" && error !== "close") R.message({ type: "error", message: error.message || "追加未完成" }); }
+    }
+    async function acknowledgeDaily() {
+      const info = await loadDailyQuota();
+      if (!info?.available) { R.message({ type: "warning", message: info?.detail || "暂时无法读取待确认记录，请先检查BOSS登录。" }); return; }
+      if (!info.pendingCount) { R.message({ type: "info", message: "当前账号今日没有待处理的发送记录。若原任务仍提示待核对，请结束原任务后重新开始。" }); return; }
+      if (!(await confirmBox(`请先在BOSS会话核对上次发送。确认后将${info.pendingCount}次待确认发送按已使用人数计入今天，避免超额；不会重发，也不会恢复原任务。已有记录保留。`, "核对待确认发送", "已核对，计入今日已用"))) return;
+      try {
+        dailyInfo.value = await ipc("daily-quota-acknowledge", { accountId: info.accountId, day: info.day, pendingCount: info.pendingCount });
+        R.message({ type: "success", message: "已保守计入今日已用人数；请结束原任务后按需新建。" });
+      } catch (error) { R.message({ type: "error", message: error.message }); }
     }
     async function saveGlobalPace() {
       const p = paceForm.value;
@@ -7874,21 +7918,6 @@ export default Vue.defineComponent({
       }
     }
 
-    let aiFooterObserver;
-    function attachAiFooter(el) {
-      aiFooterObserver?.disconnect();
-      if (!el) return;
-      const resize = () =>
-        el
-          .closest(".ux-shell")
-          ?.style.setProperty(
-            "--ux-ai-footer-height",
-            Math.ceil(el.getBoundingClientRect().height) + "px",
-          );
-      aiFooterObserver = new ResizeObserver(resize);
-      aiFooterObserver.observe(el);
-      resize();
-    }
     async function loadModelList(m, role, force = false) {
       const url = String(m.providerCompleteApiUrl || "").trim();
       // a typed key and the saved key may list different models
@@ -7930,41 +7959,28 @@ export default Vue.defineComponent({
         modelTesting.value = false;
       }
     }
-    function aiFooter() {
+    function aiActions() {
       return h(
-        "footer",
-        { class: "ux-footer ux-footer--ai", ref: attachAiFooter },
+        "div",
+        { class: "ux-settings-actions", role: "group", "aria-label": "AI配置操作" },
         [
-          h("div", { class: "ux-footer-actions" }, [
+          button("保存AI配置", saveModels, {
+            type: "primary", loading: modelBusy.value, disabled: modelTesting.value || !modelDirty.value,
+          }),
+          button("测试连接", testModels, { loading: modelTesting.value, disabled: modelBusy.value }),
+          button("清空表单", () => {
+            modelForm.value = formModels([]); modelDirty.value = true; modelResults.value = [];
+          }, { text: true, disabled: modelBusy.value || modelTesting.value }),
             h(
               "span",
-              { class: "ux-hint", role: "status" },
+              { class: "ux-hint ux-save-status", role: "status" },
               modelTesting.value
                 ? "测试中…"
+                : modelBusy.value ? "保存中…"
                 : modelDirty.value
                   ? "未保存"
                   : "已保存",
             ),
-            button(
-              "清空配置",
-              () => {
-                modelForm.value = formModels([]);
-                modelDirty.value = true;
-                modelResults.value = [];
-              },
-              { plain: true, disabled: modelBusy.value || modelTesting.value },
-            ),
-            button("测试连接", testModels, {
-              plain: true,
-              loading: modelTesting.value,
-              disabled: modelBusy.value,
-            }),
-            button("保存配置", saveModels, {
-              type: "primary",
-              loading: modelBusy.value,
-              disabled: modelTesting.value,
-            }),
-          ]),
         ],
       );
     }
@@ -8168,6 +8184,7 @@ export default Vue.defineComponent({
                 ),
               )
             : null,
+          aiActions(),
         ],
         { id: "ai-model-settings" },
       );
@@ -8229,7 +8246,6 @@ export default Vue.defineComponent({
         const data = preview.value;
         content = previewBusy.value ? [hint("正在读取职位库…")] : data ? [
           hint(`预览最近 ${data.rows.length} 条，职位库共 ${data.total} 条；匹配 ${data.rows.filter(row => row.result === "匹配").length} 条，不匹配 ${data.rows.filter(row => row.result === "不匹配").length} 条，信息不足 ${data.rows.filter(row => row.result === "信息不足").length} 条。`),
-          hint("这里只检查当前条件，不会发送消息或标记岗位。"),
           E("ElTable", { data: data.rows, maxHeight: 380, style: { width: "100%" }, emptyText: "职位库暂无岗位" }, () => [
             ...[["jobName", "岗位", 150], ["companyName", "公司", 120], ["degreeName", "学历", 70],
               ["companyIndustryName", "行业", 100], ["companyStageName", "融资阶段", 100], ["jobNatureName", "类型", 70]]
@@ -8484,10 +8500,21 @@ export default Vue.defineComponent({
               )
             : null,
           checkFacts(),
+          checks.value === "auto" ? h("section", { class: "ux-start-schedule" }, [
+            h("h3", "启动时间"),
+            E("ElRadioGroup", { modelValue: startupChoice.value, "onUpdate:modelValue": v => startupChoice.value = v, "aria-label": "启动时间" }, () => [
+              E("ElRadio", { value: "now" }, () => "立即开始"), E("ElRadio", { value: "scheduled" }, () => "定时启动"),
+            ]),
+            startupChoice.value === "scheduled" ? h("div", [
+              h("label", ["计划启动时间 ", h("input", { type: "datetime-local", class: "ux-schedule-input", value: scheduledTime.value, "aria-label": "计划启动时间", onInput: event => scheduledTime.value = event.target.value })]),
+              hint("请选择1分钟后、31天内的时间。电脑和软件需保持运行；错过时间不会自动补跑，账号变化或旧任务未处理时不会自动启动。"),
+            ]) : null,
+            scheduleError.value ? h("p", { class: "ux-policy-error", role: "alert" }, scheduleError.value) : null,
+          ]) : null,
         ];
         footerNodes = [
           button("返回修改", () => (modal.value = "")),
-          button("确认开始", confirmRun, {
+          button(checks.value === "auto" && startupChoice.value === "scheduled" ? "确认定时启动" : "确认开始", confirmRun, {
             type: "primary",
             loading: starting.value,
             disabled: preparing.value || runtimeSteps.value.some((s) => !s.ok),
@@ -8757,8 +8784,7 @@ export default Vue.defineComponent({
                     route.value === "settings" && settingTab.value === "ai"
                       ? "ux-inner--ai"
                       : "",
-                    ["auto", "follow"].includes(route.value) ||
-                    (route.value === "settings" && settingTab.value === "ai")
+                    ["auto", "follow"].includes(route.value)
                       ? "ux-inner--config"
                       : "",
                     route.value === "auto" && !railCollapsed.value
@@ -8950,6 +8976,13 @@ export default Vue.defineComponent({
         };
       },
     );
+    const unlistenTaskNavigation = window.electron.ipcRenderer.on("navigate-task-list", () => { navigate("tasks"); loadSchedules(); });
+    const unwatchSettingsRoute = R.watch(() => [route.value, settingTab.value], ([route, tab]) => {
+      if (route === "tasks") loadSchedules();
+      if (route === "settings" && ["pace", "templates"].includes(tab)) loadGlobalPace();
+      if (route === "settings" && tab === "pace") { dailyInfo.value = null; loadDailyQuota(true); }
+    }, { immediate: true });
+    const schedulePoll = setInterval(() => { if (route.value === "tasks") loadSchedules(); }, 5000);
     const unlisten = window.electron.ipcRenderer.on(
       "worker-exited",
       async (_, message) => {
@@ -8988,13 +9021,15 @@ export default Vue.defineComponent({
       },
     );
     R.onUnmounted(() => {
-      aiFooterObserver?.disconnect();
       glassObserver?.disconnect();
       cancelAnimationFrame(glassFrame);
       clearTimeout(draftSaveTimer);
       clearInterval(progressTimer);
       clearSpotlight();
       unlistenProgress();
+      unlistenTaskNavigation();
+      unwatchSettingsRoute();
+      clearInterval(schedulePoll);
       unwatch();
       unlisten();
       window.removeEventListener("hashchange", fromHash);

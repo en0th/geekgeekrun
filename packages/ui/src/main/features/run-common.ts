@@ -1,16 +1,19 @@
 import { AUTO_CHAT_ERROR_EXIT_CODE } from '../../common/enums/auto-start-chat'
 import { daemonEE, sendToDaemon } from '../flow/OPEN_SETTING_WINDOW/connect-to-daemon'
-import { saveAndGetCurrentRunRecord } from '../flow/OPEN_SETTING_WINDOW/utils/db'
+import { saveAndGetCurrentRunRecord, saveRunConfigSnapshot } from '../flow/OPEN_SETTING_WINDOW/utils/db'
 import minimist from 'minimist'
 import { readConfigFile, runtimeFolderPath, storageFilePath } from '@geekgeekrun/geek-auto-start-chat-with-boss/runtime-file-utils.mjs'
 import { createBudgetStore } from '@geekgeekrun/geek-auto-start-chat-with-boss/run-budget-store.mjs'
-import { writeTaskConfigSnapshot } from '@geekgeekrun/geek-auto-start-chat-with-boss/task-config-snapshot.mjs'
+import { writeTaskConfigSnapshot, jobConfigSnapshot } from '@geekgeekrun/geek-auto-start-chat-with-boss/task-config-snapshot.mjs'
 import path from 'node:path'
 import { readRunSettings } from '@geekgeekrun/geek-auto-start-chat-with-boss/run-settings.mjs'
 import { normalizeJobSources } from '@geekgeekrun/geek-auto-start-chat-with-boss/search-source.mjs'
 import { app } from 'electron'
 import { initializeAutoChatResume, readAutoChatResume } from './task-resume'
 import { assertCheckpointCanResume } from '../../common/task-recovery.mjs'
+import { withGlobalRunPolicy, readGlobalRunPolicy } from './run-policy'
+import { checkBossLoginStatus } from './boss-login-check'
+import { createDailyQuotaStore } from '@geekgeekrun/geek-auto-start-chat-with-boss/daily-chat-quota.mjs'
 
 interface DaemonStatus {
   workers?: { workerId: string; args?: string[] }[]
@@ -18,19 +21,29 @@ interface DaemonStatus {
   history?: { workerId: string; runRecordId?: number | null; code: number | null; endedAt: number }[]
 }
 
-export async function runCommon({
+let startLock: Promise<unknown> = Promise.resolve()
+export function runCommon(options: Parameters<typeof runCommonInternal>[0]) {
+  const result = startLock.then(() => runCommonInternal(options))
+  startLock = result.catch(() => {})
+  return result
+}
+async function runCommonInternal({
   mode,
   // the poll task doesn't create an auto-greeting run record
   withRunRecord = true,
   // exit codes after which this task must not be restarted, on top of the shared ones
   extraNoAutoRestartExitCodes = [] as number[],
   // 继续任务: go on with this run record instead of creating a new one
-  resumeRunRecordId = null as number | null
+  resumeRunRecordId = null as number | null,
+  capturedConfig = null as Record<string, any> | null,
+  expectedAccountId = null as string | null
 }: {
   mode: string
   withRunRecord?: boolean
   extraNoAutoRestartExitCodes?: number[]
   resumeRunRecordId?: number | null
+  capturedConfig?: Record<string, any> | null
+  expectedAccountId?: string | null
 }) {
   await sendToDaemon(
     {
@@ -65,6 +78,17 @@ export async function runCommon({
     }
   }
   const currentResume = mode === 'geekAutoStartWithBossMain' ? readAutoChatResume({ strict: true }) : null
+  if (mode === 'geekAutoStartWithBossMain') {
+    const login = await checkBossLoginStatus()
+    if (login.status !== 'valid' || !login.accountId) throw Error('请先登录并验证BOSS账号，再开始任务。')
+    if (expectedAccountId && expectedAccountId !== login.accountId) throw Error('当前账号与任务账号不同，未启动；请切回原账号。')
+    expectedAccountId = login.accountId
+    const runMode = (capturedConfig?.['boss.json'] || readConfigFile('boss.json'))?.autoChatRunMode
+    if (runMode !== 'collect') {
+      try { createDailyQuotaStore(storageFilePath).assert(expectedAccountId, readGlobalRunPolicy().dailyLimit) }
+      catch (error) { throw Error((error as { detail?: string }).detail || (error as Error).message) }
+    }
+  }
   const currentRunRecord = resumeRunRecordId
     ? { id: resumeRunRecordId }
     : withRunRecord
@@ -80,6 +104,9 @@ export async function runCommon({
       AUTO_CHAT_ERROR_EXIT_CODE.CITY_FILTER_NOT_APPLIED,
       AUTO_CHAT_ERROR_EXIT_CODE.RUN_BUDGET_EXCEEDED,
       AUTO_CHAT_ERROR_EXIT_CODE.RUN_BUDGET_UNAVAILABLE,
+      AUTO_CHAT_ERROR_EXIT_CODE.DAILY_GOAL_REACHED,
+      AUTO_CHAT_ERROR_EXIT_CODE.PLATFORM_DAILY_LIMIT,
+      AUTO_CHAT_ERROR_EXIT_CODE.DAILY_QUOTA_UNAVAILABLE,
       AUTO_CHAT_ERROR_EXIT_CODE.JSON_STORAGE_UNAVAILABLE,
       AUTO_CHAT_ERROR_EXIT_CODE.BACKGROUND_WINDOW_UNAVAILABLE,
       AUTO_CHAT_ERROR_EXIT_CODE.BROWSER_UNAVAILABLE,
@@ -95,7 +122,8 @@ export async function runCommon({
     ].join(',')
   }
   if (mode === 'geekAutoStartWithBossMain') {
-    const config = Object.fromEntries(['boss.json', 'common-job-condition-config.json', 'target-company-list.json'].map(name => [name, readConfigFile(name)]))
+    const config = capturedConfig || withGlobalRunPolicy(Object.fromEntries(['boss.json', 'common-job-condition-config.json', 'target-company-list.json'].map(name => [name, readConfigFile(name)])))
+    if (expectedAccountId) config['boss.json'].autoChatExpectedAccountId = expectedAccountId
     if (resumeRunRecordId) assertCheckpointCanResume(currentResume, {
       runRecordId: resumeRunRecordId,
       runMode: readRunSettings(config['boss.json']).runMode,
@@ -103,6 +131,9 @@ export async function runCommon({
     })
     normalizeJobSources(config['boss.json'].jobSourceList)
     readRunSettings(config['boss.json'])
+    if (!resumeRunRecordId) await saveRunConfigSnapshot({ runRecordId: Number(currentRunRecord?.id), config: {
+      version: 2, task: 'auto', savedAt: new Date().toISOString(), actualConfig: jobConfigSnapshot(config)
+    } })
     subProcessEnv.GEEKGEEKRUN_TASK_CONFIG_FILE = writeTaskConfigSnapshot(
       path.join(runtimeFolderPath, 'task-configs'), currentRunRecord?.id, config,
       { resuming: Boolean(resumeRunRecordId) }
@@ -119,7 +150,7 @@ export async function runCommon({
   const taskArgs = [`--mode=${mode}`, `--run-record-id=${currentRunRecord?.id || 0}`]
   // recorded in the task history so a finished run links to the right data (chats or jobs)
   if (mode === 'geekAutoStartWithBossMain')
-    taskArgs.push(`--run-mode=${readRunSettings(readConfigFile('boss.json')).runMode}`)
+    taskArgs.push(`--run-mode=${(capturedConfig?.['boss.json'] || readConfigFile('boss.json'))?.autoChatRunMode === 'collect' ? 'collect' : 'chat'}`)
   const args = !app.isPackaged ? [app.getAppPath(), ...taskArgs] : taskArgs
   // the daemon queues BOSS tasks while another one runs
   const startResponse = (await sendToDaemon(

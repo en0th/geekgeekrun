@@ -11,25 +11,38 @@ const { CDPSessionEvent } = createRequire(import.meta.url)('puppeteer')
 export async function attachJobRequestBudget(page, budget, { onConnectionLost } = {}) {
   let session
   let disposed = false
+  let suspended = false, connected = true
+  const inFlight = new Set()
   const unavailable = () => budgetStateError('岗位请求预算监听已中断，任务已暂停；请检查浏览器后恢复，累计用量会保留')
   const disconnected = () => {
     if (disposed) return
+    connected = false
     let diagnostic
     try { diagnostic = onConnectionLost?.() } catch { /* Keep the durable budget stop even if diagnostics fail. */ }
     budget.fail(diagnostic instanceof Error ? diagnostic : taskPageError(page,
       page.isClosed?.() || page.browser?.()?.connected === false ? taskBrowserError('connection') : unavailable()))
   }
-  async function paused({ requestId, request }) {
+  async function handlePaused({ requestId, request }) {
     if (disposed) return
+    if (suspended) {
+      await session.send('Fetch.failRequest', { requestId, errorReason: 'Aborted' }).catch(() => {})
+      return
+    }
+    const requestBudget = budget
     try {
       const kind = jobResponseKind(request.url) || (isCompanyJobsDocument(request.url) ? 'list' : null)
-      if (kind) budget.reserveRequest(kind)
+      if (kind) requestBudget.reserveRequest(kind)
       await session.send('Fetch.continueRequest', { requestId })
     } catch (error) {
       // Fail closed. Never continue a request whose reservation was refused or unsaved.
       await session.send('Fetch.failRequest', { requestId, errorReason: 'Aborted' }).catch(() => {})
-      if (!disposed) budget.fail(error.message?.startsWith('AUTO_CHAT_RUN_BUDGET_') ? error : unavailable())
+      if (!disposed) requestBudget.fail(error.message?.startsWith('AUTO_CHAT_RUN_BUDGET_') ? error : unavailable())
     }
+  }
+  function paused(event) {
+    const pending = handlePaused(event)
+    inFlight.add(pending)
+    void pending.finally(() => inFlight.delete(pending))
   }
   try {
     session = await page.createCDPSession()
@@ -46,6 +59,14 @@ export async function attachJobRequestBudget(page, budget, { onConnectionLost } 
     throw budget.fail(unavailable())
   }
   return {
+    isActive: () => !disposed && connected,
+    suspend() { suspended = true },
+    async settled() { await Promise.allSettled([...inFlight]) },
+    setBudget(next) {
+      if (disposed || !connected || !suspended) throw unavailable()
+      budget = next
+      suspended = false
+    },
     // The page is closed immediately by the caller. Do not disable interception on
     // a live page: Fetch.disable could release a request refused by the budget.
     dispose() {

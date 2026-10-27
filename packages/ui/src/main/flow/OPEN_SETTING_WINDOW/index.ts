@@ -1,5 +1,6 @@
 import { app, ipcMain, globalShortcut, nativeTheme } from 'electron'
 import { startJobStatusPollScheduler } from '../../features/job-status-poll'
+import { startScheduledRuns } from '../../features/scheduled-runs'
 import { applyPendingDbRestore, startDbBackupScheduler } from '../../features/db-backup'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { createMainWindow, mainWindow } from '../../window/mainWindow'
@@ -42,6 +43,7 @@ export function openSettingWindow() {
     startJobStatusPollScheduler()
     // database backups on the configured interval (off unless enabled)
     startDbBackupScheduler()
+    startScheduledRuns()
 
     const showMainWindow = () => {
       // On macOS it's common to re-create a window in the app when the

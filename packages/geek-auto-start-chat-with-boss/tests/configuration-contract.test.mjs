@@ -7,11 +7,12 @@ import { experienceSelectionLabels, experienceSelectionCodes, normalizeExperienc
 import { listSkipReason, assertCanGreet } from '../auto-chat-navigation.mjs'
 import { waitSeconds, filterCombinationLimit, normalizeRunBudget } from '../run-settings.mjs'
 import { normalizeCitySelection } from '../city-filter.mjs'
+import { policyRunConfig } from '../run-policy.mjs'
 
 // Exercise the actual renderer serializer, not a copy of it. Native saving persists this patch.
 const renderer = fs.readFileSync(new URL('../../ui/src/renderer/src/page/Ux/index.js', import.meta.url), 'utf8')
 const serializer = renderer.slice(renderer.indexOf('    function runConfig(d)'), renderer.indexOf('    function configForDraft(d)'))
-const context = vm.createContext({ globalPace: { value: null }, isCollectAll: d => d.runMode === 'collect' && !d.collectOnlyMatchingJobs,
+const context = vm.createContext({ globalPace: { value: null }, globalPolicy: { value: {} }, policyRunConfig, isCollectAll: d => d.runMode === 'collect' && !d.collectOnlyMatchingJobs,
   clone: value => JSON.parse(JSON.stringify(value)),
   original: { fieldsForUseCommonConfig: {} }, common: {}, waitSeconds, filterCombinationLimit, normalizeRunBudget, normalizeCitySelection, DEFAULT_JOB_LIST_LOAD_WAIT_SECONDS: 5,
   DEFAULT_JOB_DETAIL_VIEW_WAIT_SECONDS: 2, experienceSelectionCodes, escape: escapeKeyword, regex: keywordPattern,
@@ -22,12 +23,25 @@ const draft = extra => ({ titles: ['产品'], categories: [], description: [], c
   regexMode: false, regexLogic: 1, hr: false, activity: '不限', overrides: {}, scopes: {}, strategy: 3, ...extra })
 const save = d => JSON.parse(JSON.stringify(context.basicToConfig(d)))
 
-test('execution budgets survive the actual form serializer, including unlimited values', () => {
+test('global policy overrides legacy per-template window and budget choices in the actual serializer', () => {
   const config = save(draft({ runInBackground: false, runBudget: { requests: 22, detailRequests: 0, activeMinutes: 30 } }))
-  assert.equal(config.autoChatRunInBackground, false)
-  assert.deepEqual(config.autoChatRunBudget, { requests: 22, detailRequests: 0, activeMinutes: 30 })
+  assert.equal(config.autoChatRunInBackground, true)
+  assert.deepEqual(config.autoChatRunBudget, policyRunConfig({}).autoChatRunBudget)
   assert.doesNotThrow(() => validateJobFilterConfig(config))
-  assert.throws(() => save(draft({ runBudget: { requests: -1 } })), /预算/)
+  assert.doesNotThrow(() => save(draft({ runBudget: { requests: -1 } })))
+})
+
+test('direct source count inputs pass through the actual serializer without changing job filters', () => {
+  for (const [perSourceSuccessLimit, noMatchStreakLimit] of [[20, 30], [50, 60], [0, 0], [7, 13]]) {
+    const patch = { perSourceSuccessLimit, noMatchStreakLimit }, config = save(draft(patch))
+    assert.equal(config.autoChatPerSourceSuccessLimit, patch.perSourceSuccessLimit)
+    assert.equal(config.autoChatNoMatchStreakLimit, patch.noMatchStreakLimit)
+    assert.equal(config.expectJobNameRegExpStr, '产品')
+    assert.deepEqual(config.expectCityList, ['深圳'])
+    assert.equal(config.expectSalaryLow, 5)
+  }
+  const old = save(draft({ perSourceSuccessLimit: 1001, noMatchStreakLimit: 1000 }))
+  assert.equal(old.autoChatPerSourceSuccessLimit, 1001); assert.equal(old.autoChatNoMatchStreakLimit, 1000)
 })
 
 test('the real form serializer retains literal exclusion words separately from positive ANY rules', () => {

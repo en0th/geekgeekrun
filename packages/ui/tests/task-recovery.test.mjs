@@ -163,7 +163,7 @@ test('pending clears only after the shipped confirmed-storage hook succeeds', as
 })
 
 test('the actual renderer refuses blocked or changed-mode continuation before saving or dispatching', async () => {
-  const start = ui.indexOf('    async function resumeTask()')
+  const start = ui.indexOf('    async function resumeTask(')
   const code = ui.slice(start, ui.indexOf('    // pause keeps', start))
   for (const [state, mode] of [[checkpoint({ messageSendPending: true }), 'collect'], [checkpoint(), 'chat']]) {
     const calls = []
@@ -179,11 +179,14 @@ test('the actual renderer refuses blocked or changed-mode continuation before sa
 
 test('the real task runner blocks pending sends and changed modes even with no config snapshot file', async () => {
   const file = fs.readFileSync(new URL('../src/main/features/run-common.ts', import.meta.url), 'utf8')
-  const body = (await transform(file.slice(file.indexOf('export async function runCommon(')).replace('export async', 'async'), { loader: 'ts' })).code
+  const body = (await transform(file.slice(file.indexOf('let startLock:')).replace('export function', 'function'), { loader: 'ts' })).code
   for (const [saved, mode, blocked] of [[checkpoint({ messageSendPending: true }), 'collect', true], [checkpoint(), 'chat', true], [checkpoint(), 'collect', false]]) {
     const calls = []
     const ctx = vm.createContext({ assertCheckpointCanResume, readAutoChatResume: () => saved, AUTO_CHAT_ERROR_EXIT_CODE,
       readConfigFile: () => ({ autoChatRunMode: mode }), readRunSettings, normalizeJobSources, process: { env: {}, argv: ['electron'] },
+      checkBossLoginStatus: async () => ({ status: 'valid', accountId: 'fixture' }),
+      readGlobalRunPolicy: () => ({ dailyLimit: 100 }), createDailyQuotaStore: () => ({ assert() {} }), storageFilePath: '/fixture',
+      withGlobalRunPolicy: config => config,
       app: { isPackaged: true }, daemonEE: { on() {} }, runtimeFolderPath: '/fixture-no-snapshot', path,
       sendToDaemon: async message => { calls.push(message.type); return {} },
       writeTaskConfigSnapshot: () => { calls.push('snapshot'); return '/fixture-snapshot' },
