@@ -54,7 +54,7 @@ export function watchJobResponses(page, { bodyTimeoutMs = 15000, onBlocked = () 
   let expectedSearch = null
   let expectedList = null
   let sequence = 0, latestList = null, listPages = new Map(), listScope = ''
-  let detailSequence = 0, latestDetailRequest = null
+  let latestDetailRequest = null
   let listGeneration = 0, listPageSequences = new Map()
   const document = watchJobDocument(page, { onNavigation: generation => {
     latestList = null
@@ -89,7 +89,6 @@ export function watchJobResponses(page, { bodyTimeoutMs = 15000, onBlocked = () 
     const searchCheck = expectedSearch
     const documentGeneration = document.generation
     const responseSequence = kind === 'list' ? ++sequence : 0
-    const detailResponseSequence = kind === 'detail' ? ++detailSequence : 0
     const detailRequest = kind === 'detail' ? response.request?.() : null
     let listRequest = null
     if (kind === 'list') {
@@ -109,8 +108,10 @@ export function watchJobResponses(page, { bodyTimeoutMs = 15000, onBlocked = () 
         listRequest = { ...parsed, pageNumber, generation: listGeneration }
       } catch { /* An unreadable request cannot establish a matching list. */ }
     }
+    // Responses may arrive out of order. Only request identity proves that a
+    // detail belongs to an earlier selection; arrival order cannot prove it.
     const superseded = () => kind === 'detail'
-      ? detailResponseSequence < detailSequence || Boolean(latestDetailRequest && detailRequest && latestDetailRequest !== detailRequest)
+      ? Boolean(latestDetailRequest && detailRequest && latestDetailRequest !== detailRequest)
       : Boolean(listRequest && listRequest.generation !== listGeneration)
     let timer, cancel
     const cancelled = new Promise((_, reject) => {

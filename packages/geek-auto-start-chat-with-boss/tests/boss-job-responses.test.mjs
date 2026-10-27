@@ -40,6 +40,33 @@ test('an unreadable latest card and explicit restrictions on an old card still s
     await assert.rejects(monitor.assertHealthy(), restriction ? /LOGIN_STATUS_RESTRICTED/ : /LOGIN_STATUS_UNKNOWN/)
   }
 })
+for (const malformed of [false, true]) test(`a late old response cannot hide the current detail's ${malformed ? 'malformed' : 'unreadable'} body`, async t => {
+  const { page, monitor } = monitored(t)
+  const url = 'https://www.zhipin.com/wapi/zpgeek/job/detail.json'
+  const old = { url: () => url + '?jobId=old' }, current = { url: () => url + '?jobId=current' }
+  page.emit('request', old)
+  page.emit('request', current)
+  let finishCurrent
+  page.emit('response', response(null, { url, request: current, json: () => new Promise((resolve, reject) => {
+    finishCurrent = () => malformed ? resolve({ code: 0, zpData: {} }) : reject(Error('current body unavailable'))
+  }) }))
+  await new Promise(resolve => setImmediate(resolve))
+  page.emit('response', response({ code: 0, zpData: { jobInfo: { encryptId: 'old' } } }, { url, request: old }))
+  finishCurrent()
+  await assert.rejects(monitor.guard(() => assert.fail('cannot act on an unverified current detail')), /LOGIN_STATUS_UNKNOWN/)
+})
+
+test('response order alone cannot discard a failed detail without request identity', async t => {
+  const { page, monitor } = monitored(t)
+  const url = 'https://www.zhipin.com/wapi/zpgeek/job/detail.json'
+  let fail
+  page.emit('response', response(null, { url, json: () => new Promise((_resolve, reject) => { fail = reject }) }))
+  await new Promise(resolve => setImmediate(resolve))
+  page.emit('response', response({ code: 0, zpData: { jobInfo: { encryptId: 'another' } } }, { url }))
+  fail(Error('detail body unavailable'))
+  await assert.rejects(monitor.assertHealthy(), /LOGIN_STATUS_UNKNOWN/)
+})
+
 function monitored(t, options) {
   const page = new EventEmitter()
   const blocked = []
