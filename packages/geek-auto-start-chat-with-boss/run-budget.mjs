@@ -55,7 +55,7 @@ export function createRunBudget({ limits, saved, seed, legacy = false, persist =
     const label = { requests: '岗位接口请求', detailRequests: '详情请求', activeMinutes: '累计运行时长' }[key]
     const amount = key === 'activeMinutes' ? `${limits[key]} 分钟` : `${limits[key]} 次`
     return stop(Object.assign(new Error('AUTO_CHAT_RUN_BUDGET_EXCEEDED'), {
-      budgetKey: key, detail: `已达到${label}上限（${amount}），任务已暂停并保留进度；调整上限后可恢复，已用额度继续累计`
+      budgetKey: key, detail: `已达到本轮${label}上限（${amount}），进度和累计用量已保留。请到“设置 → 任务运行”选择运行模式后继续；若仍达到上限，请结束本轮再新建任务，继续时用量不会清零。`
     }))
   }
   function assertTime() {
