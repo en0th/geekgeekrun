@@ -61,7 +61,15 @@ export async function verifyInstalledGui({ executable, runtime, version, jobs, l
     await page.click('a[href="#/ux/library"]')
     await page.waitForSelector('.ux-main .el-table', { timeout: 30000 })
     await page.click('a[href="#/ux/settings"]')
+    await page.waitForFunction(() => document.querySelector('.ux-main h1')?.textContent.trim() === '设置', { timeout: 30000 })
+    const updatesTab = await page.evaluateHandle(() => [...document.querySelectorAll('.ux-main [role="tab"]')]
+      .find(tab => tab.textContent.trim() === '关于与更新'))
+    assert.ok(updatesTab.asElement(), 'Packaged update settings tab is missing')
+    await updatesTab.asElement().click()
+    await updatesTab.dispose()
     await page.waitForFunction(() => document.querySelector('.ux-main')?.textContent.includes('软件更新'), { timeout: 30000 })
+    assert.equal(await page.$eval('.ux-main .el-switch', element => element.classList.contains('is-checked')), false,
+      'Installed update settings did not retain disabled automatic checks')
     assert.deepEqual(errors, [], 'Renderer exceptions')
     assert.deepEqual(fileFailures, [], 'Packaged asset failures')
     assert.equal(result.bossRequests, 0)
