@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { resolveStorageFolder, runtimeFolderPath } from './data-location.mjs'
 import { readTaskConfigSnapshot } from './task-config-snapshot.mjs'
+import { RUN_POLICY_FILE, normalizeRunPolicy, policyRunConfig } from './run-policy.mjs'
 import { writeFileAtomicSync, writeFilesAtomicSync, writeJsonAtomicSync } from '@geekgeekrun/utils/atomic-json.mjs'
 import defaultDingtalkConf from './default-config-file/dingtalk.json' with { type: 'json' }
 import defaultBossConf from './default-config-file/boss.json' with { type: 'json' }
@@ -118,6 +119,22 @@ export function readConfigFile(name) {
   }
   if (!fs.existsSync(file) && Object.hasOwn(configDefaults, name)) ensureConfigFileExist()
   return readJson(file, value => validateConfig(name, value))
+}
+// GUI/queued workers already have resolved snapshots. Standalone workers capture
+// an explicitly saved policy once; legacy CLI settings remain usable when absent.
+let runPolicyCaptured = false, capturedRunPolicy = null
+export function readRunConfigFile(name) {
+  const value = readConfigFile(name)
+  if (name !== 'boss.json' || (taskConfigSnapshot && Object.hasOwn(taskConfigSnapshot, name))) return value
+  if (!runPolicyCaptured) {
+    const saved = readConfigFile(RUN_POLICY_FILE)
+    if (saved != null) {
+      try { capturedRunPolicy = normalizeRunPolicy(saved, { legacy: true }) }
+      catch { throw readError(filePath(configFolderPath, RUN_POLICY_FILE), 'JSON_INVALID') }
+    }
+    runPolicyCaptured = true
+  }
+  return capturedRunPolicy ? { ...value, ...policyRunConfig(capturedRunPolicy) } : value
 }
 export function readStorageFile(name, { isJson = true } = {}) {
   const file = filePath(storageFilePath, name)

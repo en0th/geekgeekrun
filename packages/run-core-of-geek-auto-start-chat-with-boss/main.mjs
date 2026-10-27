@@ -2,7 +2,8 @@ import DingtalkPlugin from '@geekgeekrun/dingtalk-plugin/index.mjs'
 import { isJsonStorageError } from '@geekgeekrun/utils/atomic-json.mjs'
 import {
   SyncHook,
-  AsyncSeriesHook
+  AsyncSeriesHook,
+  AsyncSeriesWaterfallHook
 } from 'tapable'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -35,9 +36,9 @@ const initPlugins = (hooks, { readConfigFile, getPublicDbFilePath }) => {
 }
 
 const main = async () => {
-  const { readConfigFile, readStorageFile, getPublicDbFilePath } = await import('@geekgeekrun/geek-auto-start-chat-with-boss/runtime-file-utils.mjs')
+  const { readRunConfigFile: readConfigFile, readStorageFile, getPublicDbFilePath } = await import('@geekgeekrun/geek-auto-start-chat-with-boss/runtime-file-utils.mjs')
   const bossCookies = readStorageFile('boss-cookies.json')
-  const { mainLoop, closeBrowserWindow, prepareForAutomaticRetry, autoStartChatEventBus } = await import('@geekgeekrun/geek-auto-start-chat-with-boss/index.mjs')
+  const { mainLoop, closeBrowserWindow, prepareForAutomaticRetry, autoStartChatEventBus, recheckAfterRest } = await import('@geekgeekrun/geek-auto-start-chat-with-boss/index.mjs')
   const shutdown = installWorkerShutdown({ close: closeBrowserWindow })
   if (!bossCookies?.length) {
     console.error('There is no cookies. You can save a copy with EditThisCookie extension.')
@@ -50,6 +51,7 @@ const main = async () => {
     pageLoaded: new SyncHook(),
     cookieWillSet: new AsyncSeriesHook(['cookies']),
     userInfoResponse: new AsyncSeriesHook(['userInfo']),
+    dailyQuotaSeed: new AsyncSeriesWaterfallHook(['count', 'identity']),
     mainFlowWillLaunch: new AsyncSeriesHook(['args']),
     jobDetailIsGetFromRecommendList: new AsyncSeriesHook(['positionInfoDetail']),
     jobMatchedForCollection: new AsyncSeriesHook(['detail']),
@@ -63,6 +65,7 @@ const main = async () => {
     sageTimeEnter: new AsyncSeriesHook(['args']),
     sageTimeExit: new AsyncSeriesHook(['args'])
   }
+  hooks.sageTimeExit.tapPromise('RunPolicyGuard', recheckAfterRest)
   initPlugins(hooks, { readConfigFile, getPublicDbFilePath })
   await hooks.daemonInitialized.promise()
   let sendPending = false, progress = 0
