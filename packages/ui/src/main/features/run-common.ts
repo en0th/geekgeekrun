@@ -121,6 +121,7 @@ async function runCommonInternal({
       ...extraNoAutoRestartExitCodes
     ].join(',')
   }
+  let autoChatRunMode = 'chat'
   if (mode === 'geekAutoStartWithBossMain') {
     const config = capturedConfig || withGlobalRunPolicy(Object.fromEntries(['boss.json', 'common-job-condition-config.json', 'target-company-list.json'].map(name => [name, readConfigFile(name)])))
     if (expectedAccountId) config['boss.json'].autoChatExpectedAccountId = expectedAccountId
@@ -130,7 +131,7 @@ async function runCommonInternal({
       history: daemonStatus?.history ?? []
     })
     normalizeJobSources(config['boss.json'].jobSourceList)
-    readRunSettings(config['boss.json'])
+    autoChatRunMode = readRunSettings(config['boss.json']).runMode
     if (!resumeRunRecordId) await saveRunConfigSnapshot({ runRecordId: Number(currentRunRecord?.id), config: {
       version: 2, task: 'auto', savedAt: new Date().toISOString(), actualConfig: jobConfigSnapshot(config)
     } })
@@ -144,13 +145,13 @@ async function runCommonInternal({
       createBudgetStore(storageFilePath, currentRunRecord?.id).save({
         usage: { requests: 0, detailRequests: 0, activeMs: 0 }, baselineUnknown: false
       })
-      initializeAutoChatResume(Number(currentRunRecord?.id), readRunSettings(config['boss.json']).runMode)
+      initializeAutoChatResume(Number(currentRunRecord?.id), autoChatRunMode)
     }
   }
   const taskArgs = [`--mode=${mode}`, `--run-record-id=${currentRunRecord?.id || 0}`]
   // recorded in the task history so a finished run links to the right data (chats or jobs)
   if (mode === 'geekAutoStartWithBossMain')
-    taskArgs.push(`--run-mode=${(capturedConfig?.['boss.json'] || readConfigFile('boss.json'))?.autoChatRunMode === 'collect' ? 'collect' : 'chat'}`)
+    taskArgs.push(`--run-mode=${autoChatRunMode}`)
   const args = !app.isPackaged ? [app.getAppPath(), ...taskArgs] : taskArgs
   // the daemon queues BOSS tasks while another one runs
   const startResponse = (await sendToDaemon(

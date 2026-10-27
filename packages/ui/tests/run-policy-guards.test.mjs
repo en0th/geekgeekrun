@@ -10,7 +10,7 @@ import { actualRunFacts } from '../src/common/run-config-facts.mjs'
 import { AUTO_CHAT_ERROR_EXIT_CODE } from '../../run-core-of-geek-auto-start-chat-with-boss/enums.mjs'
 const file = fs.readFileSync(new URL('../src/main/features/run-common.ts', import.meta.url), 'utf8')
 const body = (await transform(file.slice(file.indexOf('let startLock:')).replace('export function', 'function'), { loader: 'ts' })).code
-function fixture({ login = { status: 'valid', accountId: 'a' }, quotaError, runMode = 'chat' } = {}) {
+function fixture({ login = { status: 'valid', accountId: 'a' }, quotaError, runMode = 'chat', modeAfterSnapshot } = {}) {
   let worker = null, created = 0, dispatched = 0, snapshots = [], checkpointWrites = 0
   const ctx = vm.createContext({ AUTO_CHAT_ERROR_EXIT_CODE, readRunSettings, jobConfigSnapshot,
     readConfigFile: name => name === 'boss.json' ? { autoChatRunMode: runMode, autoChatRunInBackground: false } : {},
@@ -19,7 +19,7 @@ function fixture({ login = { status: 'valid', accountId: 'a' }, quotaError, runM
     createDailyQuotaStore: () => ({ assert() { if (quotaError) throw quotaError } }),
     readAutoChatResume: () => null,
     saveAndGetCurrentRunRecord: async () => ({ data: { id: ++created } }),
-    saveRunConfigSnapshot: async data => snapshots.push(data),
+    saveRunConfigSnapshot: async data => { snapshots.push(data); if (modeAfterSnapshot) runMode = modeAfterSnapshot },
     sendToDaemon: async m => { if (m.type === 'get-status') return { workers: worker ? [worker] : [] }; if (m.type === 'start-worker') { dispatched++; worker = { workerId: m.workerId, args: m.args } }; return {} },
     minimist: args => ({ 'run-record-id': args.find(a => a.startsWith('--run-record-id='))?.split('=')[1] }),
     process: { env: {}, argv: ['electron'] }, app: { isPackaged: true }, daemonEE: { on() {} },
@@ -27,7 +27,7 @@ function fixture({ login = { status: 'valid', accountId: 'a' }, quotaError, runM
     normalizeJobSources() {}, writeTaskConfigSnapshot: () => '/isolated/1.json',
     createBudgetStore: () => ({ save() {} }), initializeAutoChatResume() { checkpointWrites++ } })
   vm.runInContext(body, ctx)
-  return { start: options => ctx.runCommon({ mode: 'geekAutoStartWithBossMain', ...options }), inspect: () => ({ created, dispatched, snapshots, checkpointWrites }) }
+  return { workerArgs: () => worker?.args || [], start: options => ctx.runCommon({ mode: 'geekAutoStartWithBossMain', ...options }), inspect: () => ({ created, dispatched, snapshots, checkpointWrites }) }
 }
 test('login, account and daily-target failures preserve the old checkpoint and create no task', async () => {
   for (const [options, args, expected] of [
@@ -53,4 +53,15 @@ test('collect-only work ignores the greeting target and scheduled work retains i
   const snap = f.inspect().snapshots[0].config.actualConfig
   assert.equal(snap['boss.json'].autoChatRunPolicy.profile, 'deep')
   assert.equal(Object.fromEntries(actualRunFacts(snap))['运行模式'], '深度模式')
+})
+
+for (const mode of ['collect', 'chat']) test(`dispatch keeps the frozen ${mode} mode after another window changes saved settings`, async () => {
+  const changed = mode === 'collect' ? 'chat' : 'collect'
+  const f = fixture({ runMode: mode, modeAfterSnapshot: changed })
+  await f.start()
+  const frozen = f.inspect().snapshots[0].config.actualConfig['boss.json']
+  assert.equal(frozen.autoChatRunMode, mode)
+  assert.ok(f.workerArgs().includes('--run-mode=' + mode), 'history and worker mode must match the persisted task snapshot')
+  assert.equal(f.inspect().created, 1)
+  assert.equal(f.inspect().checkpointWrites, 1)
 })

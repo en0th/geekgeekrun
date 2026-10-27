@@ -14,7 +14,7 @@ import { EventEmitter } from 'node:events'
 import { retryProblem } from './automatic-retry.mjs'
 import { setDomainLocalStorage } from '@geekgeekrun/utils/puppeteer/local-storage.mjs'
 
-import { readConfigFile, writeStorageFile, writeBossSession, ensureConfigFileExist, readStorageFile, ensureStorageFileExist, storageFilePath } from './runtime-file-utils.mjs'
+import { readRunConfigFile as readConfigFile, writeStorageFile, writeBossSession, ensureConfigFileExist, readStorageFile, ensureStorageFileExist, storageFilePath } from './runtime-file-utils.mjs'
 import {
   countFilterCombinations,
   combineFiltersWithConstraintsGenerator,
